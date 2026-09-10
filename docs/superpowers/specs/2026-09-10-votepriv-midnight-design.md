@@ -219,6 +219,7 @@ Ini harus disebut apa adanya di halaman Docs aplikasi, bukan disembunyikan.
 - **Suara yang tidak dibuka tidak terhitung.** Voter harus kembali setelah deadline untuk menjalankan `tallyVote()`. Selisihnya terlihat publik sebagai `voteCount - talliedCount` sehingga tetap bisa diaudit, tapi tetap merupakan biaya nyata dari desain dua fase.
 - **Kehilangan private state berarti kehilangan suara.** Bila penyimpanan lokal terhapus sebelum tally, opening ikut hilang. Mitigasi: layar sukses menawarkan pencadangan opening.
 - **Korelasi waktu dan jaringan.** Bila hanya satu orang melakukan tally dalam satu rentang waktu, pengamat tingkat jaringan bisa menduga kaitannya. Di luar jangkauan kontrak.
+- **Proof server melihat witness.** Ia yang membangun ZK proof, jadi ia menerima credential dan pilihan suara dalam bentuk terbuka. Proof server lokal menjaga hal itu tidak pernah meninggalkan perangkat pemilih. Proof server remote yang dioperasikan pihak lain berarti operatornya dapat melihat setiap suara — klaim privasi aplikasi ini tidak berlaku terhadap dirinya. Karena itu default-nya lokal, dan mode remote wajib ditandai terang-terangan di UI, bukan hanya disebut di berkas konfigurasi.
 - **Admin dipercaya menerbitkan credential kepada orang yang tepat.** Model kepercayaan ini sama dengan voting ber-allowlist mana pun. Yang tetap ditegakkan kontrak: jumlah credential tidak boleh melebihi `eligibleCount` yang di-seal dan dapat dicek siapa pun lewat `firstFree()`, satu credential hanya bisa dipakai sekali, dan pihak di luar tree tidak bisa memilih sama sekali. Admin mengetahui siapa saja yang berhak, tapi tidak pernah mengetahui pilihan siapa pun.
 
 ## 7. Struktur repo
@@ -339,9 +340,11 @@ Bila konteks waktu blok tidak dapat dikendalikan di dalam simulator, pengujian d
 6. Deploy ballot demo beserta credential-nya.
 7. `pnpm app dev`, lalu sambungkan Lace.
 
-Jaringan default **Preview** karena sinkronisasi wallet lebih cepat; **Preprod** tersedia lewat pemilih jaringan yang muncul sebelum tombol connect, karena Lace sendiri yang menentukan apakah ia sanggup memenuhi `connect(networkId)`.
+`connect()` wajib diberi network ID — memanggilnya tanpa argumen ditolak Lace dengan `Invalid network ID: undefined`. Nilai yang sah, menurut pesan galat Lace sendiri: `mainnet`, `testnet`, `devnet`, `qanet`, `undeployed`, `preview`, `preprod`. Network ID yang keliru ditolak seketika tanpa popup, sehingga aplikasi boleh mencoba kandidat secara berurutan sampai menemukan jaringan yang dipakai wallet. `mainnet` dikecualikan dari pencarian itu: aplikasi ini bekerja di testnet, dan menyambung ke jaringan bernilai nyata tidak boleh terjadi karena kebetulan urutan.
 
-Endpoint jaringan hanya boleh didefinisikan di `pkgs/shared/src/network-config.ts` dan tidak pernah ditulis langsung di `cli` atau `app`.
+**Endpoint jaringan diambil dari `getConfiguration()` milik wallet, bukan dari konstanta.** Pengukuran langsung terhadap Lace 4.0.1 di preprod melaporkan `https://blockfrost.lw.iog.io/midnight-preprod/` — host yang sama sekali berbeda dari `indexer.preprod.midnight.network` yang dipakai repo rujukan. Meng-hardcode nilai rujukan akan membuat setiap query indexer gagal. `pkgs/shared/src/network-config.ts` karenanya hanya berisi nilai cadangan untuk saat wallet tidak melaporkan endpoint, bukan sumber kebenaran.
+
+**Proof server: lokal secara default, remote sebagai pilihan yang ditandai.** Browser selalu memanggil jalur same-origin `/proof-server`, dan hanya target proxy yang berbeda antara kedua mode — sehingga ini soal konfigurasi, bukan dua jalur kode. Jalur same-origin juga wajib karena service worker Lace memotong fetch tingkat halaman dan Chrome memblokir permintaan ke `127.0.0.1` dari konteks itu. Target diatur lewat `VITE_PROOF_SERVER_URL`; bila kosong, dipakai `http://127.0.0.1:6300` sesuai yang dilaporkan wallet. Ketika target remote, indikator privasi di sidebar wajib berhenti menyatakan "Always on" dan menjelaskan bahwa operator proof server dapat melihat pilihan suara (lihat §6.3).
 
 ## 12. Risiko dan jalur mundur
 

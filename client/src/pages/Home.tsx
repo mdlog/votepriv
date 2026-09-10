@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
+import { checkProofServer, proofServerTarget, type ProofServerStatus } from "@/lib/proof-server";
 import {
   Activity,
   ArrowUpRight,
@@ -254,6 +255,35 @@ export default function Home() {
   const [wallet, setWallet] = useState("");
   const [network, setNetwork] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [proofStatus, setProofStatus] = useState<ProofServerStatus | null>(null);
+
+  useEffect(() => {
+    checkProofServer().then(setProofStatus);
+  }, []);
+
+  // Panel ini tidak boleh mengklaim "Always on" tanpa syarat. Proof server menerima
+  // witness, jadi kalau ia remote — atau mati — pengguna harus melihatnya di sini,
+  // bukan menemukannya setelah suaranya terlanjur dikirim.
+  const privacy = useMemo(() => {
+    if (!proofStatus) return { label: "Checking…", tone: "", title: "Memeriksa proof server." };
+    if (proofStatus.remote)
+      return {
+        label: "Proof server remote",
+        tone: "warn",
+        title: `Proof server berjalan di ${proofServerTarget}. Karena proof server menerima witness, operatornya dapat melihat pilihan suara Anda.`,
+      };
+    if (!proofStatus.reachable)
+      return {
+        label: "Proof server offline",
+        tone: "off",
+        title: `Proof server lokal tidak dapat dihubungi (${proofStatus.error}). Jalankan: docker compose -f proof-server.yml up`,
+      };
+    return {
+      label: "Always on",
+      tone: "",
+      title: `Proof server lokal v${proofStatus.version} — witness tidak pernah meninggalkan perangkat ini.`,
+    };
+  }, [proofStatus]);
   const [voteBallot, setVoteBallot] = useState<Ballot | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -294,5 +324,5 @@ export default function Home() {
   const createBallot = (ballot: Ballot) => setBallots((current) => [ballot, ...current]);
   const currentCopy = useMemo(() => section === "Overview" ? "Your private governance workspace" : section === "Live ballots" ? "Choose with confidence" : section === "Results" ? "Trust, without the trade-off" : "Understand the protocol", [section]);
 
-  return <div className="app-shell"><aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}><div className="brand"><div className="brand-mark"><span /><span /><span /></div><span>vote<span>priv</span></span></div><button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button><div className="workspace-card"><div className="workspace-avatar">MB</div><div><strong>Midnight Builders</strong><span>Community workspace</span></div><ChevronRight size={15} /></div><div className="sidebar-label">Workspace</div><nav>{navItems.map(({ label, icon: Icon }) => <button key={label} className={section === label ? "active" : ""} onClick={() => { setSection(label); setMobileNav(false); }}><Icon size={17} /><span>{label}</span>{label === "Live ballots" && <b>12</b>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy-mode"><div className="privacy-mode-icon"><LockKeyhole size={15} /></div><div><span>Privacy mode</span><strong>Always on</strong></div><span className="status-dot" /></div><button className="help-link" onClick={() => setSection("Docs")}><CircleHelp size={16} /> Help center</button><div className="sidebar-footer"><span>VotePriv v0.1</span><span>·</span><span>Testnet</span></div></div></aside><div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} /><main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="topbar-context"><span className="context-title">{currentCopy}</span><span className="context-divider">/</span><span className="context-section">{section}</span></div><div className="topbar-actions"><div className="network-status"><span className="pulse-dot" /> {connected && network ? `Midnight ${network}` : "Midnight testnet"} <ChevronRight size={14} /></div><button className={`wallet-button ${connected ? "connected" : ""}`} onClick={connectWallet} disabled={connecting}><Wallet size={16} />{connecting ? "Connecting…" : connected ? shortAddress(wallet) : "Connect wallet"}</button><div className="user-avatar">AR</div></div></header><div className="page-container">{section === "Overview" && <Overview ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} onSection={setSection} />}{section === "Live ballots" && <LiveBallots ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} />}{section === "Results" && <Results ballots={ballots} receipt={receipt} />}{section === "Docs" && <Docs />}</div></main>{voteBallot && <VoteModal ballot={voteBallot} connected={connected} onClose={() => setVoteBallot(null)} onVote={handleVote} />}{createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} onCreate={createBallot} />}</div>;
+  return <div className="app-shell"><aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}><div className="brand"><div className="brand-mark"><span /><span /><span /></div><span>vote<span>priv</span></span></div><button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button><div className="workspace-card"><div className="workspace-avatar">MB</div><div><strong>Midnight Builders</strong><span>Community workspace</span></div><ChevronRight size={15} /></div><div className="sidebar-label">Workspace</div><nav>{navItems.map(({ label, icon: Icon }) => <button key={label} className={section === label ? "active" : ""} onClick={() => { setSection(label); setMobileNav(false); }}><Icon size={17} /><span>{label}</span>{label === "Live ballots" && <b>12</b>}</button>)}</nav><div className="sidebar-bottom"><div className={`privacy-mode ${privacy.tone}`} title={privacy.title}><div className="privacy-mode-icon"><LockKeyhole size={15} /></div><div><span>Privacy mode</span><strong>{privacy.label}</strong></div><span className={`status-dot ${privacy.tone}`} /></div><button className="help-link" onClick={() => setSection("Docs")}><CircleHelp size={16} /> Help center</button><div className="sidebar-footer"><span>VotePriv v0.1</span><span>·</span><span>Testnet</span></div></div></aside><div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} /><main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="topbar-context"><span className="context-title">{currentCopy}</span><span className="context-divider">/</span><span className="context-section">{section}</span></div><div className="topbar-actions"><div className="network-status"><span className="pulse-dot" /> {connected && network ? `Midnight ${network}` : "Midnight testnet"} <ChevronRight size={14} /></div><button className={`wallet-button ${connected ? "connected" : ""}`} onClick={connectWallet} disabled={connecting}><Wallet size={16} />{connecting ? "Connecting…" : connected ? shortAddress(wallet) : "Connect wallet"}</button><div className="user-avatar">AR</div></div></header><div className="page-container">{section === "Overview" && <Overview ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} onSection={setSection} />}{section === "Live ballots" && <LiveBallots ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} />}{section === "Results" && <Results ballots={ballots} receipt={receipt} />}{section === "Docs" && <Docs />}</div></main>{voteBallot && <VoteModal ballot={voteBallot} connected={connected} onClose={() => setVoteBallot(null)} onVote={handleVote} />}{createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} onCreate={createBallot} />}</div>;
 }

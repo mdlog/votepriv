@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
-import { defineConfig, type Plugin, type ViteDevServer } from "vite";
+import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 
 // =============================================================================
@@ -205,7 +205,15 @@ function vitePluginStorageProxy(): Plugin {
 
 const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, path.resolve(import.meta.dirname), "");
+
+  // Proof server menerima witness — yaitu credential dan pilihan suara. Karena itu
+  // default-nya lokal, dan mengarahkannya ke remote harus merupakan tindakan sadar:
+  // operator server itu akan dapat melihat setiap suara.
+  const proofServerTarget = env.VITE_PROOF_SERVER_URL || "http://127.0.0.1:6300";
+
+  return {
   plugins,
   resolve: {
     alias: {
@@ -237,5 +245,17 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    proxy: {
+      // Browser tidak boleh memanggil proof server secara langsung: service worker
+      // Lace memotong seluruh fetch tingkat halaman, dan Chrome memblokir permintaan
+      // ke 127.0.0.1 dari konteks itu. Jalur same-origin diteruskan Node di sisi
+      // server, sehingga pola yang sama berlaku untuk target lokal maupun remote.
+      "/proof-server": {
+        target: proofServerTarget,
+        changeOrigin: true,
+        rewrite: (p: string) => p.replace(/^\/proof-server/, ""),
+      },
+    },
   },
+  };
 });

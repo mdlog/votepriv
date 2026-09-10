@@ -14,9 +14,7 @@ export type BallotPrivateState = {
   /** Merkle path menuju daun eligibility, disusun klien dari state on-chain. */
   readonly eligibilityPath: MerkleTreePath<Uint8Array> | null;
   /** Merkle path menuju commitment, disusun klien saat fase tally. */
-  // biome-ignore lint/suspicious/noExplicitAny: bentuk MerkleTreePath berasal dari runtime;
-  // dikencangkan di Task 6 saat commitmentPath benar-benar dipakai.
-  readonly commitmentPath: any | null;
+  readonly commitmentPath: MerkleTreePath<Uint8Array> | null;
 };
 
 export const emptyBallotPrivateState = (
@@ -62,8 +60,7 @@ export const ballotWitnesses = {
     ctx.privateState,
     need(ctx.privateState.eligibilityPath, "eligibilityPath"),
   ],
-  // biome-ignore lint/suspicious/noExplicitAny: lihat di atas
-  commitment_path: (ctx: Ctx): [BallotPrivateState, any] => [
+  commitment_path: (ctx: Ctx): [BallotPrivateState, MerkleTreePath<Uint8Array>] => [
     ctx.privateState,
     need(ctx.privateState.commitmentPath, "commitmentPath"),
   ],

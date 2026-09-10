@@ -113,7 +113,7 @@ export sealed ledger option3:       Opaque<"string">;
 export sealed ledger optionCount:   Uint<8>;      // 2..4
 export sealed ledger voteDeadline:  Uint<64>;     // DETIK sejak epoch Unix
 export sealed ledger tallyDeadline: Uint<64>;     // DETIK sejak epoch Unix
-export sealed ledger quorumPercent: Uint<8>;
+export sealed ledger quorumPercent: Uint<8>;     // informatif, TIDAK ditegakkan circuit mana pun
 export sealed ledger eligibleCount: Uint<64>;
 export sealed ledger eligibilityPolicy: Opaque<"string">;   // aturan penerbitan credential, dapat diaudit
 export sealed ledger adminKey:      Bytes<32>;
@@ -196,6 +196,10 @@ Karena `tnf` diturunkan dari salt yang rahasia, publik melihat "ada satu suara u
 ### 5.7 `finalize()`
 
 Terbuka untuk siapa saja setelah `tallyDeadline` lewat; menyetel `phase = finalized`. Memberi tanda finalitas yang eksplisit di on-chain, bukan sekadar turunan waktu di UI.
+
+Permissionless di sini adalah keputusan, bukan kelalaian. `finalize` tidak memindahkan nilai apa pun dan tidak melonggarkan satu pun guard: setiap circuit yang dijaga `phase != finalized` juga dijaga batas waktu yang sudah lewat ketika `finalize` bisa dipanggil, sehingga memanggilnya tidak memberi orang luar apa pun yang tidak bisa mereka peroleh dengan menunggu. Sebaliknya, menerima `phase == voting` justru yang mencegah ballot yang tak pernah dibuka siapa pun terkunci selamanya.
+
+**`quorumPercent` tidak ditegakkan.** Ia disimpan sebagai niat yang dinyatakan pembuat ballot dan tidak dibaca circuit mana pun: ballot difinalisasi pada partisipasi 0% persis seperti pada 100%. Menegakkannya akan menuntut keadaan akhir tersendiri untuk ballot yang gagal kuorum, karena `finalize` yang menolak akan membuatnya tersangkut selamanya — jebakan liveness yang sama yang sudah dua kali dihindari desain ini. Konsekuensinya mengikat tampilan: UI dan halaman Docs wajib menyebutnya sebagai ambang yang dinyatakan komunitas, bukan syarat yang dijamin kontrak.
 
 ## 6. Analisis privasi
 
@@ -308,7 +312,7 @@ Tiga langkah pada tahap "proving" kini menjadi operasi nyata, bukan `setTimeout`
 | Judul, deskripsi, komunitas, opsi | field `sealed` pada kontrak ballot |
 | `votes` di kartu ballot | `voteCount` |
 | `eligible` | `eligibleCount` |
-| `quorum` | `quorumPercent` |
+| `quorum` | `quorumPercent` — **informatif, bukan ambang yang dijamin kontrak**; UI wajib menyebutnya sebagai niat yang dinyatakan pembuat ballot |
 | Keterangan siapa yang berhak | `eligibilityPolicy`, tampil di kartu ballot dan modal vote |
 | `deadline` | `voteDeadline` |
 | `status` (`live` / `closing-soon` / `finalized`) | `phase` digabung sisa waktu menuju `voteDeadline` |

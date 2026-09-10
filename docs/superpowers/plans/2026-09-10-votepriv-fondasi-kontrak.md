@@ -774,7 +774,7 @@ pnpm contract compact:ballot && pnpm contract test
 ```
 Diharapkan: kompilasi berhasil, seluruh uji Task 1 dan Task 2 lulus.
 
-Bila compiler menolak `sealed` pada `Opaque<"string">`, hapus kata kunci `sealed` dari ketujuh field string tersebut — nilainya tetap hanya ditulis di constructor, jadi perilakunya tidak berubah, hanya jaminan compile-time-nya yang hilang. Catat penyimpangan ini di komentar kontrak.
+Bila compiler menolak `sealed` pada `Opaque<"string">`, hapus kata kunci `sealed` dari kedelapan field string tersebut (title, description, community, option0–option3, eligibilityPolicy) — nilainya tetap hanya ditulis di constructor, jadi perilakunya tidak berubah, hanya jaminan compile-time-nya yang hilang. Catat penyimpangan ini di komentar kontrak.
 
 - [ ] **Step 6: Commit**
 

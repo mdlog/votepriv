@@ -1,5 +1,8 @@
 /**
- * Satu-satunya tempat waktu dikonversi di seluruh proyek.
+ * Satu-satunya tempat konversi waktu untuk deadline yang mencapai CLI dan app.
+ * (Simulator uji `pkgs/contract/src/test/ballot-simulator.ts` punya konversi
+ * ms→detik sendiri untuk kebutuhan test scaffolding — paket itu tidak boleh
+ * bergantung pada `shared`, karena arah ketergantungannya adalah shared → contract.)
  *
  * Kernel Midnight membandingkan deadline terhadap `secondsSinceEpoch` mentah,
  * tanpa penskalaan. Nilai dalam milidetik karenanya kira-kira seribu kali terlalu

@@ -2,7 +2,9 @@
 
 > **Untuk pekerja agentik:** SUB-SKILL WAJIB: gunakan superpowers:subagent-driven-development (disarankan) atau superpowers:executing-plans untuk mengerjakan rencana ini tugas demi tugas. Langkah memakai sintaks checkbox (`- [ ]`).
 
-**Goal:** Men-deploy kedua kontrak VotePriv ke Midnight preprod dari wallet headless, lalu membuktikan seluruh rangkaiannya bekerja di jaringan nyata lewat satu uji tiga pemilih — dari pendaftaran sampai finalisasi.
+**Goal:** Men-deploy kedua kontrak VotePriv ke Midnight **preview** dari wallet headless, lalu membuktikan seluruh rangkaiannya bekerja di jaringan nyata lewat satu uji tiga pemilih — dari pendaftaran sampai finalisasi.
+
+> **Jaringannya preview, bukan preprod.** Sinkronisasi zswap preprod macet di indeks commitment ~1.500.100 dan direproduksi enam kali pada dua indexer dan dua generasi SDK — blokir di tingkat data rantai, di luar kendali kode ini. Buktinya ada di spec §11. `pkgs/cli/src/preprod.ts` sengaja dipertahankan supaya blokirnya dapat diperiksa ulang bila jaringan itu diperbaiki; ia bukan jalur eksekusi rencana ini.
 
 **Architecture:** Dua paket baru di monorepo. `pkgs/shared` memuat tipe domain, endpoint jaringan, dan pembuat credential yang dipakai bersama CLI dan aplikasi. `pkgs/cli` menjalankan wallet headless yang diturunkan dari seed, menyusun provider midnight-js, dan mengeksekusi deploy serta pemanggilan circuit. Kontrak dan artefak ZK-nya sudah selesai dan teruji di Rencana A; rencana ini tidak menyentuh `.compact` mana pun.
 
@@ -3601,7 +3603,7 @@ git commit -m "test(cli): uji end-to-end tiga pemilih di preview dengan bukti ta
 
 ## Selesai bila
 
-- Registry ter-deploy di preprod, alamatnya tercatat.
+- Registry ter-deploy di preview, alamatnya tercatat.
 - Satu ballot ter-deploy dengan tiga credential terdaftar dan tercatat di registry.
 - Uji end-to-end lulus: tiga suara masuk, tally kosong selama pemungutan suara, hasil akhir 2–0–1, ballot difinalisasi.
 - Tidak ada seed yang pernah muncul di repo, log, atau keluaran terminal.
@@ -3611,11 +3613,11 @@ git commit -m "test(cli): uji end-to-end tiga pemilih di preview dengan bukti ta
 | Risiko | Jalur mundur |
 |---|---|
 | Sinkronisasi wallet pertama sangat lama | Biarkan berjalan; cache per jaringan membuat sesi berikutnya cepat. Jangan tambal offset |
-| Bug SDK "Failed to clone intent" | Penandatanganan manual dengan penanda proof yang benar, seperti rujukan `api.ts` |
+| Bug SDK "Failed to clone intent" | **JANGAN salin `signTransactionIntents` dari repo rujukan.** Pada wallet-sdk-facade 4.0.1 yang terpasang ia tidak diperlukan *dan* tidak berfungsi: getter `tx.intents` mengembalikan `Map` baru setiap kali dipanggil, jadi `tx.intents.set(...)` tanpa menugaskan balik membuang seluruh tanda tangan yang dihitungnya. Bila galat ini muncul, laporkan apa adanya — jangan tambal. Lihat Task 4 dan catatan `wallet-bridge.ts` |
 | Password private state ditolak | Kebijakan: ≥16 karakter, tiga kelas karakter, tanpa empat berurutan/identik |
 | `ZKConfigurationReadError` | Periksa `zkConfigPath` memuat `keys/` dan `zkir/` |
 | Versi runtime tidak cocok | Naikkan ke versi yang disebut `contract-info.json` |
-| Endpoint preprod berbeda dari konstanta | Ambil dari wallet bila tersedia; konstanta hanya cadangan |
+| Endpoint jaringan berbeda dari konstanta | Ambil dari `getConfiguration()` wallet bila tersedia; konstanta di `config.ts` hanya cadangan |
 
 ## Rencana berikutnya
 

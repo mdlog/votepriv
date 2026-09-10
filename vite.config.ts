@@ -213,6 +213,15 @@ export default defineConfig(({ mode }) => {
   // operator server itu akan dapat melihat setiap suara.
   const proofServerTarget = env.VITE_PROOF_SERVER_URL || "http://127.0.0.1:6300";
 
+  // Vite menolak host yang tidak dikenal sebagai perlindungan DNS-rebinding, jadi
+  // setiap tunnel atau domain kustom harus disebutkan. Awalan titik mencakup seluruh
+  // subdomain. Daftar tambahan lewat env supaya tunnel berikutnya tidak menuntut
+  // perubahan kode.
+  const extraHosts = (env.VITE_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+
   return {
   plugins,
   resolve: {
@@ -238,8 +247,10 @@ export default defineConfig(({ mode }) => {
       ".manus-asia.computer",
       ".manuscomputer.ai",
       ".manusvm.computer",
+      ".mdloglabs.org",
       "localhost",
       "127.0.0.1",
+      ...extraHosts,
     ],
     fs: {
       strict: true,

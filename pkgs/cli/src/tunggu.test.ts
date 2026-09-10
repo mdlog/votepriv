@@ -1,6 +1,13 @@
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
-import { denganBatasWaktu, pastikan, ulangiSampai } from "./tunggu.ts";
+import {
+  cobaSampaiWaktuBlokCocok,
+  denganBatasWaktu,
+  pastikan,
+  POLA_BELUM_WAKTUNYA,
+  ringkasTallies,
+  ulangiSampai,
+} from "./tunggu.ts";
 
 // Logger palsu: uji ini tidak boleh menulis apa pun ke berkas log.
 const logPalsu = { info: () => {}, warn: () => {}, error: () => {} } as unknown as Logger;
@@ -113,5 +120,67 @@ describe("ulangiSampai", () => {
     expect(hasil.nilai).toBe(0n);
     expect(hasil.percobaan).toBe(4);
     expect(hasil.galatTerakhir).toBeUndefined();
+  });
+});
+
+describe("ringkasTallies", () => {
+  it("memetakan entri map tally ke array per opsi", () => {
+    expect(ringkasTallies([[0n, 2n], [2n, 1n]], 3)).toEqual([2n, 0n, 1n]);
+  });
+
+  it("mengembalikan seluruh nol untuk tally kosong", () => {
+    expect(ringkasTallies([], 3)).toEqual([0n, 0n, 0n]);
+  });
+
+  it("menolak opsi di luar rentang", () => {
+    expect(() => ringkasTallies([[7n, 1n]], 3)).toThrow(/di luar rentang/);
+  });
+});
+
+describe("POLA_BELUM_WAKTUNYA", () => {
+  it("cocok dua pesan 'belum waktunya' dan TIDAK cocok 'sudah lewat'", () => {
+    // Dua yang boleh diulang: waktu blok belum sampai, mencoba lagi masuk akal.
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Pemungutan suara masih berlangsung")).toBe(true);
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Batas waktu pembukaan suara belum lewat")).toBe(true);
+    // Yang TIDAK boleh diulang: jendelanya sudah tertutup, mengulang hanya
+    // membakar proof. Perhatikan "sudah" versus "belum".
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Batas waktu pembukaan suara sudah lewat")).toBe(false);
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Credential ini sudah dipakai memilih")).toBe(false);
+  });
+});
+
+describe("cobaSampaiWaktuBlokCocok", () => {
+  it("mengulang selama pesannya 'belum waktunya', lalu meneruskan hasil", async () => {
+    let ke = 0;
+    const hasil = await cobaSampaiWaktuBlokCocok(
+      async () => {
+        ke += 1;
+        if (ke < 3) throw new Error("failed assert: Pemungutan suara masih berlangsung");
+        return "dibuka";
+      },
+      logPalsu,
+      POLA_BELUM_WAKTUNYA,
+      5,
+      1,
+    );
+    expect(hasil).toBe("dibuka");
+    expect(ke).toBe(3);
+  });
+
+  it("meneruskan galat lain apa adanya tanpa satu pun pengulangan", async () => {
+    let ke = 0;
+    await expect(
+      cobaSampaiWaktuBlokCocok(
+        async () => {
+          ke += 1;
+          throw new Error("failed assert: Credential ini sudah dipakai memilih");
+        },
+        logPalsu,
+        POLA_BELUM_WAKTUNYA,
+        5,
+        1,
+      ),
+    ).rejects.toThrow(/sudah dipakai memilih/);
+    expect(ke).toBe(1);
   });
 });

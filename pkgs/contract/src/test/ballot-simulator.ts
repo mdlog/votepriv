@@ -23,7 +23,21 @@ import {
 export { BallotPhase, pureCircuits };
 export type { Ledger };
 
-const HARI = 24 * 60 * 60 * 1000;
+// Satu hari, dalam DETIK — bukan milidetik. Dikonfirmasi empiris pada Task 5:
+// parameter `time` pada createCircuitContext (lihat method `run` di bawah)
+// dipakai mentah sebagai `secondsSinceEpoch` tanpa skala apa pun (bukti:
+// @midnight-ntwrk/compact-runtime dist/circuit-context.js —
+// `secondsSinceEpoch: BigInt(time ?? Math.floor(Date.now() / 1_000))`; hanya
+// fallback Date.now() yang dibagi 1000, nilai `time` yang disuntikkan eksplisit
+// tidak). CallContext/BlockContext dari onchain-runtime-v3 juga mendeklarasikan
+// `secondsSinceEpoch: bigint` sebagai "the seconds since the UNIX epoch" — itu
+// konvensi node Midnight sungguhan, yang tidak bisa di-override di luar
+// simulator ini. Karena itu voteDeadline/tallyDeadline WAJIB dalam detik sejak
+// epoch Unix, bukan Date.now()-style milidetik, atau penegakan deadline akan
+// diam-diam tidak berfungsi saat dideploy sungguhan (nilai ms ≈ 1000× nilai
+// detik yang sebenarnya, sehingga blockTimeLessThan(voteDeadline) nyaris
+// selalu true).
+const HARI = 24 * 60 * 60;
 
 export type BallotOpts = {
   title?: string;
@@ -48,8 +62,11 @@ export class BallotSimulator {
   private readonly contractAddress = sampleContractAddress();
   private zswap: EncodedZswapLocalState;
   private state: ChargedState;
-  /** Waktu blok yang dilihat circuit; dirangkai ke context pada Task 5. */
-  private blockTime: bigint = BigInt(Date.now());
+  /**
+   * Waktu blok yang dilihat circuit, dalam DETIK sejak epoch Unix (lihat
+   * catatan pada `HARI` di atas). Dirangkai ke context lewat method `run`.
+   */
+  private blockTime: bigint = BigInt(Math.floor(Date.now() / 1000));
   readonly adminSecretKey: Uint8Array;
   readonly ballotNonce: Uint8Array;
 
@@ -75,8 +92,8 @@ export class BallotSimulator {
       options[2] ?? "",
       options[3] ?? "",
       BigInt(options.length),
-      opts.voteDeadline ?? BigInt(Date.now() + 7 * HARI),
-      opts.tallyDeadline ?? BigInt(Date.now() + 14 * HARI),
+      opts.voteDeadline ?? BigInt(Math.floor(Date.now() / 1000) + 7 * HARI),
+      opts.tallyDeadline ?? BigInt(Math.floor(Date.now() / 1000) + 14 * HARI),
       BigInt(opts.quorumPercent ?? 50),
       BigInt(opts.eligibleCount ?? 8),
       opts.eligibilityPolicy ?? "Kebijakan uji",
@@ -106,6 +123,9 @@ export class BallotSimulator {
       this.zswap,
       this.state,
       privateState,
+      undefined, // gasLimit — pakai default runtime
+      undefined, // costModel — pakai default runtime
+      Number(this.blockTime), // waktu blok, DETIK sejak epoch (Task 5)
     );
     const result = jalankan(ctx);
     this.state = result.context.currentQueryContext.state;
@@ -115,9 +135,14 @@ export class BallotSimulator {
     return ledger(this.state);
   }
 
-  /** Menyetel waktu blok yang dilihat circuit. */
-  setBlockTime(ms: bigint): void {
-    this.blockTime = ms;
+  /**
+   * Menyetel waktu blok yang dilihat circuit, dalam DETIK sejak epoch Unix
+   * (bukan milidetik — lihat catatan pada `HARI`). Sebelum Task 5 method ini
+   * tidak berefek apa pun; sejak Task 5 nilainya dirangkai ke
+   * createCircuitContext lewat method `run`.
+   */
+  setBlockTime(seconds: bigint): void {
+    this.blockTime = seconds;
   }
 
   /** Memajukan waktu melewati voteDeadline, sehingga pembukaan suara boleh dimulai. */

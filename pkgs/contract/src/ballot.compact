@@ -161,6 +161,7 @@ export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
 // mutasi ledger apa pun, sehingga tidak ada state yang berubah sebagian saat
 // sebuah assert gagal.
 export circuit castVote(): [] {
+  assert(kernel.blockTimeLessThan(voteDeadline), "Batas waktu pemungutan suara sudah lewat");
   assert(phase == BallotPhase.voting, "Ballot tidak sedang menerima suara");
 
   const cred = voter_credential();

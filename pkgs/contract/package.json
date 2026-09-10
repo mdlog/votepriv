@@ -1,0 +1,31 @@
+{
+  "name": "contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "compact": "compact compile src/registry.compact src/managed/registry && compact compile src/ballot.compact src/managed/ballot",
+    "compact:registry": "compact compile src/registry.compact src/managed/registry",
+    "compact:ballot": "compact compile src/ballot.compact src/managed/ballot",
+    "build": "rm -rf dist && tsc --project tsconfig.json && cp -Rf ./src/managed ./dist/managed",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/midnight-js-network-id": "4.0.4",
+    "typescript": "5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

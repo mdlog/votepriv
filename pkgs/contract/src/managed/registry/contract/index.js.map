@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.js",
+  "sourceRoot": "../../../../",
+  "sources": ["src/registry.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MAUA,AAAA,QAGC;;;;;cAHuB,MAAsB;;;;;;;;;;;yCAAtB,MAAsB;;;;;;;qEAAtB,MAAsB;;;OAG7C;;;;GACA;EAdD;;;;;;;;;;;;;;;;;;;;;;;;;;;IAKA;;;;;;;;;;;yEAA8C;IAC9C;;;;;;;;;yEAA+B;;;;;;;GAQ9B;EAJD,AAAA,WAGC,4BAHuB,MAAsB;IAC5C;;;;;;;;;;;;;;;;;;;wIAA2B,MAAI;;;;;;;;;;;;;;wEAAxB;UACP,KAAK;IAAL;;;;;;;;;;6FAAA,KAAK;;;;wEAAA;;GACN;;;;;;;;;;;;;;;;IARD;;;;;uCAAA;;;;;;;;;;;;;;;;;;;;;;4GAA8C;;;;;;uCAA9C;;;;;;;;;;;;;;;;;4GAA8C;;;;;;uCAA9C;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;4GAA8C;;;;;;;;;KAAA;IAC9C;qCAAA;;;;;;;;;;;0GAA+B;KAAA;;;;;;;;;;"
+}

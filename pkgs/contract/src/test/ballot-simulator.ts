@@ -129,4 +129,29 @@ export class BallotSimulator {
   majuKeFaseFinal(): void {
     this.setBlockTime(this.getLedger().tallyDeadline + 1n);
   }
+
+  /**
+   * Mendaftarkan sampai 8 credential sekaligus.
+   * `sebagai` menentukan secret key pemanggil — default admin.
+   */
+  registerVoters(creds: Uint8Array[], sebagai?: Uint8Array): Ledger {
+    if (creds.length < 1 || creds.length > 8) {
+      throw new Error("registerVoters menerima 1..8 credential");
+    }
+    const daun: Uint8Array[] = Array.from({ length: 8 }, (_, i) =>
+      i < creds.length ? pureCircuits.cred_leaf(creds[i]) : new Uint8Array(32),
+    );
+    const ps = emptyBallotPrivateState(sebagai ?? this.adminSecretKey);
+    return this.run(
+      (ctx) =>
+        this.contract.impureCircuits.registerVoters(
+          ctx,
+          daun as unknown as Parameters<
+            typeof this.contract.impureCircuits.registerVoters
+          >[1],
+          BigInt(creds.length),
+        ),
+      ps,
+    );
+  }
 }

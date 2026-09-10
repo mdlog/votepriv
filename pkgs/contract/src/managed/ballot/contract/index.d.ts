@@ -7,9 +7,15 @@ export type Witnesses<PS> = {
 }
 
 export type ImpureCircuits<PS> = {
+  registerVoters(context: __compactRuntime.CircuitContext<PS>,
+                 leaves_0: Uint8Array[],
+                 n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
+  registerVoters(context: __compactRuntime.CircuitContext<PS>,
+                 leaves_0: Uint8Array[],
+                 n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
@@ -31,6 +37,9 @@ export type Circuits<PS> = {
                   salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
   tally_nullifier(context: __compactRuntime.CircuitContext<PS>,
                   salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  registerVoters(context: __compactRuntime.CircuitContext<PS>,
+                 leaves_0: Uint8Array[],
+                 n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {
@@ -50,6 +59,17 @@ export type Ledger = {
   readonly adminKey: Uint8Array;
   readonly ballotNonce: Uint8Array;
   readonly phase: BallotPhase;
+  eligibility: {
+    isFull(): boolean;
+    checkRoot(rt_0: { field: bigint }): boolean;
+    root(): __compactRuntime.MerkleTreeDigest;
+    firstFree(): bigint;
+    pathForLeaf(index_0: bigint, leaf_0: Uint8Array): __compactRuntime.MerkleTreePath<Uint8Array>;
+    findPathForLeaf(leaf_0: Uint8Array): __compactRuntime.MerkleTreePath<Uint8Array> | undefined;
+    history(): Iterator<__compactRuntime.MerkleTreeDigest>
+  };
+  readonly voteCount: bigint;
+  readonly registeredCount: bigint;
 }
 
 export type ContractReferenceLocations = any;

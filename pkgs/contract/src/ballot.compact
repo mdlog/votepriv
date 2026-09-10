@@ -23,6 +23,23 @@ export sealed ledger ballotNonce:       Bytes<32>;
 
 export ledger phase: BallotPhase;
 
+// ── Eligibility ──────────────────────────────────────────────────────────
+// HistoricMerkleTree, bukan MerkleTree: bila admin mendaftarkan voter dalam
+// beberapa batch, root berubah di antara batch. checkRoot() menerima root lama
+// sehingga path yang sudah disusun voter tetap sah.
+export ledger eligibility: HistoricMerkleTree<10, Bytes<32>>;
+
+// ── Fase vote ────────────────────────────────────────────────────────────
+export ledger voteCount: Counter;
+
+// Jumlah credential yang sudah diterbitkan. HistoricMerkleTree tidak mengekspos
+// firstFree()/size() ke dalam circuit (keduanya runtime-only pada compactc
+// 0.31.1) sehingga batas eligibleCount ditegakkan lewat Counter paralel ini,
+// yang selalu bertambah persis sebanyak leaf yang di-insert pada transaksi
+// yang sama. Nilainya publik, sehingga jumlah credential yang diterbitkan
+// tetap dapat diaudit siapa pun lewat ledger ini.
+export ledger registeredCount: Counter;
+
 witness admin_secret_key(): Bytes<32>;
 
 // ── Hash berpemisah domain ───────────────────────────────────────────────
@@ -86,4 +103,34 @@ constructor(
   ballotNonce       = disclose(nonce);
   adminKey          = disclose(admin_pk(admin_secret_key()));
   phase             = BallotPhase.voting;
+}
+
+// Khusus admin. Menutup sendiri begitu suara pertama masuk, sehingga daftar
+// pemilih tidak dapat berubah di tengah pemungutan suara.
+export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
+  assert(disclose(admin_pk(admin_secret_key()) == adminKey), "Hanya admin yang boleh mendaftarkan pemilih");
+  assert(phase == BallotPhase.voting, "Ballot sudah tidak dalam fase pemungutan suara");
+  assert(voteCount.read() == 0, "Pendaftaran ditutup setelah suara pertama masuk");
+  assert(n >= 1 && n <= 8, "Jumlah pendaftaran harus 1 sampai 8");
+
+  // registeredCount bersifat publik, jadi siapa pun dapat memeriksa jumlah
+  // credential yang benar-benar diterbitkan terhadap eligibleCount yang di-seal.
+  const terpakai = registeredCount.read();
+  assert(terpakai + (n as Uint<64>) <= eligibleCount, "Melebihi eligibleCount yang ditetapkan ballot");
+
+  // Diurai manual, bukan for-loop, agar tidak bergantung pada sintaks perulangan.
+  // Kondisi tiap cabang di-disclose karena keputusan meng-insert atau tidak
+  // itu sendiri adalah operasi ledger bersyarat — compactc 0.31.1 mewajibkan
+  // pengungkapan eksplisit untuk boolean apa pun yang menentukan apakah
+  // sebuah operasi ledger dijalankan.
+  if (disclose(n > 0)) { eligibility.insert(disclose(leaves[0])); }
+  if (disclose(n > 1)) { eligibility.insert(disclose(leaves[1])); }
+  if (disclose(n > 2)) { eligibility.insert(disclose(leaves[2])); }
+  if (disclose(n > 3)) { eligibility.insert(disclose(leaves[3])); }
+  if (disclose(n > 4)) { eligibility.insert(disclose(leaves[4])); }
+  if (disclose(n > 5)) { eligibility.insert(disclose(leaves[5])); }
+  if (disclose(n > 6)) { eligibility.insert(disclose(leaves[6])); }
+  if (disclose(n > 7)) { eligibility.insert(disclose(leaves[7])); }
+
+  registeredCount.increment(disclose(n as Uint<16>));
 }

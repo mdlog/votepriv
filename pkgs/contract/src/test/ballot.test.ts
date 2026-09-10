@@ -72,3 +72,39 @@ describe("ballot.compact — pure circuit hash", () => {
     );
   });
 });
+
+describe("ballot.compact — pendaftaran eligibility", () => {
+  const CRED_A = bytes32(0x11);
+  const CRED_B = bytes32(0x22);
+  const CRED_C = bytes32(0x33);
+
+  it("admin dapat mendaftarkan voter", () => {
+    const sim = new BallotSimulator({ eligibleCount: 8 });
+    sim.registerVoters([CRED_A, CRED_B]);
+    expect(sim.getLedger().eligibility.firstFree()).toBe(2n);
+  });
+
+  it("pendaftaran dapat dilakukan bertahap", () => {
+    const sim = new BallotSimulator({ eligibleCount: 8 });
+    sim.registerVoters([CRED_A]);
+    sim.registerVoters([CRED_B, CRED_C]);
+    expect(sim.getLedger().eligibility.firstFree()).toBe(3n);
+  });
+
+  it("bukan admin ditolak", () => {
+    const sim = new BallotSimulator({ eligibleCount: 8 });
+    expect(() => sim.registerVoters([CRED_A], bytes32(0xee))).toThrow();
+  });
+
+  it("melebihi eligibleCount ditolak", () => {
+    const sim = new BallotSimulator({ eligibleCount: 2 });
+    sim.registerVoters([CRED_A, CRED_B]);
+    expect(() => sim.registerVoters([CRED_C])).toThrow();
+  });
+
+  it("eligibleCount ditegakkan lintas beberapa batch", () => {
+    const sim = new BallotSimulator({ eligibleCount: 3 });
+    sim.registerVoters([CRED_A, CRED_B]);
+    expect(() => sim.registerVoters([CRED_C, bytes32(0x44)])).toThrow();
+  });
+});

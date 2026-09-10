@@ -38,3 +38,23 @@ export class PreprodConfig implements Config {
     setNetworkId("preprod");
   }
 }
+
+/**
+ * Ditambahkan sebagai alat diagnostik spike Task 3 (lihat task-3-report.md,
+ * bagian "Uji jaringan preview") — BUKAN bagian dari lingkup Task 3 yang
+ * diminta brief (yang menargetkan preprod). Dipertahankan karena berguna
+ * untuk membedakan hazard yang spesifik-preprod dari hazard yang ada di
+ * semua jaringan publik Midnight dengan SDK versi yang sama.
+ */
+export class PreviewConfig implements Config {
+  networkId = "preview";
+  logDir = logDirUntuk("preview");
+  indexer = MIDNIGHT_NETWORK_ENDPOINTS.preview.indexer;
+  indexerWS = MIDNIGHT_NETWORK_ENDPOINTS.preview.indexerWS;
+  node = MIDNIGHT_NETWORK_ENDPOINTS.preview.node;
+  proofServer = DEFAULT_PROOF_SERVER_URL;
+
+  constructor() {
+    setNetworkId("preview");
+  }
+}

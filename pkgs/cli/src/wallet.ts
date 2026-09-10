@@ -10,13 +10,13 @@ import fs from "node:fs";
 import path from "node:path";
 import * as ledger from "@midnight-ntwrk/ledger-v8";
 import { getNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
+import { NoOpTransactionHistoryStorage } from "@midnight-ntwrk/wallet-sdk-abstractions";
 import { DustWallet } from "@midnight-ntwrk/wallet-sdk-dust-wallet";
 import { WalletFacade } from "@midnight-ntwrk/wallet-sdk-facade";
 import { HDWallet, Roles } from "@midnight-ntwrk/wallet-sdk-hd";
 import { ShieldedWallet } from "@midnight-ntwrk/wallet-sdk-shielded";
 import {
   createKeystore,
-  InMemoryTransactionHistoryStorage,
   PublicKey,
   type UnshieldedKeystore,
   UnshieldedWallet,
@@ -59,13 +59,14 @@ const buildShieldedConfig = ({ indexer, indexerWS, node, proofServer }: Config) 
     indexerWsUrl: indexerWS,
     keepAlive: 0,
   },
-  // batchSize bawaan 10 memberi overhead penjadwalan ~80 menit di preprod
-  // (1.2 juta indeks / 10 × 4ms). 1000 menurunkannya jadi hitungan detik.
-  // (Diuji juga batchSize=100 saat menyelidiki kemacetan sinkronisasi di
-  // sekitar indeks ~1.5 juta — lihat task-3-report.md; kemacetannya sama
-  // persis terlepas dari batchSize, jadi dikembalikan ke 1000 karena tidak
-  // ada alasan menyimpang dari rujukan pada parameter ini.)
-  batchSize: 1000,
+  // wallet-sdk-shielded@2.x menerima batchSize:number datar. @3.0.1 mengganti
+  // bentuknya jadi batchUpdates:{size,timeout,spacing} (lihat dist/v1/Sync.js:
+  // `config.batchUpdates?.size ?? 10`, `?.timeout ?? 1`, `?.spacing ?? 4`) —
+  // field batchSize lama sudah TIDAK dibaca sama sekali oleh engine baru,
+  // sehingga diam-diam jatuh ke default size=10/spacing=4ms (persis skenario
+  // "~80 menit overhead" yang disebut komentar lama). size besar + spacing 0
+  // meniru maksud rujukan aslinya pada engine sync berbasis stream yang baru.
+  batchUpdates: { size: 1000, timeout: 50, spacing: 0 },
   provingServerUrl: new URL(proofServer),
   relayURL: new URL(node.replace(/^http/, "ws")),
 });
@@ -77,7 +78,11 @@ const buildUnshieldedConfig = ({ indexer, indexerWS }: Config) => ({
     indexerWsUrl: indexerWS,
     keepAlive: 0,
   },
-  txHistoryStorage: new InMemoryTransactionHistoryStorage(),
+  // wallet-sdk-unshielded-wallet@3.x memindahkan storage ke wallet-sdk-abstractions
+  // dan mengubah InMemoryTransactionHistoryStorage jadi butuh Schema eksplisit.
+  // Kita tidak pernah membaca riwayat transaksi (hanya saldo), jadi NoOp cukup
+  // dan tetap memenuhi interface TransactionHistoryStorage yang diwajibkan config.
+  txHistoryStorage: new NoOpTransactionHistoryStorage(),
 });
 
 const buildDustConfig = ({ indexer, indexerWS, node, proofServer }: Config) => ({
@@ -91,6 +96,9 @@ const buildDustConfig = ({ indexer, indexerWS, node, proofServer }: Config) => (
     indexerWsUrl: indexerWS,
     keepAlive: 0,
   },
+  // wallet-sdk-dust-wallet@4.1.0 memakai bentuk batchUpdates yang sama dengan
+  // wallet-sdk-shielded@3.0.1 (lihat komentar di buildShieldedConfig).
+  batchUpdates: { size: 1000, timeout: 50, spacing: 0 },
   provingServerUrl: new URL(proofServer),
   relayURL: new URL(node.replace(/^http/, "ws")),
 });
@@ -256,7 +264,7 @@ export async function ringkasSaldo(
 ): Promise<{ night: bigint; dust: bigint; alamatUnshielded: string }> {
   const mulai = Date.now();
   log.info(
-    "Menunggu sinkronisasi wallet dengan jaringan preprod (sinkronisasi pertama memindai dari genesis dan bisa memakan waktu lama; jangan diinterupsi)",
+    `Menunggu sinkronisasi wallet dengan jaringan ${getNetworkId()} (sinkronisasi pertama memindai dari genesis dan bisa memakan waktu lama; jangan diinterupsi)`,
   );
 
   const heartbeat = ctx.wallet.state().pipe(Rx.throttleTime(15_000)).subscribe((s) => {

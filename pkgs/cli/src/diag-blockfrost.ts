@@ -19,6 +19,7 @@ import path from "node:path";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { DEFAULT_PROOF_SERVER_URL } from "shared";
 import { caraTurunanDariArgv } from "./args.ts";
+import { hentikanWallet } from "./bootstrap.ts";
 import { currentDir, type Config } from "./config.ts";
 import { buatLogger } from "./logger.ts";
 import { bacaSeed } from "./seed.ts";
@@ -54,4 +55,12 @@ log.info(
   { alamat: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
   "Wallet tersinkronisasi (diagnostik blockfrost)",
 );
+
+// Fix seam Task 6/7: sebelumnya berkas ini exit(0) langsung tanpa menutup
+// wallet — ketiga sub-wallet dan WebSocket-nya ke blockfrost.lw.iog.io
+// dibiarkan terbuka, dan checkpoint sinkronisasi (yang mahal untuk diagnostik
+// preprod ini — lihat catatan kemacetan di kepala berkas) tidak pernah
+// tersimpan ulang di akhir sesi. Sama seperti preview.ts/preprod.ts
+// (./cek-jaringan.ts), tutup dengan tertib sebelum keluar.
+await hentikanWallet(ctx, log);
 process.exit(0);

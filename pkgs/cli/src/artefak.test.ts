@@ -49,4 +49,58 @@ describe("tulisArtefak", () => {
     expect(fs.existsSync(dir)).toBe(true);
     expect(bacaArtefak("preview", dir)?.registry).toBe("cc".repeat(32));
   });
+
+  // Regresi Fix 1 (ronde review seluruh cabang): sebelum ArtefakDeploy.e2e
+  // ada, deploy-ballot.ts dan e2e.ts menulis ballot/voteDeadline/
+  // tallyDeadline/options/credentials ke field TOP-LEVEL YANG SAMA.
+  // tulisArtefak menggabungkan per-PANGGILAN (spread objek), bukan per-
+  // field secara cerdas, jadi panggilan kedua menimpa kelima field itu
+  // sekaligus — menjalankan `pnpm cli e2e` setelah `pnpm cli deploy-ballot`
+  // menghancurkan ballot yang deploy-ballot sudah bayar dan daftarkan tiga
+  // pemilihnya, karena credential-nya HANYA hidup di berkas artefak ini.
+  it("field ballot e2e (di bawah `e2e`) tidak pernah menimpa field ballot top-level milik deploy-ballot, atau sebaliknya", () => {
+    const dir = dirSementara();
+
+    // Urutan operasi sungguhan: `pnpm cli deploy-ballot` dulu, lalu `pnpm cli e2e`.
+    tulisArtefak(
+      "preview",
+      {
+        ballot: "bb".repeat(32),
+        voteDeadline: "1000",
+        tallyDeadline: "2000",
+        options: ["opsi deploy-ballot A", "opsi deploy-ballot B"],
+        credentials: ["c1".repeat(32), "c2".repeat(32), "c3".repeat(32)],
+      },
+      dir,
+    );
+    tulisArtefak(
+      "preview",
+      {
+        e2e: {
+          ballot: "ee".repeat(32),
+          voteDeadline: "9000",
+          tallyDeadline: "9500",
+          options: ["opsi e2e A", "opsi e2e B", "opsi e2e C"],
+          credentials: ["d1".repeat(32), "d2".repeat(32), "d3".repeat(32)],
+        },
+      },
+      dir,
+    );
+
+    const hasil = bacaArtefak("preview", dir);
+
+    // Milik deploy-ballot (top-level) HARUS TETAP seperti panggilan pertama.
+    expect(hasil?.ballot).toBe("bb".repeat(32));
+    expect(hasil?.voteDeadline).toBe("1000");
+    expect(hasil?.tallyDeadline).toBe("2000");
+    expect(hasil?.options).toEqual(["opsi deploy-ballot A", "opsi deploy-ballot B"]);
+    expect(hasil?.credentials).toEqual(["c1".repeat(32), "c2".repeat(32), "c3".repeat(32)]);
+
+    // Milik e2e tersimpan UTUH di namespace-nya sendiri.
+    expect(hasil?.e2e?.ballot).toBe("ee".repeat(32));
+    expect(hasil?.e2e?.voteDeadline).toBe("9000");
+    expect(hasil?.e2e?.tallyDeadline).toBe("9500");
+    expect(hasil?.e2e?.options).toEqual(["opsi e2e A", "opsi e2e B", "opsi e2e C"]);
+    expect(hasil?.e2e?.credentials).toEqual(["d1".repeat(32), "d2".repeat(32), "d3".repeat(32)]);
+  });
 });

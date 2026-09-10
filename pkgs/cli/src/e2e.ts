@@ -17,11 +17,16 @@
 // sendiri. Jendela pembukaan suara (MENIT_TALLY-MENIT_VOTE) tetap 35 menit
 // persis seperti semula; hanya total run yang lebih panjang.
 //
-// SEBELAS TRANSAKSI, masing-masing dengan proof ZK sungguhan 5-20 detik plus
-// finalisasi node dan indexer: deploy registry, deploy ballot, registerVoters,
-// register ke registry, 3x castVote, 3x tallyVote, finalize. Setiap await ke
-// jaringan dibungkus denganBatasWaktu, jadi jeda panjang berakhir dengan pesan
-// dan bukan dengan diam tak berujung.
+// SEPULUH ATAU SEBELAS TRANSAKSI, masing-masing dengan proof ZK sungguhan
+// 5-20 detik plus finalisasi node dan indexer: deploy ballot, registerVoters,
+// register ke registry, 3x castVote, 3x tallyVote, finalize — SEPULUH
+// transaksi bila registry sudah tercatat di artefak dari sesi sebelumnya
+// (bagian 1 memakai ulang, TIDAK men-deploy lagi), SEBELAS bila belum (bagian
+// 1 turut men-deploy registry BARU). Pada urutan yang didokumentasikan di
+// rencana ini — `deploy-registry` dijalankan lebih dulu — registry sudah ada,
+// jadi run ini menandatangani SEPULUH. Setiap await ke jaringan dibungkus
+// denganBatasWaktu, jadi jeda panjang berakhir dengan pesan dan bukan dengan
+// diam tak berujung.
 //
 // SATU PEMILIH SATU STORE. Private state VotePriv berbentuk
 // Record<alamatBallot, ...>, bukan Record<pemilih, ...> — midnight-js membaca
@@ -71,6 +76,7 @@ import {
   temukanRegistry,
   type HasilDeployRegistry,
 } from "./deploy.ts";
+import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
 import type { BallotC } from "./kontrak.ts";
 import { periksaFaseTerfinalisasi, periksaHasilTallyAkhir, periksaTallyKosongSelamaVoting } from "./periksa.ts";
 import { rakitProvidersBallot, rakitProvidersRegistry, type ProvidersBallot } from "./providers.ts";
@@ -91,9 +97,11 @@ const JUMLAH_PEMILIH = PILIHAN.length;
 // angka-angka ini tanpa menghitung ulang tabel itu — dan lihat komentar di
 // atas SISA_MINIMAL_VOTE di bawah: sejak Fix Round 3, MENIT_VOTE/MENIT_TALLY
 // dan kedua guard SISA_MINIMAL_* terikat satu invarian bersama, bukan lagi
-// angka independen.
-const MENIT_VOTE = 60;
-const MENIT_TALLY = 95;
+// angka independen. MENIT_VOTE/MENIT_TALLY sendiri sekarang diimpor dari
+// ./jadwal.ts (fix seam Task 6/7): sebelumnya berkas ini punya salinan
+// sendiri yang diam-diam menyimpang dari salinan deploy-ballot.ts (45/80 di
+// sana, 60/95 di sini) sejak commit e545d61 menaikkan angka DI SINI SAJA.
+// Menyatukannya membuat penyimpangan itu tidak mungkin lagi terjadi.
 /**
  * Cukup untuk SATU iterasi loop coblos: pembacaan eligibility path (dengan
  * retry, lihat bagian 5) + temukanBallot + castVote.
@@ -204,42 +212,62 @@ const SISA_MINIMAL_VOTE = 900;
  * sebelumnya) — dipilih TIDAK membiarkan jendela ini menyempit, justru
  * MENIT_TALLY dinaikkan bersamaan dengan MENIT_VOTE untuk menjaganya.
  *
- * BERBEDA dari SISA_MINIMAL_VOTE: retry loop di sini (cobaSampaiWaktuBlokCocok,
- * dipandu POLA_BELUM_WAKTUNYA) TIDAK punya kerentanan yang sama. Pesan yang
- * membuatnya mengulang adalah kegagalan ASSERT LOKAL (dibuktikan Step 1:
- * gagal saat eksekusi circuit, sebelum proof, sebelum submitTx) — cepat,
- * tanpa panggilan jaringan sungguhan — bukan pembacaan indexer yang bisa
- * menggantung sampai BATAS_MS.bacaIndexer (60 detik) per percobaan seperti
- * retry eligibility path. Jadi biaya TERUKUR/EKSPEKTASI di sini (bukan
- * biaya terburuk mutlak) tetap basis yang tepat, konsisten dengan bagaimana
- * tabel Step 5 sendiri menabelkan castVote.
+ * BERBEDA dari SISA_MINIMAL_VOTE pada SATU hal: retry loop di sini
+ * (cobaSampaiWaktuBlokCocok, dipandu POLA_BELUM_WAKTUNYA) TIDAK punya
+ * kerentanan yang sama. Pesan yang membuatnya mengulang adalah kegagalan
+ * ASSERT LOKAL (dibuktikan Step 1: gagal saat eksekusi circuit, sebelum
+ * proof, sebelum submitTx) — cepat, tanpa panggilan jaringan sungguhan.
+ * Jeda-ulangnya karena itu TETAP ditabelkan pada biaya EKSPEKTASI (5 x 20
+ * detik), bukan pada BATAS_MS apa pun — tidak ada BATAS_MS untuk dilewati,
+ * jeda itu literal `setTimeout` di antara percobaan.
  *
- * Biaya terukur satu iterasi (dari tabel Step 5, tidak berubah oleh Fix
- * Round 3): bacaLedgerBallot 12 + tallyVote 150 + jeda-ulang
- * cobaSampaiWaktuBlokCocok (maks 6 PERCOBAAN — jeda hanya terjadi SETELAH
- * percobaan yang gagal dan SEBELUM percobaan berikutnya, jadi 6 percobaan
- * berarti PALING BANYAK 5 jeda, bukan 6 — fencepost yang sama seperti
- * retry eligibility path di atas: 5 x 20 = 100, BUKAN 6 x 20 = 120,
- * dikoreksi Fix Round 4) 100 = 262 detik — arah koreksinya membuat angka
- * ini LEBIH kecil dari sebelumnya (kurang konservatif secara nominal, tapi
- * sebelumnya bukan berarti tidak aman: 282 > 262 berarti versi lama
- * OVERESTIMATE biaya, bukan underestimate — jadi guard 300 sudah aman
- * sebelum maupun sesudah koreksi ini). Margin terhadap guard 300 pada level
- * KOMPONEN: 38 detik (naik dari klaim lama 18 detik yang keliru hitung).
+ * TAPI (koreksi Fix Round 5 — review cabang penuh menemukan `bacaLedgerBallot`
+ * di bagian 8 DILEWATKAN dari penerapan basis biaya yang sama dengan
+ * SISA_MINIMAL_VOTE): baris `bacaLedgerBallot` tepat di bawah SEBELUM
+ * `cobaSampaiWaktuBlokCocok` ADALAH pembacaan indexer — dipanggil TELANJANG,
+ * TANPA ulangiSampai, dan `bacaLedgerBallot` sendiri membungkus queryContractState
+ * dengan `denganBatasWaktu(..., BATAS_MS.bacaIndexer, ...)` (deploy.ts).
+ * Basis yang dinyatakan Fix Round 4 (indexer dicoba pada batas timeout-nya,
+ * proof+transaksi pada biaya terukur) karena itu WAJIB berlaku di sini juga:
+ * pembacaan ini ditabelkan pada BATAS_MS.bacaIndexer (60 detik), BUKAN pada
+ * biaya terukur khasnya (~12 detik) seperti draf sebelum perbaikan ini.
+ *
+ * Komponen satu iterasi, pada basis yang benar:
+ *   - bacaLedgerBallot (basis timeout, BATAS_MS.bacaIndexer)         : 60 detik
+ *   - jeda-ulang cobaSampaiWaktuBlokCocok (maks 6 PERCOBAAN — jeda hanya
+ *     terjadi SETELAH percobaan yang gagal dan SEBELUM percobaan
+ *     berikutnya, jadi 6 percobaan berarti PALING BANYAK 5 jeda: 5 x 20)  : 100 detik
+ *   - tallyVote (biaya TERUKUR, bukan BATAS_MS.panggilBerat — alasan sama
+ *     seperti castVote di SISA_MINIMAL_VOTE)                          : 150 detik
+ *   TOTAL                                                              = 310 detik
+ *
+ * Guard LAMA (300) berada DI BAWAH 310 — undersized pada basis yang benar,
+ * meski dengan margin sempit (10 detik) dan pada komponen yang jarang
+ * benar-benar mencapai batas timeout-nya sekaligus. Guard disetel ulang ke
+ * 360 detik: 310 dibulatkan ke atas + margin 50 detik (gaya sama seperti
+ * SISA_MINIMAL_VOTE: hitung komponen pada basis yang dinyatakan, bulatkan ke
+ * atas dengan margin eksplisit).
  *
  * VERIFIKASI ULANG pada level JENDELA (35 menit = 2100 detik, TIDAK
- * berubah): buffer tungguSampaiDetik (~60 detik) dikonsumsi lebih dulu,
- * sisa 2100-60=2040 detik di awal loop.
- *   iterasi ke-0: sisa 2040 > 300 (margin 1740); konsumsi ~262 -> sisa 1778
- *   iterasi ke-1: sisa 1778 > 300 (margin 1478); konsumsi ~262 -> sisa 1516
- *   iterasi ke-2: sisa 1516 > 300 (margin 1216); konsumsi ~262 -> sisa
- *     AKHIR ~1254 detik (~20,9 menit — cocok dengan "Sisa ~20 menit" di
- *     rencana Task 6 Step 5, tidak terganggu oleh kenaikan MENIT_VOTE).
- * Guard 300 TETAP AMAN: margin terketat (1216 detik sebelum pemilih
- * terakhir) jauh di atas nol dan sama sekali tidak menyempit dibanding
- * sebelum Fix Round 3, karena jendela 35 menitnya sendiri dijaga tetap sama.
+ * berubah), dirantai PENUH pada basis TERBURUK yang sama seperti komponen di
+ * atas (konsisten dengan cara SISA_MINIMAL_VOTE memverifikasi jendelanya —
+ * bukan lagi memakai angka "ekspektasi" terpisah dari guard seperti draf
+ * sebelum perbaikan ini): buffer tungguSampaiDetik (~60 detik) dikonsumsi
+ * lebih dulu, sisa 2100-60=2040 detik di awal loop.
+ *   iterasi ke-0: sisa 2040 > 360 (margin 1680); konsumsi 310 -> sisa 1730
+ *   iterasi ke-1: sisa 1730 > 360 (margin 1370); konsumsi 310 -> sisa 1420
+ *   iterasi ke-2: sisa 1420 > 360 (margin 1060); konsumsi 310 -> sisa
+ *     AKHIR 1110 detik (~18,5 menit — sedikit lebih kecil dari "~20 menit"
+ *     di rencana Task 6 Step 5 karena Step 5 memakai biaya bacaLedgerBallot
+ *     terukur, bukan basis timeout; selisihnya kecil dan TIDAK mengubah
+ *     kesimpulan Step 5).
+ * Guard 360 AMAN: margin terketat (1060 detik sebelum pemilih terakhir) jauh
+ * di atas nol. Jendela ini punya banyak selisih (slack) — perbaikan ini
+ * bukan untuk kegagalan yang pernah atau hampir terjadi, melainkan supaya
+ * aritmetika anggaran di sini konsisten dengan basis yang sama yang
+ * dipakai SISA_MINIMAL_VOTE, bukan basis yang diam-diam berbeda.
  */
-const SISA_MINIMAL_TALLY = 300;
+const SISA_MINIMAL_TALLY = 360;
 
 const sesi = await siapkanSesi();
 const { config, log, ctx, kp } = sesi;
@@ -291,12 +319,21 @@ try {
     log,
     JUMLAH_PEMILIH,
   );
+  // Fix seam Task 6/7: DI BAWAH KUNCI `e2e`, bukan di top level. Top-level
+  // ballot/voteDeadline/tallyDeadline/options/credentials adalah milik
+  // `deploy-ballot.ts` SEPENUHNYA (lihat ArtefakDeploy di artefak.ts) — bila
+  // e2e menulis ke sana, ballot yang deploy-ballot sudah bayar dan daftarkan
+  // tiga pemilihnya tertimpa dan credential-nya (yang HANYA hidup di berkas
+  // ini) hilang selamanya. e2e men-deploy ballotnya SENDIRI (baris di atas),
+  // jadi ia mencatat hasilnya di namespace sendiri pula.
   tulisArtefak(config.networkId, {
-    ballot: alamatBallot,
-    voteDeadline: metadata.voteDeadline.toString(),
-    tallyDeadline: metadata.tallyDeadline.toString(),
-    options: metadata.options,
-    credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
+    e2e: {
+      ballot: alamatBallot,
+      voteDeadline: metadata.voteDeadline.toString(),
+      tallyDeadline: metadata.tallyDeadline.toString(),
+      options: metadata.options,
+      credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
+    },
   });
 
   // ── 3. Pendaftaran pemilih (harus SEBELUM suara pertama) ────────────────────
@@ -396,8 +433,9 @@ try {
   // tally parsial pernah muncul di chain selama voting berlangsung — itu
   // klaim privasi yang nyata dan berharga. Blok ini TIDAK membuktikan bahwa
   // pilihan seorang pemilih tak bisa dikaitkan dengan pemiliknya: uji ini
-  // memakai SATU wallet untuk seluruh sebelas transaksi, dan urutan indeks
-  // castVote/tallyVote yang identik antar pemilih (pemilih-0..2, berurutan)
+  // memakai SATU wallet untuk seluruh sepuluh atau sebelas transaksi (lihat
+  // komentar kepala berkas), dan urutan indeks castVote/tallyVote yang
+  // identik antar pemilih (pemilih-0..2, berurutan)
   // membuat korelasi indeks-ke-indeks memulihkan pasangan pemilih-opsi
   // dengan mudah. Itu desain sengaja untuk uji sintetis satu-operator ini —
   // BUKAN sesuatu yang dicoba dibuktikan atau disembunyikan di sini.
@@ -555,8 +593,13 @@ try {
       "UJI END-TO-END LULUS: tiga suara masuk, tally kosong selama pemungutan suara, hasil akhir 2-0-1, ballot difinalisasi",
     );
     // Fix Round 1, FIX 6: klaim eksplisit, bukan tersirat dari baris di atas.
+    // Jumlah transaksi DIHITUNG dari `registryDeploy` (bagian 1), bukan
+    // literal tetap: registry hanya di-deploy pada run ini bila belum
+    // tercatat di artefak (lihat komentar kepala berkas) — sebelas bila
+    // begitu, sepuluh bila registry dipakai ulang dari sesi sebelumnya.
+    const jumlahTransaksi = registryDeploy !== undefined ? 11 : 10;
     log.info(
-      "CAKUPAN BUKTI run ini: TERBUKTI — tidak ada tally parsial pernah muncul di chain selama pemungutan suara berlangsung. TIDAK TERBUKTI — bahwa pilihan seorang pemilih tak terkait dengan pemilih itu; satu wallet menandatangani seluruh sebelas transaksi dengan urutan indeks pemilih yang identik di castVote maupun tallyVote, sehingga korelasi indeks-ke-indeks memulihkan pasangan pemilih-opsi.",
+      `CAKUPAN BUKTI run ini: TERBUKTI — tidak ada tally parsial pernah muncul di chain selama pemungutan suara berlangsung. TIDAK TERBUKTI — bahwa pilihan seorang pemilih tak terkait dengan pemilih itu; satu wallet menandatangani seluruh ${jumlahTransaksi} transaksi run ini dengan urutan indeks pemilih yang identik di castVote maupun tallyVote, sehingga korelasi indeks-ke-indeks memulihkan pasangan pemilih-opsi.`,
     );
   }
 

@@ -2,14 +2,23 @@
 // tiga credential, dan mencatat alamatnya ke registry. Skrip tingkat-atas:
 // tidak mengekspor apa pun.
 //
-// Deadline sengaja pendek dibanding ballot sungguhan, tapi TIDAK sependek
-// versi awal rencana ini (15/35 menit). Uji end-to-end Task 6 harus
-// benar-benar menunggu keduanya lewat: waktu blok di jaringan nyata tidak bisa
-// dimajukan, jadi setiap menit di sini adalah menit yang harus ditunggu di
-// sana. Terlalu pendek justru lebih mahal: registerVoters dan tiga castVote
-// harus SELESAI sebelum voteDeadline, dan tiga tallyVote harus muat di antara
-// voteDeadline dan tallyDeadline — jendela yang kekecilan berarti seluruh
-// rangkaian transaksi berbayar terbuang dan harus diulang dari nol.
+// Ballot yang di-deploy di sini BERDIRI SENDIRI: `pnpm cli e2e` men-deploy
+// ballotnya SENDIRI (lihat e2e.ts bagian 2) dan tidak pernah membaca alamat
+// atau deadline ballot ini — keduanya dua ballot berbeda di chain, dicatat
+// di dua namespace terpisah di artefak (lihat ArtefakDeploy.e2e di
+// artefak.ts). Deadline di bawah karena itu bukan sesuatu yang "harus
+// ditunggu" oleh uji end-to-end mana pun; ballot ini ada supaya operator
+// punya satu ballot berbayar dengan tiga pemilih terdaftar untuk diperiksa
+// atau dicoblos manual di luar `pnpm cli e2e`.
+//
+// MENIT_VOTE/MENIT_TALLY diimpor dari ./jadwal.ts — SATU sumber yang dipakai
+// bersama dengan e2e.ts, supaya kedua skrip tidak lagi bisa diam-diam
+// menyimpang seperti sebelum perbaikan ini (lihat komentar di jadwal.ts).
+// Nilainya sengaja tidak sesingkat versi awal rencana ini (15/35 menit):
+// registerVoters dan tiga castVote harus SELESAI sebelum voteDeadline, dan
+// tiga tallyVote harus muat di antara voteDeadline dan tallyDeadline —
+// jendela yang kekecilan berarti seluruh rangkaian transaksi berbayar
+// terbuang dan harus diulang dari nol.
 import crypto from "node:crypto";
 import { buatCredential, daunEligibility, detikDariSekarang, MENIT, type MetadataBallot } from "shared";
 import { bacaArtefak, tulisArtefak } from "./artefak.ts";
@@ -23,12 +32,11 @@ import {
   kunciAdmin,
   temukanRegistry,
 } from "./deploy.ts";
+import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
 import { rakitProvidersBallot, rakitProvidersRegistry } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
 
 const JUMLAH_PEMILIH = 3;
-const MENIT_VOTE = 45;
-const MENIT_TALLY = 80;
 
 const sesi = await siapkanSesi();
 const { config, log, ctx, kp } = sesi;
@@ -40,6 +48,21 @@ if (alamatRegistry === undefined) {
   // process.exit (bukan tutupSesi) supaya tsc tahu baris di bawah tidak
   // tercapai dan `alamatRegistry` menyempit jadi string setelah blok ini.
   process.exit(1);
+}
+
+// Kembaran guard deploy-registry.ts:20 (bentuk dan konvensi env var sama
+// persis): tanpa ini, menjalankan ulang `pnpm cli deploy-ballot` men-deploy
+// ballot BARU dan menimpa alamat/credential ballot LAMA di artefak — ballot
+// lama yang mungkin sudah dibayar dan sebagian pemilihnya sudah mencoblos
+// jadi yatim, dengan alasan yang sama persis kenapa Fix 1 memisahkan
+// namespace e2e dari deploy-ballot (lihat ArtefakDeploy.e2e).
+const ballotSudahAda = bacaArtefak(config.networkId)?.ballot;
+if (ballotSudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
+  log.warn(
+    { alamat: ballotSudahAda },
+    "Ballot sudah tercatat di artefak. Setel VOTEPRIV_DEPLOY_ULANG=1 bila memang ingin men-deploy ballot BARU.",
+  );
+  await tutupSesi(sesi, 0);
 }
 
 const metadata: MetadataBallot = {

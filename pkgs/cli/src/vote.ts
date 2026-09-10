@@ -99,13 +99,39 @@ export async function siapkanPembukaan(
 }
 
 /**
- * Menegakkan bahwa transaksi benar-benar sukses SELURUHNYA.
+ * Cadangan belat-dan-suspender (belt-and-braces): pada
+ * `midnight-js-contracts@4.0.4` yang benar-benar terpasang di sini, fungsi
+ * ini TIDAK PERNAH tereksekusi lewat jalur normal.
  *
- * `callTx.*` menyelesaikan promise-nya begitu transaksi difinalisasi, sukses
- * maupun tidak: `FailEntirely` dan `FailFallible` datang sebagai NILAI, bukan
- * sebagai lemparan. Tanpa pemeriksaan ini, transaksi yang ditolak chain akan
- * tercatat di log sebagai "Suara masuk" dan baru terlihat salah beberapa
- * langkah kemudian, sebagai angka ledger yang tidak masuk akal.
+ * Diverifikasi langsung terhadap paket terpasang (bukan diasumsikan dari
+ * dokumentasi): `ballot.callTx.castVote()` dkk dipanggil TANPA transaction
+ * context (lihat `pilih`/`bukaSuara`/`finalisasi` di bawah — tidak ada `txCtx`
+ * yang diteruskan), sehingga jatuh ke `createCircuitCallTxInterface` ->
+ * `submitCallTx` -> `scoped(providers, callTxFn)` TANPA `outerTxCtx`
+ * (dist/index.mjs:1499-1513). Pada jalur itu, `scoped` memanggil
+ * `innerTxCtx[Submit]()` (dist/index.mjs:812, definisi Submit di :749-750),
+ * yang MELEMPAR `CallTxFailedError` begitu `finalizedTxData.status !==
+ * SucceedEntirely` — promise-nya REJECT, bukan resolve dengan status gagal
+ * sebagai nilai. `deployContract`/`submitDeployTx` (dist/index.mjs:654)
+ * melempar `DeployTxFailedError` dengan pola yang sama untuk deploy. Jadi
+ * baik `FailEntirely` maupun `FailFallible` datang sebagai LEMPARAN pada
+ * versi yang terpasang, bukan sebagai nilai `r.public.status` yang bisa
+ * dibaca fungsi ini — premis lama komentar ini (bahwa keduanya "datang
+ * sebagai nilai") SALAH untuk paket ini, dan pemeriksaannya karena itu
+ * tidak pernah tercapai lewat jalur mana pun yang dipakai berkas ini.
+ *
+ * Dipertahankan (bukan dihapus) sebagai jaring pengaman murah untuk dua
+ * kelas risiko yang TIDAK bisa disingkirkan hanya dengan membaca sumber
+ * versi saat ini: (1) upgrade `midnight-js-contracts` di masa depan yang
+ * mengubah perilaku ini — `package.json` mengunci rentang `^4.0.1`, bukan
+ * versi persis; dan (2) pemanggilan lewat transaction context bersama
+ * (`outerTxCtx`) suatu hari nanti, yang jalur `scoped`-nya (dist/index.mjs:
+ * 812-833) mengembalikan `CallResult` TANPA field `status` sama sekali,
+ * bukan tanpa syarat melempar — belum dipakai di berkas mana pun di CLI ini,
+ * tapi bila kelak dipakai, guard ini adalah satu-satunya yang berdiri antara
+ * status gagal yang lolos dan log "Suara masuk" yang keliru. Biayanya satu
+ * `if` per pemanggilan; membuang assert lokal ini tidak menghemat apa pun
+ * yang berarti dibanding tetap menyimpannya.
  *
  * Pesannya sengaja TIDAK memuat frasa mana pun dari POLA_BELUM_WAKTUNYA:
  * kegagalan on-chain bukan soal waktu blok (Step 1 membuktikan assert deadline

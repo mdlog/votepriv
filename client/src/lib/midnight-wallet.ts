@@ -94,6 +94,7 @@ function firstAddress(v: unknown): string | undefined {
 
 export type WalletErrorCode =
   | "NO_CONNECTOR"
+  | "WALLET_ASLEEP"
   | "CONNECT_REJECTED"
   | "NETWORK_MISMATCH"
   | "NO_ADDRESS"
@@ -148,6 +149,21 @@ function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
   return { info, raw: injected[info.key] };
 }
 
+/**
+ * Service worker ekstensi pada Chrome MV3 tidur setelah kira-kira 30 detik menganggur.
+ * Saat itu terjadi, kanal pesan Lace mati dan panggilan apa pun gagal dengan galat
+ * internal yang tidak berarti apa-apa bagi pengguna. Ini bukan penolakan — objeknya
+ * cuma basi — jadi satu percobaan ulang biasanya cukup, dan tidak menumpuk popup
+ * karena tidak ada popup yang sempat terbuka.
+ */
+function walletTertidur(msg: string): boolean {
+  return /was shutdown|no longer be used|Receiving end does not exist|Could not establish connection|Extension context invalidated/i.test(
+    msg,
+  );
+}
+
+const jeda = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** Memanggil method opsional pada objek API wallet; undefined bila tidak tersedia. */
 async function tryCall<T>(api: unknown, method: string): Promise<T | undefined> {
   const fn = (api as Record<string, unknown> | null)?.[method];
@@ -164,6 +180,19 @@ async function tryCall<T>(api: unknown, method: string): Promise<T | undefined> 
  * Membuka koneksi ke wallet. Memunculkan popup izin di Lace — hanya panggil
  * sebagai respons langsung atas aksi pengguna, jangan saat halaman dimuat.
  */
+/** connect() sekali, dengan satu percobaan ulang bila kanal ekstensi kebetulan basi. */
+async function sambung(raw: RawConnector, net: string): Promise<unknown> {
+  try {
+    return await raw.connect(net);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (!walletTertidur(msg)) throw error;
+    console.warn(`[votepriv:wallet] kanal ekstensi basi (${msg}) — mencoba ulang sekali`);
+    await jeda(600);
+    return await raw.connect(net);
+  }
+}
+
 export async function connectMidnightWallet(
   networkId?: string,
 ): Promise<WalletConnection> {
@@ -179,7 +208,7 @@ export async function connectMidnightWallet(
 
   for (const net of urutan) {
     try {
-      api = await raw.connect(net);
+      api = await sambung(raw, net);
       terpakai = net;
       break;
     } catch (error) {
@@ -189,8 +218,15 @@ export async function connectMidnightWallet(
         ditolak.push(net);
         continue;
       }
-      // Apa pun selain ketidakcocokan jaringan (pengguna menolak, wallet terkunci)
-      // harus menghentikan langkah — melanjutkan hanya akan menumpuk popup.
+      if (walletTertidur(msg)) {
+        throw new WalletError(
+          "WALLET_ASLEEP",
+          "Ekstensi Lace sedang tidak aktif. Buka Lace dari toolbar Chrome untuk membangunkannya, lalu coba lagi.",
+          error,
+        );
+      }
+      // Apa pun selain itu (pengguna menolak, wallet terkunci) harus menghentikan
+      // langkah — melanjutkan hanya akan menumpuk popup.
       throw new WalletError("CONNECT_REJECTED", msg || "Wallet menolak permintaan koneksi.", error);
     }
   }

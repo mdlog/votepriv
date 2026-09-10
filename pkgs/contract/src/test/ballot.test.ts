@@ -108,3 +108,79 @@ describe("ballot.compact — pendaftaran eligibility", () => {
     expect(() => sim.registerVoters([CRED_C, bytes32(0x44)])).toThrow();
   });
 });
+
+describe("ballot.compact — castVote", () => {
+  const CRED_A = bytes32(0x11);
+  const CRED_B = bytes32(0x22);
+  const ASING = bytes32(0x99);
+  const SALT_1 = bytes32(0xa1);
+  const SALT_2 = bytes32(0xa2);
+
+  const siap = () => {
+    const sim = new BallotSimulator({ eligibleCount: 4, options: ["Ya", "Tidak"] });
+    sim.registerVoters([CRED_A, CRED_B]);
+    return sim;
+  };
+
+  it("voter terdaftar dapat mencoblos", () => {
+    const sim = siap();
+    sim.castVote(CRED_A, 0, SALT_1);
+    expect(sim.getLedger().voteCount).toBe(1n);
+    expect(sim.getLedger().commitments.firstFree()).toBe(1n);
+  });
+
+  it("menyimpan nullifier yang benar", () => {
+    const sim = siap();
+    sim.castVote(CRED_A, 0, SALT_1);
+    const nf = pureCircuits.vote_nullifier(sim.ballotNonce, CRED_A);
+    expect(sim.getLedger().nullifiers.member(nf)).toBe(true);
+  });
+
+  it("menyimpan commitment yang benar", () => {
+    const sim = siap();
+    sim.castVote(CRED_A, 1, SALT_1);
+    const c = pureCircuits.vote_commitment(1n, SALT_1);
+    expect(sim.getLedger().commitments.findPathForLeaf(c)).toBeDefined();
+  });
+
+  it("credential yang tidak terdaftar ditolak", () => {
+    const sim = siap();
+    expect(() => sim.castVote(ASING, 0, SALT_1)).toThrow();
+  });
+
+  it("credential yang sama tidak bisa mencoblos dua kali", () => {
+    const sim = siap();
+    sim.castVote(CRED_A, 0, SALT_1);
+    expect(() => sim.castVote(CRED_A, 1, SALT_2)).toThrow();
+  });
+
+  it("credential berbeda dapat mencoblos masing-masing sekali", () => {
+    const sim = siap();
+    sim.castVote(CRED_A, 0, SALT_1);
+    sim.castVote(CRED_B, 1, SALT_2);
+    expect(sim.getLedger().voteCount).toBe(2n);
+  });
+
+  it("pilihan di luar optionCount ditolak", () => {
+    const sim = siap();
+    expect(() => sim.castVote(CRED_A, 3, SALT_1)).toThrow();
+  });
+
+  it("ledger tidak memuat jejak pilihan apa pun setelah mencoblos", () => {
+    const a = siap();
+    a.castVote(CRED_A, 0, SALT_1);
+    const b = siap();
+    b.castVote(CRED_A, 1, SALT_1);
+    // Satu-satunya yang berbeda adalah commitment; nullifier dan hitungan identik.
+    expect(hex(pureCircuits.vote_nullifier(a.ballotNonce, CRED_A))).toBe(
+      hex(pureCircuits.vote_nullifier(b.ballotNonce, CRED_A)),
+    );
+    expect(a.getLedger().voteCount).toBe(b.getLedger().voteCount);
+  });
+
+  it("pendaftaran ditutup setelah suara pertama", () => {
+    const sim = siap();
+    sim.castVote(CRED_A, 0, SALT_1);
+    expect(() => sim.registerVoters([bytes32(0x44)])).toThrow();
+  });
+});

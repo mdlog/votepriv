@@ -40,7 +40,17 @@ export ledger voteCount: Counter;
 // tetap dapat diaudit siapa pun lewat ledger ini.
 export ledger registeredCount: Counter;
 
+export ledger nullifiers: Set<Bytes<32>>;
+// MerkleTree biasa, bukan Historic: pohon ini sudah beku saat fase tally dimulai,
+// karena castVote hanya boleh sebelum deadline dan tallyVote hanya sesudahnya.
+export ledger commitments: MerkleTree<10, Bytes<32>>;
+
 witness admin_secret_key(): Bytes<32>;
+witness voter_credential(): Bytes<32>;
+witness eligibility_path(): MerkleTreePath<10, Bytes<32>>;
+witness get_my_option(): Uint<8>;
+witness get_my_salt(): Bytes<32>;
+witness store_opening(o: Uint<8>, s: Bytes<32>): [];
 
 // ── Hash berpemisah domain ───────────────────────────────────────────────
 // Semuanya `export pure` agar dapat dipanggil TypeScript lewat pureCircuits,
@@ -133,4 +143,38 @@ export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
   if (disclose(n > 7)) { eligibility.insert(disclose(leaves[7])); }
 
   registeredCount.increment(disclose(n as Uint<16>));
+}
+
+// Dipanggil voter. Membuktikan keanggotaan di pohon eligibility dalam zero-
+// knowledge, membakar nullifier supaya credential yang sama tidak bisa dipakai
+// dua kali, lalu mencatat commitment suara. Seluruh validasi berjalan sebelum
+// mutasi ledger apa pun, sehingga tidak ada state yang berubah sebagian saat
+// sebuah assert gagal.
+export circuit castVote(): [] {
+  assert(phase == BallotPhase.voting, "Ballot tidak sedang menerima suara");
+
+  const cred = voter_credential();
+  const daun = cred_leaf(cred);
+  const path = eligibility_path();
+
+  // Membuktikan credential ada di pohon eligibility tanpa membuka credential-nya.
+  assert(disclose(path.leaf == daun), "Merkle path bukan untuk credential ini");
+  const rt: MerkleTreeDigest = disclose(merkleTreePathRoot<10, Bytes<32>>(path));
+  assert(eligibility.checkRoot(rt), "Anda tidak terdaftar sebagai pemilih pada ballot ini");
+
+  const opsi = get_my_option();
+  const salt = get_my_salt();
+  assert(disclose(opsi < optionCount), "Pilihan di luar opsi yang tersedia");
+
+  // Satu credential, satu suara.
+  const nf: Bytes<32> = disclose(vote_nullifier(ballotNonce, cred));
+  assert(!nullifiers.member(nf), "Credential ini sudah dipakai memilih");
+  nullifiers.insert(nf);
+
+  // Yang masuk ledger hanyalah hash. Tidak ada satu bit pun tentang pilihan.
+  commitments.insert(disclose(vote_commitment(opsi, salt)));
+  voteCount.increment(1);
+
+  // Disimpan lokal agar pemilih dapat membuka suaranya pada fase tally.
+  store_opening(opsi, salt);
 }

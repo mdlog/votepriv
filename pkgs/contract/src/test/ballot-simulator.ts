@@ -154,4 +154,21 @@ export class BallotSimulator {
       ps,
     );
   }
+
+  /** Mencoblos memakai credential tertentu. Path eligibility disusun dari state on-chain. */
+  castVote(cred: Uint8Array, option: number, salt: Uint8Array): Ledger {
+    const daun = pureCircuits.cred_leaf(cred);
+    const path = this.getLedger().eligibility.findPathForLeaf(daun);
+    if (path === undefined) {
+      throw new Error("Credential tidak ada di pohon eligibility");
+    }
+    const ps: BallotPrivateState = {
+      ...emptyBallotPrivateState(new Uint8Array(32)),
+      credential: cred,
+      option: BigInt(option),
+      salt,
+      eligibilityPath: path,
+    };
+    return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), ps);
+  }
 }

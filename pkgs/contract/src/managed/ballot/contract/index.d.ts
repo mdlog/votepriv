@@ -4,18 +4,32 @@ export enum BallotPhase { voting = 0, tallying = 1, finalized = 2 }
 
 export type Witnesses<PS> = {
   admin_secret_key(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
+  voter_credential(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
+  eligibility_path(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, { leaf: Uint8Array,
+                                                                                 path: { sibling: { field: bigint
+                                                                                                  },
+                                                                                         goes_left: boolean
+                                                                                       }[]
+                                                                               }];
+  get_my_option(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, bigint];
+  get_my_salt(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
+  store_opening(context: __compactRuntime.WitnessContext<Ledger, PS>,
+                o_0: bigint,
+                s_0: Uint8Array): [PS, []];
 }
 
 export type ImpureCircuits<PS> = {
   registerVoters(context: __compactRuntime.CircuitContext<PS>,
                  leaves_0: Uint8Array[],
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
   registerVoters(context: __compactRuntime.CircuitContext<PS>,
                  leaves_0: Uint8Array[],
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
@@ -40,6 +54,7 @@ export type Circuits<PS> = {
   registerVoters(context: __compactRuntime.CircuitContext<PS>,
                  leaves_0: Uint8Array[],
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {
@@ -70,6 +85,20 @@ export type Ledger = {
   };
   readonly voteCount: bigint;
   readonly registeredCount: bigint;
+  nullifiers: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(elem_0: Uint8Array): boolean;
+    [Symbol.iterator](): Iterator<Uint8Array>
+  };
+  commitments: {
+    isFull(): boolean;
+    checkRoot(rt_0: { field: bigint }): boolean;
+    root(): __compactRuntime.MerkleTreeDigest;
+    firstFree(): bigint;
+    pathForLeaf(index_0: bigint, leaf_0: Uint8Array): __compactRuntime.MerkleTreePath<Uint8Array>;
+    findPathForLeaf(leaf_0: Uint8Array): __compactRuntime.MerkleTreePath<Uint8Array> | undefined
+  };
 }
 
 export type ContractReferenceLocations = any;

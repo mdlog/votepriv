@@ -2760,13 +2760,15 @@ Diharapkan, berurutan:
 1. Sinkronisasi wallet — kali ini dari cache, sekitar satu detik.
 2. `Men-deploy ballot` dengan `voteDeadline`/`tallyDeadline` berupa angka ~1,7 miliar (**sepuluh digit**, bukan tiga belas — tiga belas digit berarti milidetik dan validasi seharusnya sudah menolaknya lebih dulu).
 3. `Ballot ter-deploy` dengan alamat 64 hex.
-4. `Mendaftarkan batch daun eligibility` satu kali (`batch: 1, dari: 1, n: 3`), lalu `Batch terdaftar`.
-5. `Ballot tercatat di registry`.
-6. Mungkin satu-dua baris `Indexer belum menyusul; membaca ulang` dengan `label: "registeredCount === 3"` — itu normal.
-7. `Ballot siap menerima suara` dengan `registeredCount: "3"`, `eligibleCount: "3"`, `voteCount: "0"`, `phase: 0`, `registryCount: "1"`.
-8. `Alamat ballot dan credential tersimpan`, lalu `Sesi ditutup` dengan `kode: 0`.
+4. **`Alamat ballot dan credential tersimpan`** — di sini, bukan di akhir. Penulisan artefak sengaja mendahului pendaftaran dan pencatatan registry, supaya kegagalan apa pun sesudahnya tidak menghilangkan alamat ballot berbayar beserta ketiga credential yang tidak ada salinannya di tempat lain.
+5. `Mendaftarkan batch daun eligibility` satu kali (`batch: 1, dari: 1, n: 3`), lalu `Batch terdaftar`.
+6. `Ballot tercatat di registry`.
+7. Mungkin satu-dua baris `Indexer belum menyusul; membaca ulang` dengan `label: "registeredCount === 3"` — normal, meski pada preview per 2026-09-10 lag indexer terukur hanya ~18 detik sehingga baris ini kemungkinan besar tidak muncul sama sekali.
+8. `Ballot siap menerima suara` dengan `registeredCount: "3"`, `eligibleCount: "3"`, `voteCount: "0"`, `phase: 0`, `registryCount: "1"`, lalu `Sesi ditutup` dengan `kode: 0`.
 
-Total sekitar 6–10 menit: empat transaksi, masing-masing satu proof ZK (5–20 detik) plus finalisasi node dan indexer.
+Total sekitar **2–6 menit**: **tiga** transaksi berbayar — `deployBallot`, `registerVoters` (satu batch; tiga daun muat dalam satu vektor delapan slot), dan `register` ke registry — masing-masing satu proof ZK plus finalisasi node dan indexer. `temukanRegistry` dan seluruh pembacaan ledger bersifat baca-saja dan tidak membayar apa pun.
+
+> Angka 6–10 menit dan "empat transaksi" pada draf sebelumnya adalah perkiraan yang ditulis sebelum ada pengukuran. Deploy registry sungguhan pada 2026-09-10 memakan **22 detik** dari `Men-deploy` sampai `ter-deploy`, dan sinkronisasi berikutnya berasal dari cache, bukan 307 detik dari dingin.
 
 Diagnosa bila melenceng:
 

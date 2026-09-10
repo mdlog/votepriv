@@ -727,7 +727,7 @@ if (saldo.dust === 0n) {
 
 ```bash
 curl -s -m 3 http://127.0.0.1:6300/version   # pastikan proof server hidup
-MIDNIGHT_WALLET_SEED=<seed Anda> pnpm cli preprod
+pnpm cli preprod   # prompt interaktif tanpa gema
 ```
 
 Diharapkan: alamat unshielded tercetak, saldo NIGHT dan DUST bukan nol. **Sinkronisasi pertama memakan waktu** — wallet memindai dari genesis. Biarkan berjalan; jangan tambahkan optimasi birthday-offset (repo rujukan mencobanya dan membatalkannya: pohon commitment zswap menuntut penyisipan berurutan dari indeks 0, dan menambal offset merusak sinkronisasi).
@@ -2003,9 +2003,20 @@ Bila muncul `Type 'CompiledAssetsPath' is not assignable to type 'never'` — ra
 
 - [ ] **Step 14: Deploy ke preview dan SIMPAN alamatnya**
 
+> **Jangan pakai `MIDNIGHT_WALLET_SEED=<frasa> pnpm ...`.** Bentuk itu menaruh frasa
+> pemulihan Anda di `~/.bash_history` dan di `/proc/<pid>/environ`, tempat proses lain
+> milik pengguna yang sama dapat membacanya selama perintah berjalan. `bacaSeed()`
+> memang menerima env var — itu jalur untuk CI dengan secret manager, bukan untuk
+> tangan manusia di terminal. Untuk dijalankan sendiri, pakai salah satu dari dua
+> bentuk di bawah: prompt interaktif tanpa gema, atau pipa yang dibaca sampai EOF.
+
 ```bash
 docker compose -f pkgs/cli/proof-server.yml up -d
-MIDNIGHT_WALLET_SEED='<seed atau frasa pemulihan Anda>' pnpm cli deploy-registry
+# Bentuk 1 — prompt interaktif, tidak ada gema, tidak menyentuh history:
+pnpm cli deploy-registry
+
+# Bentuk 2 — dari secret manager / berkas, tanpa newline penutup:
+printf '%s' "$FRASA" | pnpm cli deploy-registry
 ```
 
 Diharapkan, berurutan:
@@ -2674,7 +2685,8 @@ Bila tsc mengeluh pada `args:` di `deployBallot` (jumlah atau tipe elemen tuple)
 
 ```bash
 docker compose -f pkgs/cli/proof-server.yml up -d
-MIDNIGHT_WALLET_SEED='<seed atau frasa pemulihan Anda>' pnpm cli deploy-ballot
+pnpm cli deploy-ballot
+# atau: printf '%s' "$FRASA" | pnpm cli deploy-ballot
 ```
 
 Diharapkan, berurutan:
@@ -3555,7 +3567,9 @@ Diharapkan: typecheck exit 0, seluruh uji unit hijau — args, seed, mnemonic, t
 
 ```bash
 docker compose -f pkgs/cli/proof-server.yml up -d
-MIDNIGHT_WALLET_SEED='<seed atau frasa pemulihan Anda>' pnpm cli e2e 2>&1 | tee /tmp/votepriv-e2e.log
+pnpm cli e2e 2>&1 | tee /tmp/votepriv-e2e.log
+# atau, bila frasa datang dari secret manager:
+#   printf '%s' "$FRASA" | pnpm cli e2e 2>&1 | tee /tmp/votepriv-e2e.log
 ```
 
 **Sediakan 85–95 menit dan jangan interupsi prosesnya.** Mematikan proses di antara pengiriman dan finalisasi meninggalkan chain sudah berubah sementara private state dan signing key lokal belum ditulis (keduanya ditulis setelah `SucceedEntirely` terlihat), dan pustaka ini tidak menyediakan jalur pemulihan untuk keadaan itu.

@@ -1,8 +1,16 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { DEFAULT_PROOF_SERVER_URL, MIDNIGHT_NETWORK_ENDPOINTS } from "shared";
 
-export const currentDir = path.resolve(new URL(import.meta.url).pathname, "..");
+// `new URL(import.meta.url).pathname` mengembalikan path ter-escape-persen pada
+// direktori yang memuat spasi atau karakter non-ASCII (mis. "%20" untuk spasi).
+// `fileURLToPath` mendekode itu dengan benar. Konsekuensinya bukan kosmetik:
+// `walletCacheDir` di wallet.ts dibangun dari `currentDir`, dan `.gitignore`
+// mencocokkan literal `pkgs/cli/wallet-cache/` — direktori bersaudara ber-nama
+// `%20` tidak akan pernah cocok dengan pola itu, membuat bahan wallet bisa
+// ter-commit tanpa sengaja pada mesin dengan path semacam itu.
+export const currentDir = path.resolve(fileURLToPath(import.meta.url), "..");
 
 export interface Config {
   readonly networkId: string;

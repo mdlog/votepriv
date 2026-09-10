@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "preprod": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/preprod.ts",
+    "preprod": "node --max-old-space-size=16384 --no-warnings --experimental-strip-types src/preprod.ts",
     "preprod-ps": "docker compose -f proof-server.yml up -d && pnpm preprod",
     "build": "rm -rf dist && tsc --project tsconfig.json",
     "test": "vitest run",

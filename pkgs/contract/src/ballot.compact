@@ -112,6 +112,12 @@ export pure circuit tally_nullifier(salt: Bytes<32>): Bytes<32> {
 }
 
 // ── Constructor ──────────────────────────────────────────────────────────
+// SELURUH validasi mendahului SELURUH penulisan ledger, pola yang sama dengan
+// castVote/tallyVote. Di sini bobotnya lebih berat daripada di circuit mana pun:
+// setiap field yang ditulis di bawah bersifat `sealed`, sehingga nilai yang
+// keliru TIDAK PERNAH bisa diperbaiki setelah deploy. Satu-satunya jalan keluar
+// dari ballot yang salah konfigurasi adalah men-deploy ballot baru dan
+// meninggalkan yang lama — beserta seluruh suara yang sudah masuk ke dalamnya.
 constructor(
   t: Opaque<"string">,
   d: Opaque<"string">,
@@ -128,6 +134,37 @@ constructor(
   policy: Opaque<"string">,
   nonce: Bytes<32>
 ) {
+  // Spec §5.1 menetapkan 2..4 opsi, dan ledger ini hanya punya option0..option3.
+  // Di atas 4, castVote menerima opsi yang sama sekali tidak punya label on-chain:
+  // assert(opsi < optionCount) lolos, tallies[opsi] terisi, dan hasilnya memuat
+  // baris yang tidak dapat diberi nama oleh siapa pun yang membaca ledger.
+  // Di bawah 2, ballot tidak menawarkan pilihan apa pun.
+  assert(nOptions >= 2 && nOptions <= 4, "Jumlah opsi harus 2 sampai 4");
+
+  // tallyDeadline WAJIB melewati voteDeadline. Bila tidak, kedua guard tallyVote
+  // — blockTime > voteDeadline DAN blockTime < tallyDeadline — tidak pernah benar
+  // bersamaan, sehingga setiap suara yang masuk menjadi PERMANEN TIDAK DAPAT
+  // DIBUKA. Yang membuatnya mahal: finalize() tetap berhasil, jadi ballot semacam
+  // itu terbit sebagai ballot final dengan voteCount > 0 dan talliedCount == 0
+  // serta tallies kosong, tanpa satu pun penanda di ledger bahwa ia sudah mati.
+  assert(tallyDl > voteDl, "Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara");
+
+  // eligibleCount == 0 menghasilkan ballot yang tidak pernah bisa menerima satu
+  // credential pun (registerVoters menolak semuanya), jadi tidak ada yang bisa
+  // memilih di dalamnya selamanya.
+  assert(eligible >= 1, "Jumlah pemilih yang berhak minimal 1");
+
+  // Kapasitas pohon eligibility adalah 2^10 = 1024 daun (Merkle depth 10).
+  // Tanpa batas ini, eligibleCount yang lebih besar diterima diam-diam dan
+  // pendaftaran baru gagal pada daun ke-1025 dengan "exceeded structure bounds"
+  // dari runtime — galat internal yang tidak menjelaskan apa pun, bukan salah
+  // satu pesan penolakan milik kontrak ini.
+  assert(eligible <= 1024, "Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)");
+
+  // Persen di atas 100 tidak punya arti. Ini SATU-SATUNYA hal yang ditegakkan
+  // kontrak atas quorumPercent — lihat catatan pada deklarasinya.
+  assert(quorum <= 100, "Persentase kuorum tidak boleh melebihi 100");
+
   title             = disclose(t);
   description       = disclose(d);
   community         = disclose(c);

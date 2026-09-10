@@ -38,6 +38,111 @@ describe("ballot.compact — metadata", () => {
   });
 });
 
+describe("ballot.compact — validasi constructor", () => {
+  // Seluruh field yang divalidasi di sini bersifat `sealed`. Nilai yang keliru
+  // TIDAK PERNAH bisa diperbaiki setelah deploy — satu-satunya jalan keluar
+  // adalah men-deploy ballot baru dan meninggalkan yang lama beserta seluruh
+  // suara di dalamnya. Karena itu constructor adalah satu-satunya tempat yang
+  // masuk akal untuk menolaknya.
+  const T = 1_800_000_000n;
+  const sah = { voteDeadline: T + 1000n, tallyDeadline: T + 5000n };
+
+  it("menerima konfigurasi yang sah", () => {
+    expect(
+      () =>
+        new BallotSimulator({
+          ...sah,
+          options: ["Ya", "Tidak"],
+          eligibleCount: 8,
+          quorumPercent: 50,
+        }),
+    ).not.toThrow();
+  });
+
+  it("menolak optionCount di atas 4 — opsi tanpa label on-chain", () => {
+    // Dampaknya nyata, bukan teoretis: dengan nOptions = 8, castVote untuk opsi
+    // 7 lolos assert(opsi < optionCount) dan tallies[7] terisi, padahal ledger
+    // hanya punya option0..option3. Hasil akhirnya memuat baris yang tidak dapat
+    // diberi nama oleh siapa pun yang membaca chain.
+    expect(
+      () => new BallotSimulator({ ...sah, options: ["Ya", "Tidak"], optionCount: 8 }),
+    ).toThrow(/Jumlah opsi harus 2 sampai 4/);
+  });
+
+  it("menolak optionCount 0 — ballot tanpa pilihan apa pun", () => {
+    expect(() => new BallotSimulator({ ...sah, options: [], optionCount: 0 })).toThrow(
+      /Jumlah opsi harus 2 sampai 4/,
+    );
+  });
+
+  it("menolak optionCount 1 — pilihan tunggal bukan pemungutan suara", () => {
+    expect(() => new BallotSimulator({ ...sah, options: ["Ya"], optionCount: 1 })).toThrow(
+      /Jumlah opsi harus 2 sampai 4/,
+    );
+  });
+
+  it("menerima batas bawah dan batas atas optionCount (2 dan 4)", () => {
+    expect(
+      () => new BallotSimulator({ ...sah, options: ["Ya", "Tidak"], optionCount: 2 }),
+    ).not.toThrow();
+    expect(
+      () => new BallotSimulator({ ...sah, options: ["A", "B", "C", "D"], optionCount: 4 }),
+    ).not.toThrow();
+  });
+
+  it("menolak tallyDeadline yang sama dengan voteDeadline", () => {
+    // Kedua guard tallyVote — blockTime > voteDeadline DAN blockTime <
+    // tallyDeadline — tidak pernah benar bersamaan pada ballot semacam ini.
+    // Suara masuk, lalu PERMANEN tidak dapat dibuka, sementara finalize tetap
+    // berhasil dan menerbitkan ballot final dengan voteCount > 0 dan
+    // talliedCount == 0 tanpa satu pun penanda bahwa ballot itu sudah mati.
+    expect(
+      () => new BallotSimulator({ voteDeadline: T + 1000n, tallyDeadline: T + 1000n }),
+    ).toThrow(/Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara/);
+  });
+
+  it("menolak tallyDeadline sebelum voteDeadline", () => {
+    expect(
+      () => new BallotSimulator({ voteDeadline: T + 5000n, tallyDeadline: T + 1000n }),
+    ).toThrow(/Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara/);
+  });
+
+  it("menerima tallyDeadline satu detik setelah voteDeadline", () => {
+    expect(
+      () => new BallotSimulator({ voteDeadline: T + 1000n, tallyDeadline: T + 1001n }),
+    ).not.toThrow();
+  });
+
+  it("menolak eligibleCount 0 — ballot yang tidak bisa dipilih siapa pun", () => {
+    expect(() => new BallotSimulator({ ...sah, eligibleCount: 0 })).toThrow(
+      /Jumlah pemilih yang berhak minimal 1/,
+    );
+  });
+
+  it("menolak eligibleCount di atas kapasitas pohon eligibility", () => {
+    // eligibleCount = 2000 dulu diterima diam-diam, lalu pendaftaran berjalan
+    // sampai daun ke-1024 dan gagal dengan "exceeded structure bounds" dari
+    // runtime — galat internal yang tidak menjelaskan apa pun kepada admin.
+    expect(() => new BallotSimulator({ ...sah, eligibleCount: 2000 })).toThrow(
+      /Jumlah pemilih yang berhak melebihi kapasitas pohon/,
+    );
+  });
+
+  it("menerima eligibleCount tepat 1024 (kapasitas penuh pohon depth 10)", () => {
+    expect(() => new BallotSimulator({ ...sah, eligibleCount: 1024 })).not.toThrow();
+  });
+
+  it("menolak quorumPercent di atas 100", () => {
+    expect(() => new BallotSimulator({ ...sah, quorumPercent: 200 })).toThrow(
+      /Persentase kuorum tidak boleh melebihi 100/,
+    );
+  });
+
+  it("menerima quorumPercent tepat 100", () => {
+    expect(() => new BallotSimulator({ ...sah, quorumPercent: 100 })).not.toThrow();
+  });
+});
+
 describe("ballot.compact — pure circuit hash", () => {
   it("cred_leaf bersifat deterministik", () => {
     expect(hex(pureCircuits.cred_leaf(bytes32(3)))).toBe(hex(pureCircuits.cred_leaf(bytes32(3))));

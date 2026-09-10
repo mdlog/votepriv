@@ -1,0 +1,31 @@
+{
+  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "declaration": true,
+    "lib": ["ESNext", "DOM"],
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    // Titik masuk (preprod.ts, dan e2e.ts di Task 6) dijalankan langsung lewat
+    // `node --experimental-strip-types`, yang TIDAK memetakan impor ".js" ke
+    // berkas ".ts" seperti tsc/bundler (dikonfirmasi empiris + dokumentasi Node:
+    // ekstensi harus persis). Karena itu impor lokal memakai ".ts" secara
+    // eksplisit. TypeScript mewajibkan noEmit/emitDeclarationOnly berpasangan
+    // dengan allowImportingTsExtensions, jadi skrip "build" di package.json
+    // sengaja tidak lagi menghasilkan dist/ untuk paket ini — tidak ada paket
+    // lain yang bergantung pada dist/cli (tidak seperti contract/shared, cli
+    // tidak punya field "main"/"exports"; seluruh Rencana B menjalankannya
+    // langsung dari src/ lewat strip-types, lihat brief Task 6).
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  }
+}

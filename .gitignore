@@ -111,3 +111,9 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Rahasia wallet dan cache — jangan pernah masuk repo
+pkgs/cli/wallet-cache/
+pkgs/cli/logs/
+*.seed
+.seed

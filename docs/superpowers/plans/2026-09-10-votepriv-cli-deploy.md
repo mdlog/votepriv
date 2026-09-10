@@ -1562,10 +1562,12 @@ export function pastikanAlamatKontrak(s: string): string {
   return s;
 }
 
-/** Deadline disimpan sebagai string: JSON tidak punya bigint. */
-export interface ArtefakDeploy {
-  networkId: string;
-  registry?: string;
+/**
+ * Bentuk ballot: satu deploy ballot beserta deadline, opsi, dan credential
+ * pemilihnya. Sama untuk `deploy-ballot.ts` (top-level, lihat `ArtefakDeploy`)
+ * maupun `e2e.ts` (di bawah kunci `e2e`, lihat catatan di `ArtefakDeploy.e2e`).
+ */
+export interface ArtefakBallot {
   ballot?: string;
   voteDeadline?: string;
   tallyDeadline?: string;
@@ -1577,6 +1579,36 @@ export interface ArtefakDeploy {
    * masuk .gitignore.
    */
   credentials?: string[];
+}
+
+/** Deadline disimpan sebagai string: JSON tidak punya bigint. */
+export interface ArtefakDeploy extends ArtefakBallot {
+  networkId: string;
+  /**
+   * Alamat registry. DIMILIKI BERSAMA oleh `deploy-registry.ts` dan
+   * `e2e.ts` (yang memakai ulang registry dari sesi sebelumnya bila sudah
+   * ada) — keduanya menunjuk SATU registry sungguhan yang sama di chain,
+   * jadi menulis field ini dari kedua tempat itu bukan tabrakan, melainkan
+   * dua penulis yang mencatat fakta yang sama.
+   */
+  registry?: string;
+  /**
+   * Ballot milik `pnpm cli e2e`, TERPISAH TOTAL dari field ballot/
+   * voteDeadline/tallyDeadline/options/credentials di atas (yang dimiliki
+   * SOLELY oleh `deploy-ballot.ts`).
+   *
+   * Fix seam Task 6/7: sebelumnya `e2e.ts` menulis kelima field itu langsung
+   * ke top-level lewat `tulisArtefak` yang MERGE, bukan timpa — tapi merge
+   * per FIELD berarti field yang sama (mis. `ballot`) tetap saling menimpa.
+   * Menjalankan `pnpm cli e2e` setelah `pnpm cli deploy-ballot` diam-diam
+   * menghancurkan ballot yang sudah dibayar dan didaftarkan tiga pemilih
+   * oleh deploy-ballot: alamat dan credential-nya tertimpa alamat/credential
+   * ballot e2e, dan satu-satunya salinan credential lama (yang HANYA hidup
+   * di berkas ini) hilang selamanya. Namespace ini menutup celah itu: e2e
+   * menulis di sini, deploy-ballot menulis di top-level, dan tidak satu pun
+   * boleh membaca field milik yang lain.
+   */
+  e2e?: ArtefakBallot;
   diperbarui?: string;
 }
 
@@ -2059,9 +2091,9 @@ Dengan provider terbukti bekerja, tugas ini menerbitkan satu ballot sungguhan: m
 
 Constructor ballot menyegel 14 nilai secara permanen — tidak ada satu pun yang bisa diperbaiki setelah deploy, satu-satunya jalan keluar adalah men-deploy ballot baru dan meninggalkan yang lama beserta seluruh suaranya. Karena itu validasi dilakukan di sisi CLI lebih dulu, dengan pesan yang menyebut nama field, sebelum kontrak menolak dengan `CompactError: failed assert: ...`.
 
-Kontrak menolak empat hal, dan Task ini memenuhi keempatnya secara eksplisit: `optionCount` di luar 2..4, `tallyDeadline <= voteDeadline`, `eligibleCount` nol atau di atas 1024, dan `quorumPercent` di atas 100. Metadata yang dipakai di Step 7 memakai 3 opsi, `voteDeadline` 45 menit dan `tallyDeadline` 80 menit dari sekarang, `eligibleCount` 3, `quorumPercent` 60 — keempat batas terpenuhi, dan **deadline dalam DETIK** lewat `detikDariSekarang`.
+Kontrak menolak empat hal, dan Task ini memenuhi keempatnya secara eksplisit: `optionCount` di luar 2..4, `tallyDeadline <= voteDeadline`, `eligibleCount` nol atau di atas 1024, dan `quorumPercent` di atas 100. Metadata yang dipakai di Step 7 memakai 3 opsi, `voteDeadline` 60 menit dan `tallyDeadline` 95 menit dari sekarang, `eligibleCount` 3, `quorumPercent` 60 — keempat batas terpenuhi, dan **deadline dalam DETIK** lewat `detikDariSekarang`.
 
-**Kenapa 45 dan 80 menit, bukan 15 dan 35.** Angka lama tidak muat pekerjaannya. Antara `detikDariSekarang(...)` dipanggil dan `castVote` terakhir difinalisasi, Task 6 menjalankan enam transaksi (deploy ballot, registerVoters, register ke registry, 3× castVote) plus empat `findDeployedContract`. Pada waktu terukur preview (~2,5 menit per transaksi, ~5 menit anggaran per `findDeployedContract`) itu berjumlah ~35 menit pada kasus terburuk. Jendela 15 menit karenanya dijamin habis setelah empat transaksi berbayar dan seluruh rangkaian harus diulang. Perhitungan lengkapnya ada di Task 6 Step 5.
+**Kenapa 60 dan 95 menit, bukan 15 dan 35.** Nilai ini TIDAK dihitung mandiri di sini: `voteDeadline`/`tallyDeadline` dibangun dari `MENIT_VOTE`/`MENIT_TALLY`, diimpor dari `./jadwal.ts` — SATU sumber dipakai bersama dengan Task 6 (`e2e.ts`), supaya kedua skrip tidak bisa diam-diam menyimpang seperti yang pernah terjadi (45/80 di sini, 60/95 di `e2e.ts`, sebelum penyatuan). Nilainya dipilih cukup untuk invarian anggaran waktu loop coblos `e2e.ts` (`SISA_MINIMAL_VOTE`/`SISA_MINIMAL_TALLY`) — pekerjaan Task ini sendiri (satu deploy, satu registerVoters, satu register ke registry, tanpa loop coblos) jauh lebih ringan, tapi memakai jendela yang sama sederhana dan tidak menyimpan dua anggaran independen yang harus dijaga tetap sinkron. Perhitungan lengkapnya ada di Task 6 Step 5 dan di `jadwal.ts`.
 
 **Files:**
 - Modify: `pkgs/cli/src/deploy.ts`
@@ -2531,6 +2563,23 @@ export async function catatKeRegistry(
 
 - [ ] **Step 5: Tulis titik masuk deploy-ballot.ts**
 
+**Catatan pasca-implementasi (fix seam Task 6/7):** `deploy-ballot.ts` dan `e2e.ts` (Task 6 Step 5) awalnya masing-masing mendefinisikan `MENIT_VOTE`/`MENIT_TALLY` sendiri (45/80 di sini, 60/95 di sana) dan diam-diam menyimpang — commit e545d61 menaikkan angka e2e.ts saja. Perbaikan berikutnya menyatukan definisinya di satu modul baru, `pkgs/cli/src/jadwal.ts`, supaya penyimpangan itu tidak mungkin lagi terjadi tanpa disadari:
+
+```typescript
+// Jendela deadline BERSAMA untuk `deploy-ballot.ts` dan `e2e.ts` — SATU-
+// SATUNYA definisi MENIT_VOTE/MENIT_TALLY di seluruh CLI.
+//
+// Nilai 60/95 dipertahankan (bukan dikembalikan ke 45/80): itu nilai yang
+// sudah dibuktikan cukup untuk invarian SISA_MINIMAL_VOTE/SISA_MINIMAL_TALLY
+// e2e.ts (lihat tabel anggaran waktu di Task 6 Step 5). Menurunkannya ke
+// 45/80 akan membuat jendela e2e.ts lebih kecil dari biaya terburuk satu
+// iterasi loop coblos — regresi yang sudah pernah terjadi dan diperbaiki.
+export const MENIT_VOTE = 60;
+export const MENIT_TALLY = 95;
+```
+
+Kedua skrip di bawah (`deploy-ballot.ts` dan `e2e.ts`) mengimpor `MENIT_VOTE`/`MENIT_TALLY` dari `./jadwal.ts` — bukan mendefinisikannya sendiri-sendiri.
+
 `pkgs/cli/src/deploy-ballot.ts`:
 
 ```typescript
@@ -2559,12 +2608,16 @@ import {
   kunciAdmin,
   temukanRegistry,
 } from "./deploy.ts";
+import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
 import { rakitProvidersBallot, rakitProvidersRegistry } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
 
+// MENIT_VOTE/MENIT_TALLY diimpor dari ./jadwal.ts — SATU sumber yang dipakai
+// bersama dengan e2e.ts (Task 6 Step 5), supaya kedua skrip tidak lagi bisa
+// diam-diam menyimpang seperti sebelum perbaikan seam Task 6/7 (lihat
+// komentar di jadwal.ts: sebelumnya 45/80 di sini, 60/95 di e2e.ts).
+
 const JUMLAH_PEMILIH = 3;
-const MENIT_VOTE = 45;
-const MENIT_TALLY = 80;
 
 const sesi = await siapkanSesi();
 const { config, log, ctx, kp } = sesi;
@@ -2576,6 +2629,20 @@ if (alamatRegistry === undefined) {
   // process.exit (bukan tutupSesi) supaya tsc tahu baris di bawah tidak
   // tercapai dan `alamatRegistry` menyempit jadi string setelah blok ini.
   process.exit(1);
+}
+
+// Penjaga deploy-ulang: tanpa ini, menjalankan ulang `pnpm cli deploy-ballot`
+// men-deploy ballot BARU dan menimpa alamat/credential ballot LAMA di
+// artefak — ballot lama yang mungkin sudah dibayar dan sebagian pemilihnya
+// sudah mencoblos jadi yatim. Setel VOTEPRIV_DEPLOY_ULANG=1 untuk memaksa
+// deploy baru yang memang disengaja.
+const ballotSudahAda = bacaArtefak(config.networkId)?.ballot;
+if (ballotSudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
+  log.warn(
+    { alamat: ballotSudahAda },
+    "Ballot sudah tercatat di artefak. Setel VOTEPRIV_DEPLOY_ULANG=1 bila memang ingin men-deploy ballot BARU.",
+  );
+  await tutupSesi(sesi, 0);
 }
 
 const metadata: MetadataBallot = {
@@ -2725,11 +2792,11 @@ Inilah bukti yang tidak bisa diberikan simulator. Deadline benar-benar berlalu, 
 
 **Baris terpenting dalam berkas ini adalah pemeriksaan bahwa `tallies` KOSONG setelah tiga suara masuk.** Itu bentuk yang bisa dieksekusi dari janji inti aplikasi ini: selama pemungutan suara berlangsung, rantai hanya memegang nullifier dan commitment, dan tidak ada hasil parsial yang bisa bocor — tidak kepada penyelenggara, tidak kepada siapa pun yang membaca chain. Kalau baris itu suatu saat harus dilonggarkan, produknya sudah berubah, bukan ujinya.
 
-**Berapa lama, dan kenapa tidak bisa dipercepat.** Sekitar **85–95 menit**, sebagian besarnya menunggu. Dua penantian tidak bisa dihindari: sampai `voteDeadline` lewat (45 menit sejak metadata disusun) dan sampai `tallyDeadline` lewat (80 menit sejak metadata disusun). Kontrak membandingkan deadline terhadap **waktu blok jaringan**, dan waktu blok jaringan publik tidak bisa dimajukan dari klien — tidak ada `evm_increaseTime` di sini. Simulator bisa menyuntikkan waktu; preview tidak.
+**Berapa lama, dan kenapa tidak bisa dipercepat.** Sekitar **100–110 menit**, sebagian besarnya menunggu. Dua penantian tidak bisa dihindari: sampai `voteDeadline` lewat (60 menit sejak metadata disusun) dan sampai `tallyDeadline` lewat (95 menit sejak metadata disusun). Kontrak membandingkan deadline terhadap **waktu blok jaringan**, dan waktu blok jaringan publik tidak bisa dimajukan dari klien — tidak ada `evm_increaseTime` di sini. Simulator bisa menyuntikkan waktu; preview tidak.
 
-Kenapa 45/80 dan bukan 15/35 seperti sketsa awal: jendela 15 menit tidak muat pekerjaannya. Perhitungan lengkapnya ada di Step 5 — enam transaksi plus empat `findDeployedContract` berjumlah ~35 menit pada kasus terburuk, sehingga jendela lama dijamin habis setelah empat transaksi berbayar dan seluruh rangkaian harus diulang dari nol.
+Kenapa 60/95 dan bukan 15/35 seperti sketsa awal, atau 45/80 seperti draf sebelumnya: jendela 15 menit tidak muat pekerjaannya, dan jendela 45/80 sendiri kemudian terbukti kekecilan untuk anggaran waktu loop coblos e2e.ts (lihat `SISA_MINIMAL_VOTE`/`SISA_MINIMAL_TALLY`) begitu keduanya dihitung pada basis biaya yang benar. Perhitungan lengkapnya, dan modul bersama `./jadwal.ts` yang sekarang jadi satu-satunya sumber nilai ini, ada di Step 5.
 
-Selain menunggu, ada **sebelas transaksi**, masing-masing dengan proof ZK sungguhan 5–20 detik ditambah finalisasi node dan indexer: deploy registry, deploy ballot, registerVoters, register ke registry, tiga castVote, tiga tallyVote, finalize. Jeda panjang tanpa keluaran adalah normal — dan sejak Task 4, jeda yang benar-benar tak berujung berakhir sendiri dengan pesan, bukan dengan diam.
+Selain menunggu, ada **sepuluh atau sebelas transaksi**, masing-masing dengan proof ZK sungguhan 5–20 detik ditambah finalisasi node dan indexer: deploy ballot, registerVoters, register ke registry, tiga castVote, tiga tallyVote, finalize — sepuluh bila registry sudah tercatat di artefak dari sesi sebelumnya (dipakai ulang), sebelas bila belum (turut men-deploy registry baru). Jeda panjang tanpa keluaran adalah normal — dan sejak Task 4, jeda yang benar-benar tak berujung berakhir sendiri dengan pesan, bukan dengan diam.
 
 **Files:**
 - Create: `pkgs/cli/src/vote.ts`, `pkgs/cli/src/e2e.ts`
@@ -3168,36 +3235,56 @@ export async function finalisasi(ballot: FoundContract<BallotC>, log: Logger): P
 
 - [ ] **Step 5: Tulis e2e.ts**
 
-**Anggaran waktu, dihitung bukan ditebak.** Angka "terburuk" di bawah adalah waktu terukur pada preview (~2,5 menit per transaksi bertransaksi-proof) dan anggaran batas waktu untuk operasi indexer.
+**Anggaran waktu, dihitung bukan ditebak — DIPERBARUI mengikuti kode terkirim (Fix Round 3/4/5, lihat `pkgs/cli/src/jadwal.ts` dan komentar di atas `SISA_MINIMAL_VOTE`/`SISA_MINIMAL_TALLY` di `e2e.ts`).** Setiap komponen ditabelkan pada SALAH SATU dari dua basis biaya, sengaja berbeda per jenis: pembacaan indexer (`temukanBallot`, `temukanRegistry`, `bacaLedgerBallot`, retry eligibility path) pada BATAS TIMEOUT-nya (keterlambatan indexer itu umum dan bisa pulih, jadi guard harus mengizinkan menunggu sampai batas itu); proof+transaksi (`deployBallot`, `daftarkanVoter`, `catatKeRegistry`, `castVote`, `tallyVote`) pada biaya TERUKUR di preview (~2,5 menit), bukan batas timeout-nya — mencapai timeout proof/transaksi berarti proof server/node patologis rusak, kegagalan yang tidak bisa dipulihkan dengan menunggu lebih lama, dan menabelkannya pada timeout akan mendorong jendela ke orde jam tanpa melindungi apa pun.
 
-Jendela pemungutan suara, `MENIT_VOTE = 45`, dari saat `detikDariSekarang` dipanggil sampai `castVote` ketiga difinalisasi:
+Jendela pemungutan suara, `MENIT_VOTE = 60` (dari `./jadwal.ts`), dari saat `detikDariSekarang` dipanggil sampai `castVote` ketiga difinalisasi:
 
-| Pekerjaan | Banyak | Terburuk | Subtotal |
-|---|---|---|---|
-| `deployBallot` | 1 | 2,5 mnt | 2,5 |
-| `daftarkanVoter` (registerVoters) | 1 | 2,5 | 2,5 |
-| `temukanRegistry` (hanya bila registry dari sesi sebelumnya) | 1 | 5 | 5 |
-| `catatKeRegistry` (register) | 1 | 2,5 | 2,5 |
-| `bacaLedgerBallot` sebelum tiap coblos | 3 | 0,2 | 0,6 |
-| `temukanBallot` per pemilih (store terpisah, tak terhindarkan) | 3 | 5 | 15 |
-| `castVote` | 3 | 2,5 | 7,5 |
-| **Total** | | | **35,6 mnt** |
+Pra-loop (sekali, sebelum iterasi pertama):
 
-Sisa 9,4 menit. Penjaga `sisaDetik > SISA_MINIMAL_VOTE` (240 detik) menghentikan sebelum proof dibuang percuma.
+| Pekerjaan | Basis | Terburuk (detik) |
+|---|---|---|
+| `deployBallot` | terukur | 150 |
+| `daftarkanVoter` (registerVoters) | terukur | 150 |
+| `temukanRegistry` (hanya bila registry dari sesi sebelumnya) | timeout (`BATAS_MS.temukan`) | 300 |
+| `catatKeRegistry` (register) | terukur | 150 |
+| **Subtotal pra-loop** | | **750** |
 
-Jendela pembukaan suara, `MENIT_TALLY - MENIT_VOTE = 35` menit:
+Satu iterasi loop coblos (× 3 pemilih):
 
-| Pekerjaan | Banyak | Terburuk | Subtotal |
-|---|---|---|---|
-| buffer `tungguSampaiDetik` | 1 | 1 mnt | 1 |
-| `bacaLedgerBallot` sebelum tiap pembukaan | 3 | 0,2 | 0,6 |
-| `tallyVote` | 3 | 2,5 | 7,5 |
-| jeda ulang `cobaSampaiWaktuBlokCocok` (maks 6 × 20 dtk) | 3 | 2 | 6 |
-| **Total** | | | **15,1 mnt** |
+| Pekerjaan | Basis | Terburuk (detik) |
+|---|---|---|
+| retry eligibility path (`ulangiSampai`, bagian 5: maks 6 percobaan × `BATAS_MS.bacaIndexer` 60 dtk, ditambah 5 jeda × 5 dtk) | timeout | 385 |
+| `temukanBallot` | timeout (`BATAS_MS.temukan`) | 300 |
+| `castVote` | terukur | 150 |
+| **Total satu iterasi** | | **835** |
 
-Sisa ~20 menit. **Tidak ada `temukanBallot` di loop ini**: handle `FoundContract` dari bagian 5 dipakai ulang. Itu aman dan bukan optimasi berisiko — `callTx.*` memanggil `getStates` yang membaca ULANG state publik dari indexer dan private state dari LevelDB pada SETIAP pemanggilan (midnight-js-contracts 4.0.4 `dist/index.mjs:886-891`, `995`), sehingga tidak ada apa pun yang basi di dalam handle. Yang di-cache handle hanya alamat, compiledContract, dan providers.
+Verifikasi dirantai PENUH pada basis terburuk, per iterasi, terhadap jendela 3600 detik (`MENIT_VOTE × 60`): sisa sebelum loop = 3600−750 = 2850 detik.
+- iterasi ke-0: 2850 > 900 (margin 1950); konsumsi 835 → sisa 2015
+- iterasi ke-1: 2015 > 900 (margin 1115); konsumsi 835 → sisa 1180
+- iterasi ke-2: 1180 > 900 (margin 280); konsumsi 835 → sisa AKHIR 345 detik (~5,75 menit)
 
-Penjaga `sisaDetik > SISA_MINIMAL_TALLY` (300 detik: satu tallyVote 2,5 menit + anggaran ulang 2 menit) menghentikan run dengan pesan yang benar sebelum `blockTimeLessThan(tallyDeadline)` gagal. Itu penting: pesan "Batas waktu pembukaan suara sudah lewat" sengaja TIDAK ada di `POLA_BELUM_WAKTUNYA`, jadi tanpa penjaga ini ia akan melempar keluar dan mematikan run dengan dua dari tiga suara sudah terbuka — keadaan yang membuat pemeriksaan `talliedCount === 3n` di bagian 9 tidak akan pernah tercapai.
+Penjaga `sisaDetik > SISA_MINIMAL_VOTE` (900 detik: 835 dibulatkan ke atas + margin 65 detik) diperiksa SEBELUM setiap iterasi dan menghentikan sebelum proof dibuang percuma.
+
+Jendela pembukaan suara, `MENIT_TALLY - MENIT_VOTE = 35` menit (2100 detik) — MENIT_TALLY = 95, dinaikkan bersamaan dengan MENIT_VOTE supaya selisih 35 menit ini TIDAK menyempit:
+
+| Pekerjaan | Basis | Terburuk (detik) |
+|---|---|---|
+| buffer `tungguSampaiDetik` (sekali, di awal) | — | 60 |
+| `bacaLedgerBallot` sebelum tiap pembukaan | timeout (`BATAS_MS.bacaIndexer`) | 60 |
+| jeda-ulang `cobaSampaiWaktuBlokCocok` (maks 6 percobaan ⇒ paling banyak 5 jeda × 20 dtk) | ekspektasi (`setTimeout` lokal, bukan `BATAS_MS`) | 100 |
+| `tallyVote` | terukur | 150 |
+| **Total satu iterasi (× 3)** | | **310** |
+
+**Tidak ada `temukanBallot` di loop ini**: handle `FoundContract` dari bagian 5 dipakai ulang. Itu aman dan bukan optimasi berisiko — `callTx.*` memanggil `getStates` yang membaca ULANG state publik dari indexer dan private state dari LevelDB pada SETIAP pemanggilan (midnight-js-contracts 4.0.4 `dist/index.mjs:886-891`, `995`), sehingga tidak ada apa pun yang basi di dalam handle. Yang di-cache handle hanya alamat, compiledContract, dan providers.
+
+Verifikasi: sisa setelah buffer = 2100−60 = 2040 detik.
+- iterasi ke-0: 2040 > 360 (margin 1680); konsumsi 310 → sisa 1730
+- iterasi ke-1: 1730 > 360 (margin 1370); konsumsi 310 → sisa 1420
+- iterasi ke-2: 1420 > 360 (margin 1060); konsumsi 310 → sisa AKHIR 1110 detik (~18,5 menit)
+
+Penjaga `sisaDetik > SISA_MINIMAL_TALLY` (360 detik: 310 dibulatkan ke atas + margin 50 detik — satu `bacaLedgerBallot` pada basis timeout 60 dtk + jeda ulang 100 dtk + satu `tallyVote` terukur 150 dtk) menghentikan run dengan pesan yang benar sebelum `blockTimeLessThan(tallyDeadline)` gagal. Itu penting: pesan "Batas waktu pembukaan suara sudah lewat" sengaja TIDAK ada di `POLA_BELUM_WAKTUNYA`, jadi tanpa penjaga ini ia akan melempar keluar dan mematikan run dengan dua dari tiga suara sudah terbuka — keadaan yang membuat pemeriksaan `talliedCount === 3n` di bagian 9 tidak akan pernah tercapai.
+
+`MENIT_VOTE`/`MENIT_TALLY` TIDAK lagi didefinisikan lokal di `e2e.ts` maupun `deploy-ballot.ts`: keduanya diimpor dari `./jadwal.ts`, satu-satunya definisi bersama (lihat Step 5 Task 5 di atas dan berkas `jadwal.ts` sendiri) — sebelum penyatuan ini kedua skrip diam-diam menyimpang (45/80 di satu skrip, 60/95 di yang lain) tanpa ada yang memutuskan itu dengan sengaja.
 
 `pkgs/cli/src/e2e.ts`:
 
@@ -3205,18 +3292,20 @@ Penjaga `sisaDetik > SISA_MINIMAL_TALLY` (300 detik: satu tallyVote 2,5 menit + 
 // `pnpm cli e2e` — uji end-to-end tiga pemilih di preview. Skrip tingkat-atas:
 // TIDAK mengekspor apa pun, tidak boleh diimpor dari mana pun.
 //
-// LAMANYA: sekitar 85-95 menit, dan sebagian besarnya adalah MENUNGGU. Dua
-// penantian tidak bisa dihindari: sampai voteDeadline lewat (45 menit sejak
-// metadata disusun) dan sampai tallyDeadline lewat (80 menit sejak itu).
+// LAMANYA: sekitar 100-110 menit, dan sebagian besarnya adalah MENUNGGU. Dua
+// penantian tidak bisa dihindari: sampai voteDeadline lewat (60 menit sejak
+// metadata disusun) dan sampai tallyDeadline lewat (95 menit sejak itu).
 // Kontrak membandingkan deadline terhadap WAKTU BLOK jaringan, dan waktu blok
 // jaringan publik tidak bisa dimajukan dari klien. Simulator bisa menyuntikkan
 // waktu; preview tidak. Itulah tepatnya yang membuat uji ini bernilai.
 //
-// SEBELAS TRANSAKSI, masing-masing dengan proof ZK sungguhan 5-20 detik plus
-// finalisasi node dan indexer: deploy registry, deploy ballot, registerVoters,
-// register ke registry, 3x castVote, 3x tallyVote, finalize. Setiap await ke
-// jaringan dibungkus denganBatasWaktu, jadi jeda panjang berakhir dengan pesan
-// dan bukan dengan diam tak berujung.
+// SEPULUH ATAU SEBELAS TRANSAKSI, masing-masing dengan proof ZK sungguhan
+// 5-20 detik plus finalisasi node dan indexer: deploy ballot, registerVoters,
+// register ke registry, 3x castVote, 3x tallyVote, finalize — SEPULUH bila
+// registry sudah tercatat di artefak dari sesi sebelumnya (dipakai ulang,
+// TIDAK di-deploy lagi), SEBELAS bila belum (turut men-deploy registry
+// BARU). Setiap await ke jaringan dibungkus denganBatasWaktu, jadi jeda
+// panjang berakhir dengan pesan dan bukan dengan diam tak berujung.
 //
 // SATU PEMILIH SATU STORE. Private state VotePriv berbentuk
 // Record<alamatBallot, ...>, bukan Record<pemilih, ...> — midnight-js membaca
@@ -3254,6 +3343,7 @@ import {
   temukanRegistry,
   type HasilDeployRegistry,
 } from "./deploy.ts";
+import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
 import type { BallotC } from "./kontrak.ts";
 import { rakitProvidersBallot, rakitProvidersRegistry, type ProvidersBallot } from "./providers.ts";
 import {
@@ -3269,14 +3359,15 @@ import { acak32, bukaSuara, finalisasi, pilih, siapkanPemilih, siapkanPembukaan 
 const PILIHAN = [0n, 2n, 0n] as const; // hasil yang diharapkan: opsi0=2, opsi1=0, opsi2=1
 const JUMLAH_PEMILIH = PILIHAN.length;
 
-// Lihat tabel anggaran waktu di rencana (Task 6 Step 5). Jangan menurunkan
-// angka-angka ini tanpa menghitung ulang tabel itu.
-const MENIT_VOTE = 45;
-const MENIT_TALLY = 80;
-/** Cukup untuk satu temukanBallot + satu castVote pada kecepatan terukur. */
-const SISA_MINIMAL_VOTE = 240;
-/** Cukup untuk satu tallyVote + seluruh anggaran ulang cobaSampaiWaktuBlokCocok. */
-const SISA_MINIMAL_TALLY = 300;
+// MENIT_VOTE/MENIT_TALLY diimpor dari ./jadwal.ts — SATU-SATUNYA definisi,
+// dipakai bersama dengan deploy-ballot.ts (Task 5 Step 5), supaya kedua
+// skrip tidak lagi bisa diam-diam menyimpang (lihat komentar di jadwal.ts
+// dan tabel anggaran waktu di Task 6 Step 5 di atas — jangan menurunkan
+// angka-angkanya tanpa menghitung ulang tabel itu).
+/** Cukup untuk retry eligibility path + temukanBallot + castVote pada basis biaya yang dinyatakan di atas SISA_MINIMAL_VOTE (e2e.ts). */
+const SISA_MINIMAL_VOTE = 900;
+/** Cukup untuk satu bacaLedgerBallot + jeda ulang cobaSampaiWaktuBlokCocok + satu tallyVote pada basis biaya yang dinyatakan di atas SISA_MINIMAL_TALLY (e2e.ts). */
+const SISA_MINIMAL_TALLY = 360;
 
 const sesi = await siapkanSesi();
 const { config, log, ctx, kp } = sesi;
@@ -3327,12 +3418,21 @@ const { alamat: alamatBallot, kontrak: ballotAdmin } = await deployBallot(
   log,
   JUMLAH_PEMILIH,
 );
+// Fix seam Task 6/7: DI BAWAH KUNCI `e2e`, bukan di top level. Top-level
+// ballot/voteDeadline/tallyDeadline/options/credentials adalah milik
+// `deploy-ballot.ts` SEPENUHNYA (lihat ArtefakDeploy di artefak.ts) — bila
+// e2e menulis ke sana, ballot yang deploy-ballot sudah bayar dan daftarkan
+// tiga pemilihnya tertimpa dan credential-nya (yang HANYA hidup di berkas
+// ini) hilang selamanya. e2e men-deploy ballotnya SENDIRI (baris di atas),
+// jadi ia mencatat hasilnya di namespace sendiri pula.
 tulisArtefak(config.networkId, {
-  ballot: alamatBallot,
-  voteDeadline: metadata.voteDeadline.toString(),
-  tallyDeadline: metadata.tallyDeadline.toString(),
-  options: metadata.options,
-  credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
+  e2e: {
+    ballot: alamatBallot,
+    voteDeadline: metadata.voteDeadline.toString(),
+    tallyDeadline: metadata.tallyDeadline.toString(),
+    options: metadata.options,
+    credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
+  },
 });
 
 // ── 3. Pendaftaran pemilih (harus SEBELUM suara pertama) ────────────────────
@@ -3572,7 +3672,7 @@ pnpm cli e2e 2>&1 | tee /tmp/votepriv-e2e.log
 #   printf '%s' "$FRASA" | pnpm cli e2e 2>&1 | tee /tmp/votepriv-e2e.log
 ```
 
-**Sediakan 85–95 menit dan jangan interupsi prosesnya.** Mematikan proses di antara pengiriman dan finalisasi meninggalkan chain sudah berubah sementara private state dan signing key lokal belum ditulis (keduanya ditulis setelah `SucceedEntirely` terlihat), dan pustaka ini tidak menyediakan jalur pemulihan untuk keadaan itu.
+**Sediakan 100–110 menit dan jangan interupsi prosesnya.** Mematikan proses di antara pengiriman dan finalisasi meninggalkan chain sudah berubah sementara private state dan signing key lokal belum ditulis (keduanya ditulis setelah `SucceedEntirely` terlihat), dan pustaka ini tidak menyediakan jalur pemulihan untuk keadaan itu.
 
 Urutan keluaran yang diharapkan:
 

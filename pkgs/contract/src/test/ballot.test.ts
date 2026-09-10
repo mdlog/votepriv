@@ -233,3 +233,53 @@ describe("ballot.compact — castVote", () => {
     expect(() => sim.registerVoters([bytes32(0x44)])).toThrow();
   });
 });
+
+describe("ballot.compact — deadline", () => {
+  const CRED_A = bytes32(0x11);
+  const SALT_1 = bytes32(0xa1);
+  // Detik sejak epoch Unix, BUKAN milidetik — lihat catatan pada konstanta
+  // `HARI` di ballot-simulator.ts (Task 5). Besaran ~1.8e9 di sini murni
+  // fiksi uji (kira-kira tahun 2027); yang penting hanyalah konsisten dengan
+  // satuan yang dipakai setBlockTime dan default konstruktor ballot — bukan
+  // representasi waktu sungguhan.
+  const SEKARANG = 1_800_000_000n;
+
+  it("menolak suara setelah voteDeadline lewat", () => {
+    const sim = new BallotSimulator({
+      eligibleCount: 4,
+      voteDeadline: SEKARANG + 1000n,
+      tallyDeadline: SEKARANG + 5000n,
+    });
+    sim.setBlockTime(SEKARANG);
+    sim.registerVoters([CRED_A]);
+    sim.setBlockTime(SEKARANG + 2000n);
+    expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow();
+  });
+
+  it("menerima suara sebelum voteDeadline", () => {
+    const sim = new BallotSimulator({
+      eligibleCount: 4,
+      voteDeadline: SEKARANG + 1000n,
+      tallyDeadline: SEKARANG + 5000n,
+    });
+    sim.setBlockTime(SEKARANG);
+    sim.registerVoters([CRED_A]);
+    sim.castVote(CRED_A, 0, SALT_1);
+    expect(sim.getLedger().voteCount).toBe(1n);
+  });
+
+  it("menolak suara tepat saat voteDeadline (batas eksklusif, bukan <=)", () => {
+    // kernel.blockTimeLessThan dikonfirmasi empiris (Task 5, probe langsung ke
+    // compact-runtime) bersifat strict: true hanya bila waktu blok < deadline.
+    // Pada waktu == deadline persis, suara sudah ditolak — bukan diterima.
+    const sim = new BallotSimulator({
+      eligibleCount: 4,
+      voteDeadline: SEKARANG + 1000n,
+      tallyDeadline: SEKARANG + 5000n,
+    });
+    sim.setBlockTime(SEKARANG);
+    sim.registerVoters([CRED_A]);
+    sim.setBlockTime(SEKARANG + 1000n);
+    expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow();
+  });
+});

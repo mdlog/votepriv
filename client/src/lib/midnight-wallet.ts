@@ -15,19 +15,16 @@ export const LACE_RDNS = "io.lace.wallet";
  * "Invalid network ID: undefined". Daftar nilai sah di bawah ini berasal langsung dari
  * pesan galat Lace, bukan tebakan.
  *
- * Persoalannya: tidak ada cara menanyakan jaringan wallet SEBELUM tersambung, dan
- * menyebut jaringan yang salah ditolak dengan "Network ID mismatch". Untungnya
- * penolakan itu terjadi seketika tanpa popup, jadi kita boleh mencoba berurutan
- * sampai menemukan jaringan yang dipakai wallet.
+ * Perhatikan bedanya "sah" dan "didukung": ketujuh nilai di atas diterima sebagai
+ * identifier, tapi Lace hanya benar-benar melayani undeployed, mainnet, preview,
+ * dan preprod. Menyebut `testnet` ditolak dengan "Unsupported network ID", bukan
+ * "Network ID mismatch" — sehingga daftar probe hanya boleh berisi yang didukung,
+ * dan kedua bentuk penolakan itu harus sama-sama dibaca sebagai "jaringan keliru".
+ *
+ * Tidak ada cara menanyakan jaringan wallet SEBELUM tersambung, tapi kedua
+ * penolakan tadi terjadi seketika tanpa popup, jadi mencoba berurutan itu murah.
  */
-export const PROBE_NETWORKS = [
-  "preprod",
-  "preview",
-  "testnet",
-  "devnet",
-  "qanet",
-  "undeployed",
-] as const;
+export const PROBE_NETWORKS = ["preprod", "preview", "undeployed"] as const;
 
 // mainnet sengaja TIDAK ikut diprobe. Ini aplikasi testnet; menyambung ke uang
 // sungguhan tanpa diminta bukan sesuatu yang boleh terjadi karena kebetulan urutan.
@@ -94,7 +91,8 @@ function firstAddress(v: unknown): string | undefined {
 
 export type WalletErrorCode =
   | "NO_CONNECTOR"
-  | "WALLET_ASLEEP"
+  | "WALLET_STALE"
+  | "TIMEOUT"
   | "CONNECT_REJECTED"
   | "NETWORK_MISMATCH"
   | "NO_ADDRESS"
@@ -150,19 +148,62 @@ function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
 }
 
 /**
- * Service worker ekstensi pada Chrome MV3 tidur setelah kira-kira 30 detik menganggur.
- * Saat itu terjadi, kanal pesan Lace mati dan panggilan apa pun gagal dengan galat
- * internal yang tidak berarti apa-apa bagi pengguna. Ini bukan penolakan — objeknya
- * cuma basi — jadi satu percobaan ulang biasanya cukup, dan tidak menumpuk popup
- * karena tidak ada popup yang sempat terbuka.
+ * Objek yang disuntikkan ekstensi adalah handle hidup ke dalam service worker-nya.
+ * Ketika worker itu restart — karena tidur, karena ganti jaringan, atau karena
+ * ekstensinya dimuat ulang — handle yang masih dipegang halaman ini sudah mati,
+ * dan panggilan pertama lewat handle itu gagal dengan pesan soal kanal, bukan soal
+ * wallet.
+ *
+ * Yang penting: mencoba ulang TIDAK menolong. Handle-nya sendiri yang mati, bukan
+ * worker-nya yang sibuk. Hanya muat ulang halaman yang membuat ekstensi menyuntikkan
+ * handle baru yang hidup.
  */
-function walletTertidur(msg: string): boolean {
-  return /was shutdown|no longer be used|Receiving end does not exist|Could not establish connection|Extension context invalidated/i.test(
+function handleBasi(msg: string): boolean {
+  return /was shutdown|no longer be used|context invalidated|receiving end does not exist|could not establish connection/i.test(
     msg,
   );
 }
 
-const jeda = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Kedua pesan ini sama artinya: jaringannya yang keliru, bukan Anda. */
+function jaringanKeliru(msg: string): boolean {
+  return /network id mismatch/i.test(msg) || /unsupported network id/i.test(msg);
+}
+
+/** Lace membuka jendela persetujuan di luar halaman, jadi permintaan yang tidak
+ * dijawab terlihat sama persis dengan ekstensi yang mati dari sini: promise-nya
+ * tidak pernah selesai. Tanpa batas waktu, tombolnya tersangkut selamanya. */
+export const WALLET_LAMBAT_MS = 8_000;
+export const WALLET_TIMEOUT_MS = 120_000;
+
+export async function tungguWallet<T>(
+  panggilan: Promise<T>,
+  opsi: { onLambat?: () => void; lambatMs?: number; timeoutMs?: number } = {},
+): Promise<T> {
+  const { onLambat, lambatMs = WALLET_LAMBAT_MS, timeoutMs = WALLET_TIMEOUT_MS } = opsi;
+  let tLambat: ReturnType<typeof setTimeout> | undefined;
+  let tKeras: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      panggilan,
+      new Promise<never>((_, reject) => {
+        if (onLambat) tLambat = setTimeout(onLambat, lambatMs);
+        tKeras = setTimeout(
+          () =>
+            reject(
+              new WalletError(
+                "TIMEOUT",
+                `Wallet tidak menjawab dalam ${Math.round(timeoutMs / 1000)} detik. Periksa apakah ada jendela persetujuan yang menunggu, dan pastikan wallet tidak terkunci.`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(tLambat);
+    clearTimeout(tKeras);
+  }
+}
 
 /** Memanggil method opsional pada objek API wallet; undefined bila tidak tersedia. */
 async function tryCall<T>(api: unknown, method: string): Promise<T | undefined> {
@@ -180,21 +221,9 @@ async function tryCall<T>(api: unknown, method: string): Promise<T | undefined> 
  * Membuka koneksi ke wallet. Memunculkan popup izin di Lace — hanya panggil
  * sebagai respons langsung atas aksi pengguna, jangan saat halaman dimuat.
  */
-/** connect() sekali, dengan satu percobaan ulang bila kanal ekstensi kebetulan basi. */
-async function sambung(raw: RawConnector, net: string): Promise<unknown> {
-  try {
-    return await raw.connect(net);
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (!walletTertidur(msg)) throw error;
-    console.warn(`[votepriv:wallet] kanal ekstensi basi (${msg}) — mencoba ulang sekali`);
-    await jeda(600);
-    return await raw.connect(net);
-  }
-}
-
 export async function connectMidnightWallet(
   networkId?: string,
+  onLambat?: () => void,
 ): Promise<WalletConnection> {
   const { info, raw } = pickConnector();
   console.log("[votepriv:wallet] konektor terpilih", JSON.stringify(info));
@@ -208,20 +237,30 @@ export async function connectMidnightWallet(
 
   for (const net of urutan) {
     try {
-      api = await sambung(raw, net);
+      api = await tungguWallet(raw.connect(net), { onLambat });
+      // Wallet tidak pernah menyebut jaringannya sendiri saat menolak, jadi
+      // pastikan yang tersambung memang yang diminta.
+      const status = await tryCall<{ networkId?: string }>(api, "getConnectionStatus");
+      if (status?.networkId && status.networkId !== net) {
+        throw new WalletError(
+          "NETWORK_MISMATCH",
+          `Wallet tersambung ke ${status.networkId}, padahal yang diminta ${net}.`,
+        );
+      }
       terpakai = net;
       break;
     } catch (error) {
+      if (error instanceof WalletError) throw error;
       const msg = error instanceof Error ? error.message : String(error);
       // Jaringan keliru — murah, tanpa popup, lanjut ke kandidat berikutnya.
-      if (/mismatch/i.test(msg)) {
+      if (jaringanKeliru(msg)) {
         ditolak.push(net);
         continue;
       }
-      if (walletTertidur(msg)) {
+      if (handleBasi(msg)) {
         throw new WalletError(
-          "WALLET_ASLEEP",
-          "Ekstensi Lace sedang tidak aktif. Buka Lace dari toolbar Chrome untuk membangunkannya, lalu coba lagi.",
+          "WALLET_STALE",
+          "Ekstensi wallet sempat restart, sehingga halaman ini memegang koneksi yang sudah mati. Muat ulang halaman — dengan wallet dalam keadaan tidak terkunci — lalu sambungkan lagi.",
           error,
         );
       }

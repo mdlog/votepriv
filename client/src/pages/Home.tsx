@@ -299,7 +299,14 @@ export default function Home() {
     }
     setConnecting(true);
     try {
-      const result = await connectMidnightWallet();
+      // Lace membuka jendela persetujuan di luar halaman, jadi permintaan yang
+      // belum dijawab tidak bisa dibedakan dari ekstensi yang mati. Setelah
+      // beberapa detik, arahkan pengguna ke sana alih-alih membiarkannya menebak.
+      const result = await connectMidnightWallet(undefined, () =>
+        toast.info("Menunggu wallet", {
+          description: "Buka Lace dari toolbar Chrome — mungkin ada jendela persetujuan yang menunggu.",
+        }),
+      );
       setWallet(result.address);
       setNetwork(result.networkId);
       setConnected(true);

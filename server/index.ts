@@ -96,6 +96,21 @@ async function startServer() {
   // akan menjawab /proof-server/... dengan index.html bila diberi kesempatan.
   app.use("/proof-server", proofServerProxy());
 
+  // Laporan konfigurasi runtime — lihat komentar panjang di client/src/lib/proof-server.ts.
+  //
+  // Bundel browser memanggang VITE_PROOF_SERVER_URL SAAT BUILD, sedangkan proxy di
+  // atas membacanya SAAT START. Keduanya bisa berbeda, dan ketika berbeda, indikator
+  // privasi menamai host yang salah. Rute ini membuat proses yang benar-benar
+  // memegang proxy menjadi satu-satunya otoritas atas pertanyaan "ke mana witness
+  // pergi", sehingga UI tidak perlu mempercayai nilai yang dipanggang.
+  //
+  // no-store: nilainya berubah setiap kali server di-start ulang dengan env berbeda,
+  // dan jawaban basi di sini berarti kalimat privasi yang basi pula.
+  app.get("/__votepriv/runtime-config.json", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ proofServerTarget });
+  });
+
   app.use(express.static(staticPath));
 
   // Handle client-side routing - serve index.html for all routes

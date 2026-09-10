@@ -11,20 +11,48 @@
  *
  * SATU HAL YANG MUDAH KELIRU, dan pernah keliru di sini: "target proxy bersifat
  * lokal" TIDAK sama dengan "witness tidak meninggalkan perangkat pengguna".
- * VITE_PROOF_SERVER_URL diselesaikan oleh proses Node yang menjalankan dev
- * server, bukan oleh browser. `http://127.0.0.1:6300` karenanya berarti loopback
- * MESIN DEV. Bila halaman ini dibuka lewat tunnel (mis. https://x.mdloglabs.org),
- * witness menempuh browser → internet → tunnel → mesin dev → :6300 miliknya, dan
- * setiap suara terlihat oleh siapa pun yang mengoperasikan mesin itu. Klaim
- * "tidak pernah meninggalkan perangkat ini" hanya benar bila ASAL HALAMAN juga
- * lokal — itulah sebabnya proofServerReach() memeriksa keduanya.
+ * Target proxy diselesaikan oleh proses Node, bukan oleh browser.
+ * `http://127.0.0.1:6300` karenanya berarti loopback MESIN ITU. Bila halaman ini
+ * dibuka lewat tunnel (mis. https://x.mdloglabs.org), witness menempuh browser →
+ * internet → tunnel → mesin itu → :6300 miliknya, dan setiap suara terlihat oleh
+ * siapa pun yang mengoperasikannya. Klaim "tidak pernah meninggalkan perangkat ini"
+ * hanya benar bila ASAL HALAMAN juga lokal — itulah sebabnya proofServerReach()
+ * memeriksa keduanya.
+ *
+ * HAL KEDUA YANG PERNAH KELIRU: dari mana target itu diketahui. `import.meta.env`
+ * DIPANGGANG KE DALAM BUNDEL SAAT BUILD, sedangkan proxy yang benar-benar
+ * meneruskan witness membaca lingkungannya SAAT START. `pnpm build` tanpa .env lalu
+ * `VITE_PROOF_SERVER_URL=https://proof.pihak-lain.example pnpm start` menghasilkan
+ * bundel yang menyebut 127.0.0.1:6300 sementara witness benar-benar dikirim ke
+ * pihak ketiga — indikator akan berkata "witness tidak pernah meninggalkan
+ * perangkat ini" tepat ketika pernyataan itu paling salah.
+ *
+ * Karena itu nilai build BUKAN otoritas. Otoritasnya adalah proses yang memegang
+ * proxy, dan ia melaporkan targetnya lewat RUNTIME_CONFIG_PATH. Bila laporan itu
+ * tidak dapat dibaca, target tetap dipakai sebagai perkiraan tetapi ditandai
+ * `terverifikasi: false`, dan UI tidak boleh membuat klaim kuat di atasnya.
  */
 
 /** Browser selalu memanggil jalur same-origin ini; hanya target proxy yang berbeda. */
 export const PROOF_SERVER_PATH = "/proof-server";
 
-/** Target yang diteruskan proxy. Diatur lewat VITE_PROOF_SERVER_URL di .env */
-export const proofServerTarget: string =
+/**
+ * Jalur tempat proses yang memegang proxy melaporkan target sebenarnya.
+ *
+ * Disajikan oleh server produksi (server/index.ts) DAN oleh dev server
+ * (vite.config.ts), supaya jalur kode ini sama di kedua lingkungan dan tidak
+ * membusuk karena hanya dipakai di produksi.
+ */
+export const RUNTIME_CONFIG_PATH = "/__votepriv/runtime-config.json";
+
+/**
+ * Nilai yang dipanggang ke dalam bundel saat build. HANYA cadangan.
+ *
+ * Jangan pakai nilai ini untuk menyusun kalimat yang menjanjikan sesuatu kepada
+ * pengguna. Pakai `target` dari ProofServerStatus, yang menyertakan apakah nilai
+ * itu berhasil dikonfirmasi ke server.
+ */
+export const TARGET_BAWAAN: string =
   (import.meta.env.VITE_PROOF_SERVER_URL as string | undefined) || "http://127.0.0.1:6300";
 
 const HOST_LOKAL = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
@@ -35,12 +63,25 @@ export function isLocalHostname(hostname: string): boolean {
 }
 
 /**
+ * Asal halaman, dipisahkan dari `location` global supaya dapat diuji.
+ *
+ * `hostname` tanpa port dipakai untuk memutuskan lokal/tidak; `host` dengan port
+ * dipakai saat menampilkan rangkaian hop apa adanya kepada pengguna.
+ */
+export type AsalHalaman = { hostname: string; host: string };
+
+export function asalHalamanSaatIni(): AsalHalaman | null {
+  if (typeof location === "undefined") return null;
+  return { hostname: location.hostname, host: location.host };
+}
+
+/**
  * Benar bila target proxy berada di mesin lain.
  *
  * Perhatikan batasnya: ini hanya berbicara tentang TARGET. Untuk pertanyaan
  * "apakah witness meninggalkan perangkat pengguna", pakai proofServerReach().
  */
-export function isRemoteProofServer(target: string = proofServerTarget): boolean {
+export function isRemoteProofServer(target: string): boolean {
   try {
     return !isLocalHostname(new URL(target).hostname);
   } catch {
@@ -52,9 +93,9 @@ export function isRemoteProofServer(target: string = proofServerTarget): boolean
 }
 
 /** Benar bila halaman ini sendiri disajikan dari mesin pengguna. */
-export function isLocalPageOrigin(): boolean {
-  if (typeof location === "undefined") return false;
-  return isLocalHostname(location.hostname);
+export function isLocalPageOrigin(asal: AsalHalaman | null = asalHalamanSaatIni()): boolean {
+  if (asal === null) return false;
+  return isLocalHostname(asal.hostname);
 }
 
 /**
@@ -69,26 +110,36 @@ export function isLocalPageOrigin(): boolean {
  */
 export type ProofServerReach = "lokal" | "lewat-host-halaman" | "remote";
 
-export function proofServerReach(target: string = proofServerTarget): ProofServerReach {
+/**
+ * `target` wajib dioper, tidak punya nilai bawaan.
+ *
+ * Ini disengaja. Nilai bawaan yang membaca TARGET_BAWAAN akan membuat pemanggil
+ * yang lupa mengoper target runtime tetap mendapat jawaban yang kelihatan masuk
+ * akal — jawaban yang dihitung dari nilai build yang mungkin sudah usang. Bentuk
+ * kegagalan itu diam. Parameter wajib membuatnya jadi galat kompilasi.
+ */
+export function proofServerReach(
+  target: string,
+  asal: AsalHalaman | null = asalHalamanSaatIni(),
+): ProofServerReach {
   // Target remote diperiksa lebih dulu: itu pernyataan yang lebih kuat, dan
   // berlaku ke mana pun halaman ini disajikan.
   if (isRemoteProofServer(target)) return "remote";
-  if (!isLocalPageOrigin()) return "lewat-host-halaman";
+  if (!isLocalPageOrigin(asal)) return "lewat-host-halaman";
   return "lokal";
 }
 
 /** Rangkaian hop yang benar-benar dilalui witness, untuk ditampilkan apa adanya. */
-export function proofServerHop(target: string = proofServerTarget): string {
-  if (proofServerReach(target) === "lewat-host-halaman") {
-    const halaman = typeof location === "undefined" ? "host halaman ini" : location.host;
+export function proofServerHop(
+  target: string,
+  asal: AsalHalaman | null = asalHalamanSaatIni(),
+): string {
+  if (proofServerReach(target, asal) === "lewat-host-halaman") {
+    const halaman = asal === null ? "host halaman ini" : asal.host;
     return `browser → ${halaman} → ${target} (loopback mesin itu, bukan perangkat Anda)`;
   }
   return `browser → ${target}`;
 }
-
-export type ProofServerStatus =
-  | { reachable: true; version: string; reach: ProofServerReach; hop: string }
-  | { reachable: false; error: string; reach: ProofServerReach; hop: string };
 
 /**
  * Proof server menjawab /version dengan string versi. Bila yang kembali justru
@@ -98,7 +149,7 @@ export type ProofServerStatus =
  * `pnpm start` menjawab /proof-server/version dengan index.html dan HTTP 200.
  * `res.ok` bernilai true, dan tanpa pemeriksaan ini indikator akan melaporkan
  * proof server "terjangkau" pada deployment yang tidak punya proof server sama
- * sekali.
+ * sekali. Alasan yang sama berlaku untuk RUNTIME_CONFIG_PATH.
  */
 function balasanHtml(contentType: string | null, body: string): boolean {
   return (
@@ -107,11 +158,66 @@ function balasanHtml(contentType: string | null, body: string): boolean {
   );
 }
 
-/** Menanyakan /version lewat proxy. Dipakai UI untuk menunjukkan kesiapan sebelum memilih. */
-export async function checkProofServer(): Promise<ProofServerStatus> {
-  const jalur = { reach: proofServerReach(), hop: proofServerHop() };
+export type TargetRuntime = {
+  target: string;
+  /** Benar hanya bila server yang menyajikan halaman ini yang menyebutkan target. */
+  terverifikasi: boolean;
+};
+
+/**
+ * Menanyakan kepada server ke mana ia benar-benar meneruskan /proof-server.
+ *
+ * Setiap kegagalan — jaringan, status non-200, fallback SPA, JSON rusak, field
+ * hilang — jatuh ke nilai build dengan terverifikasi: false. Tidak ada kegagalan
+ * yang boleh menghasilkan terverifikasi: true.
+ */
+export async function muatTargetRuntime(ambil: typeof fetch = fetch): Promise<TargetRuntime> {
+  const cadangan: TargetRuntime = { target: TARGET_BAWAAN, terverifikasi: false };
   try {
-    const res = await fetch(`${PROOF_SERVER_PATH}/version`);
+    const res = await ambil(RUNTIME_CONFIG_PATH, { cache: "no-store" });
+    if (!res.ok) return cadangan;
+    const teks = (await res.text()).trim();
+    if (balasanHtml(res.headers.get("content-type"), teks)) return cadangan;
+    const data = JSON.parse(teks) as { proofServerTarget?: unknown };
+    if (typeof data.proofServerTarget !== "string" || data.proofServerTarget.trim() === "") {
+      return cadangan;
+    }
+    return { target: data.proofServerTarget, terverifikasi: true };
+  } catch {
+    return cadangan;
+  }
+}
+
+export type JalurWitness = {
+  /** Target yang dipakai menyusun seluruh kalimat di UI. */
+  target: string;
+  /** Bila false, UI tidak boleh menjanjikan apa pun di atas `target`. */
+  targetTerverifikasi: boolean;
+  reach: ProofServerReach;
+  hop: string;
+};
+
+export type ProofServerStatus =
+  | ({ reachable: true; version: string } & JalurWitness)
+  | ({ reachable: false; error: string } & JalurWitness);
+
+/**
+ * Menanyakan /version lewat proxy. Dipakai UI untuk menunjukkan kesiapan sebelum memilih.
+ *
+ * Target runtime diselesaikan LEBIH DULU, dan seluruh jalur witness ikut dalam
+ * nilai balik. UI karenanya tidak perlu — dan tidak boleh — membaca nilai build
+ * sendiri; semua yang ia butuhkan ada di objek ini.
+ */
+export async function checkProofServer(ambil: typeof fetch = fetch): Promise<ProofServerStatus> {
+  const { target, terverifikasi } = await muatTargetRuntime(ambil);
+  const jalur: JalurWitness = {
+    target,
+    targetTerverifikasi: terverifikasi,
+    reach: proofServerReach(target),
+    hop: proofServerHop(target),
+  };
+  try {
+    const res = await ambil(`${PROOF_SERVER_PATH}/version`);
     if (!res.ok) {
       return { reachable: false, error: `HTTP ${res.status}`, ...jalur };
     }

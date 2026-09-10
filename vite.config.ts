@@ -203,6 +203,31 @@ function vitePluginStorageProxy(): Plugin {
   };
 }
 
+/**
+ * Menyajikan /__votepriv/runtime-config.json di DEV SERVER.
+ *
+ * Padanannya di produksi ada di server/index.ts. Keduanya ada supaya klien punya
+ * SATU jalur kode untuk mengetahui target proof server, dan jalur itu ikut
+ * terpakai setiap hari saat pengembangan — bukan hanya di produksi, tempat cacat
+ * baru ketahuan setelah dipakai orang.
+ *
+ * Di dev, nilai ini memang sama dengan yang dipanggang ke bundel karena keduanya
+ * berasal dari proses yang sama. Itu bukan alasan melewatkannya: yang diuji di
+ * sini adalah jalur kodenya, bukan nilainya.
+ */
+function vitePluginRuntimeConfig(proofServerTarget: string): Plugin {
+  return {
+    name: "votepriv-runtime-config",
+    configureServer(server) {
+      server.middlewares.use("/__votepriv/runtime-config.json", (_req, res) => {
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify({ proofServerTarget }));
+      });
+    },
+  };
+}
+
 const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
 
 export default defineConfig(({ mode }) => {
@@ -223,7 +248,7 @@ export default defineConfig(({ mode }) => {
     .filter(Boolean);
 
   return {
-  plugins,
+  plugins: [...plugins, vitePluginRuntimeConfig(proofServerTarget)],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

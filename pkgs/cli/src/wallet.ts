@@ -141,7 +141,7 @@ const bacaCache = (dir: string, nama: string): string | null => {
 };
 
 /** Terbaik-upaya: gagal menyimpan cache tidak boleh menggagalkan alur utama. */
-const simpanCacheWallet = async (wallet: WalletFacade, cacheDir: string, log: Logger): Promise<void> => {
+export const simpanCacheWallet = async (wallet: WalletFacade, cacheDir: string, log: Logger): Promise<void> => {
   try {
     const [shielded, unshielded, dust] = await Promise.all([
       wallet.shielded.serializeState(),

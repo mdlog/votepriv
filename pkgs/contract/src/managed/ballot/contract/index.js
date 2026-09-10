@@ -263,7 +263,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('tallyVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 228 char 1',
+                                     'ballot.compact line 239 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -277,17 +277,42 @@ export class Contract {
         const result_0 = this._tallyVote_0(context, partialProofData);
         partialProofData.output = { value: [], alignment: [] };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
+      },
+      finalize: (...args_1) => {
+        if (args_1.length !== 1) {
+          throw new __compactRuntime.CompactError(`finalize: expected 1 argument (as invoked from Typescript), received ${args_1.length}`);
+        }
+        const contextOrig_0 = args_1[0];
+        if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
+          __compactRuntime.typeError('finalize',
+                                     'argument 1 (as invoked from Typescript)',
+                                     'ballot.compact line 291 char 1',
+                                     'CircuitContext',
+                                     contextOrig_0)
+        }
+        const context = { ...contextOrig_0, gasCost: __compactRuntime.emptyRunningCost() };
+        const partialProofData = {
+          input: { value: [], alignment: [] },
+          output: undefined,
+          publicTranscript: [],
+          privateTranscriptOutputs: []
+        };
+        const result_0 = this._finalize_0(context, partialProofData);
+        partialProofData.output = { value: [], alignment: [] };
+        return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       }
     };
     this.impureCircuits = {
       registerVoters: this.circuits.registerVoters,
       castVote: this.circuits.castVote,
-      tallyVote: this.circuits.tallyVote
+      tallyVote: this.circuits.tallyVote,
+      finalize: this.circuits.finalize
     };
     this.provableCircuits = {
       registerVoters: this.circuits.registerVoters,
       castVote: this.circuits.castVote,
-      tallyVote: this.circuits.tallyVote
+      tallyVote: this.circuits.tallyVote,
+      finalize: this.circuits.finalize
     };
   }
   initialState(...args_0) {
@@ -397,6 +422,7 @@ export class Contract {
     state_0.setOperation('registerVoters', new __compactRuntime.ContractOperation());
     state_0.setOperation('castVote', new __compactRuntime.ContractOperation());
     state_0.setOperation('tallyVote', new __compactRuntime.ContractOperation());
+    state_0.setOperation('finalize', new __compactRuntime.ContractOperation());
     const context = __compactRuntime.createCircuitContext(__compactRuntime.dummyContractAddress(), constructorContext_0.initialZswapLocalState.coinPublicKey, state_0.data, constructorContext_0.initialPrivateState);
     const partialProofData = {
       input: { value: [], alignment: [] },
@@ -2345,7 +2371,7 @@ export class Contract {
     {
       const tmp_2 = ((t1) => {
                       if (t1 > 18446744073709551615n) {
-                        throw new __compactRuntime.CompactError('ballot.compact line 258 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                        throw new __compactRuntime.CompactError('ballot.compact line 269 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                       }
                       return t1;
                     })(_descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
@@ -2433,6 +2459,77 @@ export class Contract {
                                                                 .value
                                                             )) } },
                                        { ins: { cached: true, n: 2 } }]);
+    return [];
+  }
+  _finalize_0(context, partialProofData) {
+    __compactRuntime.assert(_descriptor_2.fromValue(__compactRuntime.queryLedgerState(context,
+                                                                                      partialProofData,
+                                                                                      [
+                                                                                       { dup: { n: 0 } },
+                                                                                       { idx: { cached: false,
+                                                                                                pushPath: false,
+                                                                                                path: [
+                                                                                                       { tag: 'value',
+                                                                                                         value: { value: _descriptor_6.toValue(1n),
+                                                                                                                  alignment: _descriptor_6.alignment() } },
+                                                                                                       { tag: 'value',
+                                                                                                         value: { value: _descriptor_6.toValue(6n),
+                                                                                                                  alignment: _descriptor_6.alignment() } }] } },
+                                                                                       { popeq: { cached: false,
+                                                                                                  result: undefined } }]).value)
+                            !==
+                            2,
+                            'Ballot sudah difinalisasi');
+    let tmp_0;
+    __compactRuntime.assert((tmp_0 = _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
+                                                                                               partialProofData,
+                                                                                               [
+                                                                                                { dup: { n: 0 } },
+                                                                                                { idx: { cached: false,
+                                                                                                         pushPath: false,
+                                                                                                         path: [
+                                                                                                                { tag: 'value',
+                                                                                                                  value: { value: _descriptor_6.toValue(1n),
+                                                                                                                           alignment: _descriptor_6.alignment() } },
+                                                                                                                { tag: 'value',
+                                                                                                                  value: { value: _descriptor_6.toValue(0n),
+                                                                                                                           alignment: _descriptor_6.alignment() } }] } },
+                                                                                                { popeq: { cached: false,
+                                                                                                           result: undefined } }]).value),
+                             _descriptor_1.fromValue(__compactRuntime.queryLedgerState(context,
+                                                                                       partialProofData,
+                                                                                       [
+                                                                                        { push: { storage: false,
+                                                                                                  value: __compactRuntime.StateValue.newCell({ value: _descriptor_0.toValue(tmp_0),
+                                                                                                                                               alignment: _descriptor_0.alignment() }).encode() } },
+                                                                                        { dup: { n: 3 } },
+                                                                                        { idx: { cached: true,
+                                                                                                 pushPath: false,
+                                                                                                 path: [
+                                                                                                        { tag: 'value',
+                                                                                                          value: { value: _descriptor_6.toValue(2n),
+                                                                                                                   alignment: _descriptor_6.alignment() } }] } },
+                                                                                        'lt',
+                                                                                        { popeq: { cached: true,
+                                                                                                   result: undefined } }]).value)),
+                            'Batas waktu pembukaan suara belum lewat');
+    __compactRuntime.queryLedgerState(context,
+                                      partialProofData,
+                                      [
+                                       { idx: { cached: false,
+                                                pushPath: true,
+                                                path: [
+                                                       { tag: 'value',
+                                                         value: { value: _descriptor_6.toValue(1n),
+                                                                  alignment: _descriptor_6.alignment() } }] } },
+                                       { push: { storage: false,
+                                                 value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(6n),
+                                                                                              alignment: _descriptor_6.alignment() }).encode() } },
+                                       { push: { storage: true,
+                                                 value: __compactRuntime.StateValue.newCell({ value: _descriptor_2.toValue(2),
+                                                                                              alignment: _descriptor_2.alignment() }).encode() } },
+                                       { ins: { cached: false, n: 1 } },
+                                       { ins: { cached: true, n: 1 } }]);
     return [];
   }
   _folder_0(f, x, a0) {

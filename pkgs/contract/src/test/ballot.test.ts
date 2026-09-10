@@ -65,6 +65,32 @@ describe("ballot.compact — pure circuit hash", () => {
     expect(hex(pureCircuits.cred_leaf(x))).not.toBe(hex(pureCircuits.tally_nullifier(x)));
   });
 
+  it("pemisahan domain — admin_pk dan cred_leaf tidak pernah bertabrakan", () => {
+    // Pasangan yang paling berisiko dari copy-paste yang ceroboh: keduanya
+    // hash Vector<2, Bytes<32>> satu-argumen yang secara struktural nyaris
+    // identik (admin_pk(sk) vs cred_leaf(cred)), hanya berbeda di string
+    // prefix ("votepriv:pk:v1" vs "votepriv:cred:v1"). Bila prefix itu
+    // pernah tertukar atau hilang, admin_pk dan cred_leaf akan bertabrakan
+    // untuk input yang sama — sebuah credential bisa disalahartikan sebagai
+    // admin key, atau sebaliknya.
+    const x = bytes32(0x77);
+    expect(hex(pureCircuits.admin_pk(x))).not.toBe(hex(pureCircuits.cred_leaf(x)));
+  });
+
+  it("pemisahan domain — vote_nullifier dan vote_commitment tidak pernah bertabrakan", () => {
+    // vote_nullifier(nonce, cred) dan vote_commitment(option, salt) tidak
+    // punya argumen pertama dengan tipe yang sama (Bytes<32> vs Uint<8>),
+    // jadi "input yang sama" didekati dengan menyamakan argumen Bytes<32>
+    // yang berbagi posisi (cred/salt) dan memakai nilai "nol" yang setara
+    // untuk argumen lain (nonce = bytes32(0) vs option = 0n) — keduanya
+    // encode ke elemen Bytes<32> pertama yang sama-sama nol sebelum di-pad
+    // dengan prefix domain masing-masing.
+    const shared = bytes32(6);
+    expect(hex(pureCircuits.vote_nullifier(bytes32(0), shared))).not.toBe(
+      hex(pureCircuits.vote_commitment(0n, shared)),
+    );
+  });
+
   it("vote_nullifier terikat pada ballotNonce", () => {
     const cred = bytes32(2);
     expect(hex(pureCircuits.vote_nullifier(bytes32(1), cred))).not.toBe(
@@ -398,5 +424,135 @@ describe("ballot.compact — tallyVote", () => {
   it("tidak bisa mencoblos lagi setelah fase tally dimulai", () => {
     const sim = setelahDuaSuara();
     expect(() => sim.castVote(CRED_A, 0, bytes32(0xb1))).toThrow();
+  });
+});
+
+describe("ballot.compact — finalize", () => {
+  it("menolak finalisasi sebelum tallyDeadline lewat", () => {
+    // finalizeSekarang() tidak memajukan waktu blok — sim baru dibuat, waktu
+    // blok masih jauh sebelum tallyDeadline default (Date.now() + 14 hari).
+    // Ini memicu assert kernel.blockTimeGreaterThan(tallyDeadline) di dalam
+    // circuit, bukan guard simulator manapun.
+    const sim = new BallotSimulator({ eligibleCount: 2, options: ["Ya", "Tidak"] });
+    expect(() => sim.finalizeSekarang()).toThrow();
+  });
+
+  it("menolak finalisasi dua kali", () => {
+    const sim = new BallotSimulator({ eligibleCount: 2, options: ["Ya", "Tidak"] });
+    sim.finalize();
+    expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
+    // Panggilan kedua memajukan waktu blok lagi (tetap lewat tallyDeadline,
+    // tidak berubah), tapi kini memicu assert phase != BallotPhase.finalized.
+    expect(() => sim.finalize()).toThrow();
+  });
+
+  it("dapat difinalisasi walau belum ada satu suara pun yang dibuka (fase masih voting)", () => {
+    // Ini adalah bukti langsung bahwa finalize TIDAK mensyaratkan
+    // phase == BallotPhase.tallying. Fase hanya berpindah ke tallying lewat
+    // pembuka suara pertama (lihat komentar di tallyVote); sebuah ballot yang
+    // tidak pernah dibuka satu suara pun harus tetap bisa difinalisasi,
+    // bukan macet selamanya di fase voting — jebakan liveness yang sama
+    // dengan alasan closeVoting dihapus sebagai circuit terpisah.
+    const sim = new BallotSimulator({ eligibleCount: 2, options: ["Ya", "Tidak"] });
+    expect(sim.getLedger().phase).toBe(BallotPhase.voting);
+    sim.finalize();
+    expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
+  });
+
+  it("tidak menyentuh registeredCount maupun eligibility", () => {
+    // INVARIAN yang didokumentasikan di ballot.compact: registeredCount harus
+    // selalu sama dengan jumlah leaf di eligibility. finalize tidak boleh
+    // menyentuh keduanya sama sekali.
+    const sim = new BallotSimulator({ eligibleCount: 2, options: ["Ya", "Tidak"] });
+    sim.registerVoters([bytes32(0x11)]);
+    const sebelum = sim.getLedger();
+    sim.finalize();
+    const sesudah = sim.getLedger();
+    expect(sesudah.registeredCount).toBe(sebelum.registeredCount);
+    expect(sesudah.eligibility.firstFree()).toBe(sebelum.eligibility.firstFree());
+  });
+});
+
+describe("ballot.compact — alur penuh tiga pemilih", () => {
+  const CRED = [bytes32(0x11), bytes32(0x22), bytes32(0x33)];
+  const SALT = [bytes32(0xa1), bytes32(0xa2), bytes32(0xa3)];
+
+  it("menghitung dengan benar dari daftar sampai finalisasi", () => {
+    const sim = new BallotSimulator({
+      title: "Q4 Community Treasury",
+      options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
+      eligibleCount: 3,
+      quorumPercent: 60,
+    });
+
+    sim.registerVoters(CRED);
+    expect(sim.getLedger().eligibility.firstFree()).toBe(3n);
+
+    // Dua memilih opsi 0, satu memilih opsi 2.
+    sim.castVote(CRED[0], 0, SALT[0]);
+    sim.castVote(CRED[1], 2, SALT[1]);
+    sim.castVote(CRED[2], 0, SALT[2]);
+    expect(sim.getLedger().voteCount).toBe(3n);
+
+    // Selama pemungutan suara, tidak ada hitungan yang bocor: bukan hanya
+    // dua opsi ini kebetulan nol, tapi peta tallies itu sendiri masih kosong
+    // sama sekali — talliedCount juga nol. Ini adalah bentuk yang bisa
+    // dieksekusi dari janji utama aplikasi ini: selama pemungutan suara,
+    // chain hanya memuat nullifier dan commitment, tidak ada apa pun lagi.
+    expect(sim.tally(0)).toBe(0n);
+    expect(sim.tally(2)).toBe(0n);
+    expect(sim.getLedger().tallies.isEmpty()).toBe(true);
+    expect(sim.getLedger().talliedCount).toBe(0n);
+
+    sim.majuKeFaseTally();
+    // Fase masih `voting` sampai ada yang membuka suara pertama — transisinya
+    // dilakukan tallyVote secara malas, bukan oleh circuit penutup tersendiri.
+    expect(sim.getLedger().phase).toBe(BallotPhase.voting);
+
+    sim.tallyVote(0, SALT[0]);
+    expect(sim.getLedger().phase).toBe(BallotPhase.tallying);
+    sim.tallyVote(2, SALT[1]);
+    sim.tallyVote(0, SALT[2]);
+
+    expect(sim.tally(0)).toBe(2n);
+    expect(sim.tally(1)).toBe(0n);
+    expect(sim.tally(2)).toBe(1n);
+    expect(sim.getLedger().talliedCount).toBe(3n);
+
+    sim.finalize();
+    expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
+  });
+
+  it("suara yang tidak dibuka tidak terhitung, dan selisihnya terlihat publik", () => {
+    const sim = new BallotSimulator({ eligibleCount: 3, options: ["Ya", "Tidak"] });
+    sim.registerVoters(CRED);
+    sim.castVote(CRED[0], 0, SALT[0]);
+    sim.castVote(CRED[1], 0, SALT[1]);
+    sim.castVote(CRED[2], 1, SALT[2]);
+    sim.majuKeFaseTally();
+
+    sim.tallyVote(0, SALT[0]); // dua lainnya tidak pernah dibuka
+
+    expect(sim.getLedger().voteCount).toBe(3n);
+    expect(sim.getLedger().talliedCount).toBe(1n);
+    expect(sim.tally(0)).toBe(1n);
+  });
+
+  it("tidak bisa membuka suara setelah finalisasi", () => {
+    // CATATAN dari fault injection (lihat task-7-report.md): penolakan di sini
+    // tidak terisolasi murni ke assert phase != BallotPhase.finalized di
+    // tallyVote — finalize() (lewat majuKeFaseFinal()) sudah memajukan waktu
+    // blok melewati tallyDeadline sebagai prasyaratnya sendiri, jadi assert
+    // blockTimeLessThan(tallyDeadline) tallyVote juga sudah pasti gagal pada
+    // titik ini. Uji ini tetap sah dan berharga sebagai uji hasil-akhir
+    // (tallyVote memang harus ditolak setelah finalisasi, apa pun alasan
+    // persisnya), tapi bukan uji yang mengisolasi guard phase itu sendiri.
+    const sim = new BallotSimulator({ eligibleCount: 2, options: ["Ya", "Tidak"] });
+    sim.registerVoters([CRED[0], CRED[1]]);
+    sim.castVote(CRED[0], 0, SALT[0]);
+    sim.majuKeFaseTally();
+    sim.finalize();
+    expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
+    expect(() => sim.tallyVote(0, SALT[0])).toThrow();
   });
 });

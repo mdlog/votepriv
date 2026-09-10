@@ -263,14 +263,59 @@ export class BallotSimulator {
    * guard tersebut secara sengaja (mis. memasangkan path milik satu credential
    * dengan credential lain, atau meng-utak-atik satu sibling di dalam path)
    * tanpa mengubah kode circuit maupun memakai `as any` di tiap titik panggil.
+   *
+   * `Pick<...>` polos, BUKAN `Partial<Pick<...>>` seperti versi Task 4 semula:
+   * `Partial` mengizinkan properti diberi nilai `undefined` secara eksplisit,
+   * yang lewat spread `{...default, ...ps}` akan menimpa default `null` milik
+   * emptyBallotPrivateState dengan `undefined` — lolos dari pengecekan
+   * `=== null` pada helper `need()` di ballot-witnesses.ts, sehingga kegagalan
+   * berakhir sebagai throw TypeScript entah di mana (mis. saat runtime mencoba
+   * meng-encode `undefined` sebagai Bytes<32>), bukan sebagai penolakan assert
+   * di dalam circuit — persis kegagalan yang coba dicegah escape hatch ini.
+   * Dibuktikan konkret pada Task 6: `{ option: undefined, ... }` gagal `tsc`
+   * lewat `Pick` polos milik tallyVoteWithRawPrivateState, tapi lolos diam-
+   * diam lewat bentuk `Partial<Pick<...>>` yang dulu dipakai di sini. Dengan
+   * `Pick` polos (tanpa Partial), keempat field wajib diisi di setiap
+   * pemanggilan, dan tipe masing-masing (`Uint8Array | null`, `bigint | null`,
+   * `MerkleTreePath<Uint8Array> | null`) tidak memuat `undefined` sama sekali
+   * — di bawah `strict` tsconfig, TypeScript menolak
+   * `{ credential: undefined, ... }` saat dikompilasi, bukan saat dijalankan.
    */
   castVoteWithRawPrivateState(
-    ps: Partial<Pick<BallotPrivateState, "credential" | "option" | "salt" | "eligibilityPath">>,
+    ps: Pick<BallotPrivateState, "credential" | "option" | "salt" | "eligibilityPath">,
   ): Ledger {
     const full: BallotPrivateState = {
       ...emptyBallotPrivateState(new Uint8Array(32)),
       ...ps,
     };
     return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), full);
+  }
+
+  /** Memfinalisasi ballot. Memajukan waktu blok melewati tallyDeadline. */
+  finalize(): Ledger {
+    this.majuKeFaseFinal();
+    return this.run(
+      (ctx) => this.contract.impureCircuits.finalize(ctx),
+      emptyBallotPrivateState(this.adminSecretKey),
+    );
+  }
+
+  /**
+   * KHUSUS UJI: memanggil circuit finalize TANPA memajukan waktu blok lebih
+   * dulu. finalize() di atas selalu memanggil majuKeFaseFinal(), sehingga
+   * assert kernel.blockTimeGreaterThan(tallyDeadline) di dalam circuit tidak
+   * pernah bisa dipicu ke cabang gagalnya lewat method itu — waktu selalu
+   * sudah lewat tallyDeadline pada saat circuit dipanggil. Method ini memakai
+   * waktu blok simulator apa adanya (atur lewat setBlockTime sebelum
+   * memanggil bila perlu), sehingga uji dapat memicu guard tallyDeadline
+   * tersebut secara sengaja. finalize tidak mengonsumsi witness apa pun, jadi
+   * tidak ada escape hatch private-state yang diperlukan di sini — hanya
+   * waktu blok yang perlu dikontrol manual.
+   */
+  finalizeSekarang(): Ledger {
+    return this.run(
+      (ctx) => this.contract.impureCircuits.finalize(ctx),
+      emptyBallotPrivateState(this.adminSecretKey),
+    );
   }
 }

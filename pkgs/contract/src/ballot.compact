@@ -225,6 +225,17 @@ export circuit castVote(): [] {
 // jebakan liveness: bila tidak ada yang memanggilnya, suara tidak akan pernah
 // bisa dibuka sama sekali, dan ballot mati dengan seluruh suaranya utuh tapi
 // tidak dapat dihitung.
+//
+// CATATAN (Task 7): assert phase != finalized di bawah ini secara praktis
+// tidak pernah menjadi assert PERTAMA yang gagal, dan dibuktikan lewat fault
+// injection (lihat task-7-report.md) — begitu finalize() berhasil, waktu
+// blok sudah pasti > tallyDeadline (itu prasyarat finalize sendiri) dan waktu
+// blok tidak pernah mundur, sehingga assert blockTimeLessThan(tallyDeadline)
+// tepat di bawah ini SELALU sudah menolak lebih dulu pada kondisi yang sama.
+// Baris ini dipertahankan sebagai pertahanan berlapis dan dokumentasi niat
+// eksplisit (konsisten dengan guard fase di awal registerVoters/castVote),
+// bukan karena jangkauannya sungguh independen dari guard tallyDeadline saat
+// ini.
 export circuit tallyVote(): [] {
   assert(phase != BallotPhase.finalized, "Ballot sudah difinalisasi");
   assert(kernel.blockTimeGreaterThan(voteDeadline), "Pemungutan suara masih berlangsung");
@@ -260,4 +271,25 @@ export circuit tallyVote(): [] {
     tallies.insert(opsiPublik, 1);
   }
   talliedCount.increment(1);
+}
+
+// Terbuka untuk siapa saja setelah tallyDeadline lewat — bukan hanya admin,
+// karena finalisasi hanya menandai fakta yang sudah publik (tallyDeadline
+// sudah lewat), bukan sebuah keputusan yang butuh otorisasi. Memberi tanda
+// finalitas yang eksplisit di on-chain, bukan sekadar turunan waktu di sisi
+// tampilan.
+//
+// Diterima dari fase apa pun selain finalized — SENGAJA BUKAN
+// assert(phase == BallotPhase.tallying, ...). phase hanya berpindah ke
+// tallying secara malas ketika pembuka suara pertama memanggil tallyVote
+// (lihat komentar di tallyVote). Sebuah ballot yang tidak pernah dibuka satu
+// suara pun (mis. tidak ada voter yang kembali setelah voteDeadline) akan
+// tetap berada di fase voting selamanya; mewajibkan phase == tallying di sini
+// akan membuat ballot semacam itu tidak dapat difinalisasi sama sekali —
+// jebakan liveness yang sama persis dengan alasan closeVoting dihapus sebagai
+// circuit terpisah (lihat komentar di tallyVote).
+export circuit finalize(): [] {
+  assert(phase != BallotPhase.finalized, "Ballot sudah difinalisasi");
+  assert(kernel.blockTimeGreaterThan(tallyDeadline), "Batas waktu pembukaan suara belum lewat");
+  phase = BallotPhase.finalized;
 }

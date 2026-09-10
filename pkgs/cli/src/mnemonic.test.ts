@@ -1,6 +1,12 @@
-import { HDWallet, Roles } from "@midnight-ntwrk/wallet-sdk-hd";
-import { createKeystore } from "@midnight-ntwrk/wallet-sdk-unshielded-wallet";
 import { describe, expect, it } from "vitest";
+// Fix round 1, I2: dulu berkas ini punya `alamatDari` — salinan tangan dari
+// logika turunan alamat doctor.ts. Reviewer menemukan salinan itu BISA
+// menyimpang diam-diam dari kode yang sungguhan dikirim (urutan clear() vs
+// perhitungan alamat berbeda), dan mutation test membuktikan salinan itu
+// tidak mengikat ke kode aslinya. Diperbaiki dengan menghapus salinannya:
+// jangkar regresi di bawah sekarang memanggil `alamatUntukSemuaJaringan`
+// yang diekspor doctor.ts — jalur uji dan jalur yang dikirim SAMA PERSIS.
+import { alamatUntukSemuaJaringan } from "./doctor.ts";
 import { normalisasiMnemonic, seedDariMnemonic } from "./mnemonic.ts";
 
 // Vektor uji PUBLIK BIP-39 ("abandon" x23 + "art"), entropi nol, tidak
@@ -9,17 +15,9 @@ import { normalisasiMnemonic, seedDariMnemonic } from "./mnemonic.ts";
 // diperoleh (pembedahan biner Lace 2.2.3 sungguhan).
 const MNEMONIC_PUBLIK = `${"abandon ".repeat(23)}art`.trim();
 
-/** Alamat unshielded bech32 (NightExternal, account 0, index 0) dari byte seed — persis pola doctor.ts. */
+/** Alamat unshielded bech32 (NightExternal, account 0, index 0) — thin wrapper atas kode doctor.ts sungguhan. */
 function alamatDari(seed: Uint8Array, networkId: string): string {
-  const hd = HDWallet.fromSeed(seed);
-  if (hd.type !== "seedOk") throw new Error("seedError tak terduga di fixture uji");
-  try {
-    const kunci = hd.hdWallet.selectAccount(0).selectRole(Roles.NightExternal).deriveKeyAt(0);
-    if (kunci.type !== "keyDerived") throw new Error("keyOutOfBounds tak terduga di fixture uji");
-    return createKeystore(kunci.key, networkId).getBech32Address().toString();
-  } finally {
-    hd.hdWallet.clear();
-  }
+  return alamatUntukSemuaJaringan(seed, [networkId])[networkId];
 }
 
 describe("normalisasiMnemonic", () => {

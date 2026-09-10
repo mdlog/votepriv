@@ -1,5 +1,5 @@
 import { createInterface, type Interface } from "node:readline/promises";
-import { type CaraTurunan, normalisasiMnemonic, seedDariMnemonic } from "./mnemonic.ts";
+import { CARA_TURUNAN_DEFAULT, type CaraTurunan, normalisasiMnemonic, seedDariMnemonic } from "./mnemonic.ts";
 
 /**
  * Baca seluruh stdin sampai EOF, apa adanya.
@@ -62,7 +62,7 @@ export function validasiSeedHex(masukan: string): string {
  * Mengembalikan byte seed siap pakai untuk `HDWallet.fromSeed` — bukan
  * string — supaya pemanggil tidak perlu tahu bentuk aslinya.
  */
-export function validasiSeed(masukan: string, cara: CaraTurunan = "pbkdf2"): Uint8Array {
+export function validasiSeed(masukan: string, cara: CaraTurunan = CARA_TURUNAN_DEFAULT): Uint8Array {
   if (deteksiBentukSeed(masukan) === "mnemonic") {
     return seedDariMnemonic(masukan, cara);
   }
@@ -141,7 +141,7 @@ async function bacaInputRahasia(promptInteraktif: string, promptNonInteraktif: s
  * `validasiSeed`). `cara` memilih metode turunan bila masukannya frasa;
  * diabaikan bila masukannya seed hex.
  */
-export async function bacaSeed(cara: CaraTurunan = "pbkdf2"): Promise<Uint8Array> {
+export async function bacaSeed(cara: CaraTurunan = CARA_TURUNAN_DEFAULT): Promise<Uint8Array> {
   const masukan = await bacaInputRahasia(
     "Seed wallet (64 hex atau frasa pemulihan 24 kata, tidak akan ditampilkan): ",
     "Seed wallet (64 hex atau frasa pemulihan 24 kata, dibaca dari input non-interaktif): ",

@@ -168,6 +168,13 @@ const simpanCacheWallet = async (wallet: WalletFacade, cacheDir: string, log: Lo
  * menyertakan `seed` — hanya menyebut kegagalan, tidak pernah nilainya.
  */
 const turunkanKunciHD = (seed: Uint8Array) => {
+  // PERINGATAN KERAS (fix round 1, hardening note): `hd.hdWallet` (jalur
+  // `seedOk`) memuat kunci privat MASTER sebagai field biasa yang bisa
+  // diserialisasi (mis. `rootKey.xpriv`) — bukan sesuatu yang dienkapsulasi
+  // dari `JSON.stringify` atau logger. `hd`/`hd.hdWallet` TIDAK PERNAH boleh
+  // dikirim ke `log.*` atau `JSON.stringify` dengan alasan apa pun; hanya
+  // byte kunci yang sudah diturunkan (`hasil.keys[...]`, di bawah) boleh
+  // keluar dari fungsi ini, dan bahkan itu pun tidak pernah dicatat.
   const hd = HDWallet.fromSeed(seed);
   if (hd.type !== "seedOk") {
     throw new Error("Gagal menginisialisasi HDWallet dari seed.");

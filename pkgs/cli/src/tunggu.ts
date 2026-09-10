@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { detikSekarang } from "shared";
 
 export function pastikan(kondisi: boolean, pesan: string): asserts kondisi {
   if (!kondisi) throw new Error(pesan);
@@ -138,4 +139,103 @@ export async function ulangiSampai<T>(
   }
 
   return { nilai, cocok: false, percobaan: maks, galatTerakhir };
+}
+
+/**
+ * Meratakan isi ledger `tallies` (Map<Uint<8>, Uint<64>>) menjadi array per
+ * opsi. Sengaja tidak memakai `tallies.lookup(k)`: lookup pada kunci yang tidak
+ * ada MELEMPAR "expected a cell, received null", sedangkan opsi tanpa suara
+ * memang tidak punya kunci. Iterasi `[...ledger.tallies]` menghasilkan pasangan
+ * [opsi, jumlah] dan menghindari jebakan itu sepenuhnya.
+ */
+export const ringkasTallies = (
+  entri: readonly (readonly [bigint, bigint])[],
+  nOpsi: number,
+): bigint[] => {
+  const hasil = new Array<bigint>(nOpsi).fill(0n);
+  for (const [opsi, jumlah] of entri) {
+    const i = Number(opsi);
+    if (i < 0 || i >= nOpsi) throw new Error(`Tally untuk opsi ${i} di luar rentang 0..${nOpsi - 1}`);
+    hasil[i] = jumlah;
+  }
+  return hasil;
+};
+
+/**
+ * Menunggu waktu dinding melewati sebuah deadline (DETIK sejak epoch), dengan
+ * buffer.
+ *
+ * Buffer ada karena yang dibandingkan kontrak adalah WAKTU BLOK, bukan jam
+ * lokal. Keduanya berjalan bersama tapi tidak identik: blok berikutnya bisa
+ * saja masih membawa cap waktu sedikit sebelum deadline walau jam kita sudah
+ * lewat. Buffer 60 detik jauh lebih murah daripada satu proof yang terbuang.
+ */
+export async function tungguSampaiDetik(
+  target: bigint,
+  log: Logger,
+  label: string,
+  bufferDetik = 60,
+): Promise<void> {
+  const sasaran = target + BigInt(bufferDetik);
+  while (detikSekarang() < sasaran) {
+    const sisa = Number(sasaran - detikSekarang());
+    log.info(
+      { sisaDetik: sisa, label },
+      `Menunggu ${label} benar-benar lewat. Waktu blok jaringan nyata tidak bisa dimajukan — penantian ini tidak bisa dipersingkat.`,
+    );
+    await new Promise((r) => setTimeout(r, Math.min(30_000, Math.max(1_000, sisa * 1000))));
+  }
+  log.info({ label }, `${label} sudah lewat menurut jam lokal (+${bufferDetik} detik buffer)`);
+}
+
+/**
+ * Dua pesan assert yang BOLEH diulang — dan hanya dua.
+ *
+ *   "Pemungutan suara masih berlangsung"        (tallyVote terlalu cepat)
+ *   "Batas waktu pembukaan suara belum lewat"   (finalize terlalu cepat)
+ *
+ * Keduanya berarti hal yang sama: jam lokal sudah lewat, waktu blok belum.
+ * Menunggu lalu mengulang akan berhasil.
+ *
+ * Yang SENGAJA TIDAK ada di sini: "Batas waktu pembukaan suara **sudah**
+ * lewat" — assert ketiga tallyVote. Perbedaannya satu kata (belum/sudah) dan
+ * artinya berlawanan: jendelanya sudah tertutup, dan mengulang hanya membakar
+ * proof sampai `maks` habis. Ia harus melempar keluar dan menghentikan proses.
+ * Itu pula sebabnya kedua loop di e2e.ts punya penjaga anggaran waktu: pesan
+ * itu tidak boleh sampai pernah muncul.
+ */
+export const POLA_BELUM_WAKTUNYA = /Pemungutan suara masih berlangsung|Batas waktu pembukaan suara belum lewat/;
+
+/**
+ * Mengulang sebuah pemanggilan selama kegagalannya adalah "waktu blok belum
+ * sampai" — bukan kegagalan lain.
+ *
+ * Aman diulang karena assert deadline dievaluasi saat eksekusi circuit LOKAL
+ * (dibuktikan di Step 1): percobaan yang gagal tidak pernah menghasilkan
+ * proof, tidak pernah dikirim, dan tidak pernah mengubah keadaan chain.
+ *
+ * Kegagalan lain diteruskan apa adanya — mengulang assert seperti "Credential
+ * ini sudah dipakai memilih" tidak akan pernah berhasil dan hanya membuang
+ * waktu di dalam jendela yang berbatas.
+ */
+export async function cobaSampaiWaktuBlokCocok<T>(
+  fn: () => Promise<T>,
+  log: Logger,
+  pola: RegExp = POLA_BELUM_WAKTUNYA,
+  maks = 6,
+  jedaMs = 20_000,
+): Promise<T> {
+  let terakhir: unknown;
+  for (let i = 1; i <= maks; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      terakhir = e;
+      const pesan = (e as Error).message ?? String(e);
+      if (!pola.test(pesan)) throw e;
+      log.warn({ percobaan: i, dari: maks, pesan }, "Waktu blok belum melewati deadline; menunggu lalu mencoba lagi");
+      if (i < maks) await new Promise((r) => setTimeout(r, jedaMs));
+    }
+  }
+  throw terakhir;
 }

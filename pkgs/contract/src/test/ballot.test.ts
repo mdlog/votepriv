@@ -1,5 +1,12 @@
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { describe, expect, it } from "vitest";
+import {
+  credentialFor,
+  emptyBallotPrivateState,
+  openingFor,
+  withCredential,
+  withOpening,
+} from "../ballot-witnesses.js";
 import { BallotPhase, BallotSimulator, pureCircuits } from "./ballot-simulator.js";
 
 setNetworkId("undeployed");
@@ -296,8 +303,7 @@ describe("ballot.compact — castVote", () => {
     expect(() =>
       sim.castVoteWithRawPrivateState({
         credential: CRED_B,
-        option: 0n,
-        salt: SALT_1,
+        opening: { option: 0n, salt: SALT_1 },
         eligibilityPath: path,
       }),
     ).toThrow();
@@ -321,8 +327,7 @@ describe("ballot.compact — castVote", () => {
     expect(() =>
       sim.castVoteWithRawPrivateState({
         credential: CRED_A,
-        option: 0n,
-        salt: SALT_1,
+        opening: { option: 0n, salt: SALT_1 },
         eligibilityPath: pathRusak,
       }),
     ).toThrow();
@@ -487,8 +492,7 @@ describe("ballot.compact — tallyVote", () => {
     if (path === undefined) throw new Error("setup uji gagal: path commitment tidak ditemukan");
     expect(() =>
       sim.tallyVoteWithRawPrivateState({
-        option: 1n,
-        salt: SALT_1,
+        opening: { option: 1n, salt: SALT_1 },
         commitmentPath: path,
       }),
     ).toThrow();
@@ -512,8 +516,7 @@ describe("ballot.compact — tallyVote", () => {
     };
     expect(() =>
       sim.tallyVoteWithRawPrivateState({
-        option: 0n,
-        salt: SALT_1,
+        opening: { option: 0n, salt: SALT_1 },
         commitmentPath: pathRusak,
       }),
     ).toThrow();
@@ -659,5 +662,76 @@ describe("ballot.compact — alur penuh tiga pemilih", () => {
     sim.finalize();
     expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
     expect(() => sim.tallyVote(0, SALT[0])).toThrow();
+  });
+});
+
+describe("ballot-witnesses — private state lintas ballot", () => {
+  const CRED_A = bytes32(0x11);
+  const CRED_B = bytes32(0x22);
+  const SALT_A = bytes32(0xa1);
+  const SALT_B = bytes32(0xb2);
+
+  it("helper with* tidak menyentuh entri milik ballot lain", () => {
+    let ps = emptyBallotPrivateState(bytes32(0));
+    ps = withOpening(ps, "ballot-a", { option: 0n, salt: SALT_A });
+    ps = withCredential(ps, "ballot-a", CRED_A);
+    ps = withOpening(ps, "ballot-b", { option: 1n, salt: SALT_B });
+    expect(openingFor(ps, "ballot-a")).toEqual({ option: 0n, salt: SALT_A });
+    expect(openingFor(ps, "ballot-b")).toEqual({ option: 1n, salt: SALT_B });
+    expect(credentialFor(ps, "ballot-a")).toEqual(CRED_A);
+    expect(credentialFor(ps, "ballot-b")).toBeNull();
+    expect(openingFor(ps, "ballot-yang-tidak-ada")).toBeNull();
+  });
+
+  it("mencoblos di ballot kedua tidak menghancurkan opening ballot pertama", () => {
+    // Ini BUKAN skenario penyerang: ini pengguna biasa yang memilih di dua
+    // ballot. Dengan private state datar (satu `option`, satu `salt`), coblosan
+    // di ballot B menimpa opening milik ballot A dan suara A menjadi PERMANEN
+    // tidak dapat dibuka — spec §6.3: opening yang hilang berarti suara hilang.
+    const a = new BallotSimulator({ eligibleCount: 4, options: ["Ya", "Tidak"] });
+    const b = new BallotSimulator({ eligibleCount: 4, options: ["Ya", "Tidak"] });
+    a.registerVoters([CRED_A]);
+    b.registerVoters([CRED_B]);
+
+    // SATU blob private state dipakai kedua ballot, persis seperti
+    // levelPrivateStateProvider yang berkunci satu BallotPrivateStateId.
+    let dompet = emptyBallotPrivateState(bytes32(0));
+    dompet = a.castVoteBersama(dompet, CRED_A, 0, SALT_A);
+    dompet = b.castVoteBersama(dompet, CRED_B, 1, SALT_B);
+
+    // Kedua opening bertahan, masing-masing di kuncinya sendiri. Nilai ini
+    // datang dari witness store_opening, bukan dari yang disiapkan uji.
+    expect(openingFor(dompet, a.contractAddress)).toEqual({ option: 0n, salt: SALT_A });
+    expect(openingFor(dompet, b.contractAddress)).toEqual({ option: 1n, salt: SALT_B });
+    expect(credentialFor(dompet, a.contractAddress)).toEqual(CRED_A);
+    expect(credentialFor(dompet, b.contractAddress)).toEqual(CRED_B);
+
+    // Dan inilah yang menentukan: suara di ballot A masih dapat dibuka, dengan
+    // opsi dan salt dibaca DARI private state bersama itu sendiri.
+    a.majuKeFaseTally();
+    dompet = a.tallyVoteBersama(dompet);
+    expect(a.tally(0)).toBe(1n);
+    expect(a.getLedger().talliedCount).toBe(1n);
+
+    b.majuKeFaseTally();
+    b.tallyVoteBersama(dompet);
+    expect(b.tally(1)).toBe(1n);
+    expect(b.getLedger().talliedCount).toBe(1n);
+  });
+
+  it("witness menolak dengan jelas bila ballot yang dipanggil belum punya entri", () => {
+    // Private state punya isi — tapi untuk ballot LAIN. Pesan galatnya harus
+    // menyebut ballot mana yang kosong, bukan sekadar "credential belum diisi".
+    const a = new BallotSimulator({ eligibleCount: 4, options: ["Ya", "Tidak"] });
+    a.registerVoters([CRED_A]);
+    const path = a.getLedger().eligibility.findPathForLeaf(pureCircuits.cred_leaf(CRED_A));
+    if (path === undefined) throw new Error("setup uji gagal: path CRED_A tidak ditemukan");
+    expect(() =>
+      a.castVoteWithRawPrivateState({
+        credential: null,
+        opening: { option: 0n, salt: SALT_A },
+        eligibilityPath: path,
+      }),
+    ).toThrow(new RegExp(`credential untuk ballot ${a.contractAddress} belum diisi`));
   });
 });

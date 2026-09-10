@@ -65,3 +65,59 @@ describe("e2e.ts memanggil ketiga pemeriksaan privasi dari periksa.ts (penjaga p
     );
   });
 });
+
+// Fix Round 6, FIX A — penjaga pengkabelan untuk bagian 8 (pembukaan suara):
+// bacaLedgerBallot di sana dulu dipanggil TELANJANG (tanpa ulangiSampai)
+// tepat sebelum mengasersi bahwa commitment path ditemukan, kelas kegagalan
+// yang sama yang Fix Round 1 FIX 3 sudah tutup di bagian 5. Uji di bawah
+// mengisolasi teks bagian 8 SAJA (antara penanda komentar "── 8." dan
+// "── 9.") supaya tidak diam-diam lolos hanya karena bagian 5 sudah benar
+// sejak Fix Round 1 — bagian 5 dan bagian 8 sama-sama punya
+// `for (let i = 0; i < JUMLAH_PEMILIH; i++) {` dan sama-sama memanggil
+// ulangiSampai di berkas yang sudah diperbaiki.
+describe("Fix Round 6, FIX A: bagian 8 membaca commitment path lewat ulangiSampai, bukan bacaLedgerBallot telanjang", () => {
+  const mulaiBagian8 = sumberAsli.indexOf("── 8.");
+  const mulaiBagian9 = sumberAsli.indexOf("── 9.");
+
+  it('penanda komentar "── 8." dan "── 9." harus ada, dengan urutan yang benar', () => {
+    expect(mulaiBagian8, 'penanda komentar "── 8." harus ada').toBeGreaterThan(-1);
+    expect(mulaiBagian9, 'penanda komentar "── 9." harus ada SETELAH "── 8."').toBeGreaterThan(mulaiBagian8);
+  });
+
+  const bagian8 = sumberAsli.slice(mulaiBagian8, mulaiBagian9 === -1 ? undefined : mulaiBagian9);
+  const bagian8TanpaKomentar = lucutiKomentarDanString(bagian8);
+
+  it("ulangiSampai benar-benar DIPANGGIL di bagian 8 (bukan hanya disebut di komentar)", () => {
+    expect(bagian8TanpaKomentar, "ulangiSampai harus dipanggil di bagian 8").toMatch(/\bulangiSampai\s*\(/);
+  });
+
+  it("commitments.findPathForLeaf dipanggil DI DALAM pemanggilan ulangiSampai itu, bukan sebelum/di luar", () => {
+    const idxRetry = bagian8TanpaKomentar.search(/\bulangiSampai\s*\(/);
+    const idxFind = bagian8TanpaKomentar.search(/\.commitments\.findPathForLeaf\s*\(/);
+    expect(idxRetry, "ulangiSampai harus ditemukan di bagian 8").toBeGreaterThan(-1);
+    expect(idxFind, "commitments.findPathForLeaf harus ditemukan di bagian 8").toBeGreaterThan(-1);
+    expect(
+      idxFind,
+      "commitments.findPathForLeaf harus muncul SETELAH ulangiSampai( — yaitu di dalam callback-nya, " +
+        "bukan pembacaan telanjang sebelum ulangiSampai (pola lama sebelum Fix Round 6 FIX A)",
+    ).toBeGreaterThan(idxRetry);
+
+    // Tidak boleh ada `pastikan(jalur` di ANTARA ulangiSampai( dan
+    // findPathForLeaf( — itu berarti assert lama masih membaca sebuah
+    // `jalur` yang dihitung SEBELUM retry, bukan hasil retry-nya.
+    const antara = bagian8TanpaKomentar.slice(idxRetry, idxFind);
+    expect(antara, "tidak boleh ada pastikan(jalur di antara ulangiSampai( dan findPathForLeaf(").not.toMatch(
+      /pastikan\(\s*jalur/,
+    );
+  });
+
+  it("pesan galat retry commitment path membedakan 'pembacaan indexer gagal sendiri' dari 'path belum ditemukan', seperti bagian 5", () => {
+    expect(bagian8, "harus ada pesan untuk pembacaan indexer yang gagal sendiri (galatTerakhir terisi)").toMatch(
+      /PEMBACAAN INDEXER ITU SENDIRI TERUS GAGAL/,
+    );
+    expect(
+      bagian8,
+      "harus ada pesan untuk path belum ditemukan meski seluruh pembacaan berhasil (galatTerakhir kosong)",
+    ).toMatch(/KEMUNGKINAN BESAR keterlambatan indexer/);
+  });
+});

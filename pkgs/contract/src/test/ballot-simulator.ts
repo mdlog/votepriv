@@ -2,6 +2,7 @@ import {
   type ChargedState,
   type CircuitContext,
   type EncodedZswapLocalState,
+  type MerkleTreePath,
   createCircuitContext,
   createConstructorContext,
   sampleContractAddress,
@@ -15,9 +16,15 @@ import {
   pureCircuits,
 } from "../managed/ballot/contract/index.js";
 import {
+  type BallotOpening,
   type BallotPrivateState,
   ballotWitnesses,
   emptyBallotPrivateState,
+  openingFor,
+  withCommitmentPath,
+  withCredential,
+  withEligibilityPath,
+  withOpening,
 } from "../ballot-witnesses.js";
 
 export { BallotPhase, pureCircuits };
@@ -63,12 +70,58 @@ export type BallotOpts = {
 };
 
 /**
+ * Bentuk minimum hasil pemanggilan circuit yang benar-benar dipakai simulator
+ * ini. Tiga field, tidak lebih — `currentPrivateState` ikut karena uji
+ * lintas-ballot perlu melihat efek `store_opening`.
+ */
+type Jalankan = (ctx: CircuitContext<BallotPrivateState>) => {
+  context: {
+    currentQueryContext: { state: ChargedState };
+    currentZswapLocalState: EncodedZswapLocalState;
+    currentPrivateState: BallotPrivateState;
+  };
+};
+
+/**
+ * Nilai per-ballot mentah untuk escape hatch castVote di bawah.
+ *
+ * Sengaja BUKAN `Partial<...>`: Partial mengizinkan properti diberi nilai
+ * `undefined` secara eksplisit, yang akan lolos dari pengecekan `=== null` dan
+ * membuat kegagalan berakhir sebagai throw TypeScript entah di mana (mis. saat
+ * runtime mencoba meng-encode `undefined` sebagai Bytes<32>), bukan sebagai
+ * penolakan assert di dalam circuit — persis kegagalan yang coba dicegah escape
+ * hatch ini. Ketiga properti wajib diisi, dan tipenya (`X | null`) tidak memuat
+ * `undefined` sama sekali, sehingga `strict` tsconfig menolak
+ * `{ credential: undefined, ... }` saat dikompilasi, bukan saat dijalankan.
+ *
+ * `opening` adalah satu record, bukan `option` dan `salt` terpisah: commitment
+ * adalah hash keduanya sekaligus, jadi memisahkannya di sini akan menyiratkan
+ * bahwa salah satunya bisa ada tanpa yang lain — yang tidak pernah benar.
+ */
+export type RawCastState = {
+  credential: Uint8Array | null;
+  opening: BallotOpening | null;
+  eligibilityPath: MerkleTreePath<Uint8Array> | null;
+};
+
+/** Sama, untuk escape hatch tallyVote. Lihat catatan pada RawCastState. */
+export type RawTallyState = {
+  opening: BallotOpening | null;
+  commitmentPath: MerkleTreePath<Uint8Array> | null;
+};
+
+/**
  * Simulator ballot. Setiap pelaku (admin, tiap voter) punya private state sendiri,
  * tapi berbagi satu ledger — persis seperti kontrak sungguhan.
  */
 export class BallotSimulator {
   private readonly contract: Contract<BallotPrivateState>;
-  private readonly contractAddress = sampleContractAddress();
+  /**
+   * Kunci private state untuk ballot ini. Publik karena uji lintas-ballot perlu
+   * menyebutnya: inilah nilai yang dipakai lapisan witness sebagai kunci map,
+   * lewat `WitnessContext.contractAddress`.
+   */
+  readonly contractAddress = sampleContractAddress();
   private zswap: EncodedZswapLocalState;
   private state: ChargedState;
   /**
@@ -118,15 +171,23 @@ export class BallotSimulator {
   }
 
   /** Menjalankan satu circuit atas nama pelaku dengan private state tertentu. */
-  protected run(
-    jalankan: (ctx: CircuitContext<BallotPrivateState>) => {
-      context: {
-        currentQueryContext: { state: ChargedState };
-        currentZswapLocalState: EncodedZswapLocalState;
-      };
-    },
+  protected run(jalankan: Jalankan, privateState: BallotPrivateState): Ledger {
+    // Private state hasilnya dibuang di sini: method-method biasa selalu
+    // memberikan option dan salt secara eksplisit, jadi tidak ada yang perlu
+    // diingat. Uji lintas-ballot memakai runDenganState di bawah.
+    return this.runDenganState(jalankan, privateState).ledger;
+  }
+
+  /**
+   * Sama seperti `run`, tapi MENGEMBALIKAN private state hasil eksekusi circuit
+   * — termasuk efek `store_opening`. Dibutuhkan uji yang memodelkan satu blob
+   * private state yang dipakai bersama beberapa ballot, karena persis begitulah
+   * levelPrivateStateProvider bekerja: satu id, satu blob, seluruh ballot.
+   */
+  protected runDenganState(
+    jalankan: Jalankan,
     privateState: BallotPrivateState,
-  ): Ledger {
+  ): { ledger: Ledger; privateState: BallotPrivateState } {
     const ctx = createCircuitContext(
       this.contractAddress,
       this.zswap,
@@ -139,9 +200,7 @@ export class BallotSimulator {
     const result = jalankan(ctx);
     this.state = result.context.currentQueryContext.state;
     this.zswap = result.context.currentZswapLocalState;
-    // Private state hasil store_opening sengaja dibuang: uji selalu memberikan
-    // option dan salt secara eksplisit, jadi tidak ada yang perlu diingat.
-    return ledger(this.state);
+    return { ledger: ledger(this.state), privateState: result.context.currentPrivateState };
   }
 
   /**
@@ -191,35 +250,100 @@ export class BallotSimulator {
 
   /** Mencoblos memakai credential tertentu. Path eligibility disusun dari state on-chain. */
   castVote(cred: Uint8Array, option: number, salt: Uint8Array): Ledger {
+    const ps = this.siapkanCoblos(
+      emptyBallotPrivateState(new Uint8Array(32)),
+      cred,
+      option,
+      salt,
+    );
+    return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), ps);
+  }
+
+  /**
+   * Mengisi private state dengan seluruh bahan untuk mencoblos di ballot INI —
+   * credential, opening, dan path eligibility — tanpa menyentuh entri milik
+   * ballot lain di dalam state yang sama. Dipakai `castVote` maupun uji
+   * lintas-ballot.
+   */
+  siapkanCoblos(
+    ps: BallotPrivateState,
+    cred: Uint8Array,
+    option: number,
+    salt: Uint8Array,
+  ): BallotPrivateState {
     const daun = pureCircuits.cred_leaf(cred);
     const path = this.getLedger().eligibility.findPathForLeaf(daun);
     if (path === undefined) {
       throw new Error("Credential tidak ada di pohon eligibility");
     }
-    const ps: BallotPrivateState = {
-      ...emptyBallotPrivateState(new Uint8Array(32)),
-      credential: cred,
-      option: BigInt(option),
-      salt,
-      eligibilityPath: path,
-    };
-    return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), ps);
+    const dengan = withCredential(ps, this.contractAddress, cred);
+    return withEligibilityPath(
+      withOpening(dengan, this.contractAddress, { option: BigInt(option), salt }),
+      this.contractAddress,
+      path,
+    );
   }
 
   /** Membuka satu suara. Path commitment disusun dari state on-chain. */
   tallyVote(option: number, salt: Uint8Array): Ledger {
-    const c = pureCircuits.vote_commitment(BigInt(option), salt);
+    const ps = this.siapkanBuka(
+      withOpening(emptyBallotPrivateState(new Uint8Array(32)), this.contractAddress, {
+        option: BigInt(option),
+        salt,
+      }),
+    );
+    return this.run((ctx) => this.contract.impureCircuits.tallyVote(ctx), ps);
+  }
+
+  /**
+   * Menyusun path commitment untuk ballot INI dari opening yang SUDAH tersimpan
+   * di private state — bukan dari nilai yang diberikan ulang pemanggil. Itulah
+   * yang membuat uji lintas-ballot bermakna: kalau opening milik ballot ini
+   * tertimpa ballot lain, commitment yang dihitung di sini akan salah dan
+   * path-nya tidak ditemukan.
+   */
+  siapkanBuka(ps: BallotPrivateState): BallotPrivateState {
+    const opening = openingFor(ps, this.contractAddress);
+    if (opening === null) {
+      throw new Error(`Tidak ada opening tersimpan untuk ballot ${this.contractAddress}`);
+    }
+    const c = pureCircuits.vote_commitment(opening.option, opening.salt);
     const path = this.getLedger().commitments.findPathForLeaf(c);
     if (path === undefined) {
       throw new Error("Commitment tidak ada di pohon");
     }
-    const ps: BallotPrivateState = {
-      ...emptyBallotPrivateState(new Uint8Array(32)),
-      option: BigInt(option),
-      salt,
-      commitmentPath: path,
-    };
-    return this.run((ctx) => this.contract.impureCircuits.tallyVote(ctx), ps);
+    return withCommitmentPath(ps, this.contractAddress, path);
+  }
+
+  /**
+   * KHUSUS UJI: mencoblos memakai SATU private state yang dipakai bersama lintas
+   * ballot, lalu mengembalikan private state hasilnya (termasuk efek
+   * `store_opening`). `castVote()` biasa menyusun private state sekali pakai dan
+   * membuangnya, sehingga tidak dapat memodelkan blob bersama milik
+   * levelPrivateStateProvider — dan justru di blob bersama itulah suara bisa
+   * saling menimpa bila bentuk state-nya datar.
+   */
+  castVoteBersama(
+    psBersama: BallotPrivateState,
+    cred: Uint8Array,
+    option: number,
+    salt: Uint8Array,
+  ): BallotPrivateState {
+    const ps = this.siapkanCoblos(psBersama, cred, option, salt);
+    return this.runDenganState((ctx) => this.contract.impureCircuits.castVote(ctx), ps)
+      .privateState;
+  }
+
+  /**
+   * KHUSUS UJI: membuka suara memakai private state bersama, dengan opsi dan
+   * salt diambil DARI private state itu sendiri — bukan diberikan ulang oleh
+   * uji. Inilah bentuk yang benar-benar memeriksa bahwa opening milik ballot ini
+   * masih utuh setelah ballot lain ikut dicoblos memakai blob yang sama.
+   */
+  tallyVoteBersama(psBersama: BallotPrivateState): BallotPrivateState {
+    const ps = this.siapkanBuka(psBersama);
+    return this.runDenganState((ctx) => this.contract.impureCircuits.tallyVote(ctx), ps)
+      .privateState;
   }
 
   /** Membaca hitungan satu opsi; 0 bila belum ada yang membuka. */
@@ -231,35 +355,20 @@ export class BallotSimulator {
   /**
    * KHUSUS UJI: menjalankan tallyVote dengan private state yang disusun manual,
    * melewati pencarian path otomatis di tallyVote(). tallyVote() biasa selalu
-   * menyusun path commitment dari (option, salt) yang sama persis dengan yang
-   * diberikan (lewat vote_commitment lalu findPathForLeaf), sehingga guard di
-   * dalam circuit (kecocokan leaf, checkRoot) tidak pernah bisa dipicu ke
-   * cabang gagalnya lewat method itu — (option, salt, path) selalu konsisten
-   * satu sama lain. Method ini ada supaya uji dapat menembus guard tersebut
-   * secara sengaja tanpa mengubah kode circuit maupun memakai `as any` di
-   * tiap titik panggil.
+   * menyusun path commitment dari opening yang sama persis dengan yang tersimpan
+   * (lewat vote_commitment lalu findPathForLeaf), sehingga guard di dalam
+   * circuit (kecocokan leaf, checkRoot) tidak pernah bisa dipicu ke cabang
+   * gagalnya lewat method itu — (opening, path) selalu konsisten satu sama lain.
+   * Method ini ada supaya uji dapat menembus guard tersebut secara sengaja tanpa
+   * mengubah kode circuit maupun memakai `as any` di tiap titik panggil.
    *
-   * Sengaja BUKAN `Partial<Pick<...>>` seperti castVoteWithRawPrivateState:
-   * Partial mengizinkan properti diberi nilai `undefined` secara eksplisit,
-   * yang lewat spread `{...default, ...ps}` akan menimpa default `null` milik
-   * emptyBallotPrivateState dengan `undefined` — lolos dari pengecekan `=== null`
-   * pada helper `need()` di ballot-witnesses.ts, sehingga kegagalan berakhir
-   * sebagai throw TypeScript entah di mana (mis. saat runtime mencoba meng-encode
-   * `undefined` sebagai Bytes<32>), bukan sebagai penolakan assert di dalam
-   * circuit — persis kegagalan yang coba dicegah escape hatch ini. Dengan
-   * `Pick` polos (tanpa Partial), ketiga field wajib diisi, dan tipe masing-
-   * masing (`bigint | null`, `Uint8Array | null`, `MerkleTreePath<Uint8Array> | null`)
-   * tidak memuat `undefined` sama sekali — di bawah `strict` tsconfig, TypeScript
-   * menolak `{ option: undefined, ... }` saat dikompilasi, bukan saat dijalankan.
+   * Lihat RawTallyState untuk alasan bentuk tipenya.
    */
-  tallyVoteWithRawPrivateState(
-    ps: Pick<BallotPrivateState, "option" | "salt" | "commitmentPath">,
-  ): Ledger {
-    const full: BallotPrivateState = {
-      ...emptyBallotPrivateState(new Uint8Array(32)),
-      ...ps,
-    };
-    return this.run((ctx) => this.contract.impureCircuits.tallyVote(ctx), full);
+  tallyVoteWithRawPrivateState(ps: RawTallyState): Ledger {
+    return this.run(
+      (ctx) => this.contract.impureCircuits.tallyVote(ctx),
+      this.susunMentah({ credential: null, ...ps, eligibilityPath: null }),
+    );
   }
 
   /**
@@ -273,31 +382,31 @@ export class BallotSimulator {
    * dengan credential lain, atau meng-utak-atik satu sibling di dalam path)
    * tanpa mengubah kode circuit maupun memakai `as any` di tiap titik panggil.
    *
-   * `Pick<...>` polos, BUKAN `Partial<Pick<...>>` seperti versi Task 4 semula:
-   * `Partial` mengizinkan properti diberi nilai `undefined` secara eksplisit,
-   * yang lewat spread `{...default, ...ps}` akan menimpa default `null` milik
-   * emptyBallotPrivateState dengan `undefined` — lolos dari pengecekan
-   * `=== null` pada helper `need()` di ballot-witnesses.ts, sehingga kegagalan
-   * berakhir sebagai throw TypeScript entah di mana (mis. saat runtime mencoba
-   * meng-encode `undefined` sebagai Bytes<32>), bukan sebagai penolakan assert
-   * di dalam circuit — persis kegagalan yang coba dicegah escape hatch ini.
-   * Dibuktikan konkret pada Task 6: `{ option: undefined, ... }` gagal `tsc`
-   * lewat `Pick` polos milik tallyVoteWithRawPrivateState, tapi lolos diam-
-   * diam lewat bentuk `Partial<Pick<...>>` yang dulu dipakai di sini. Dengan
-   * `Pick` polos (tanpa Partial), keempat field wajib diisi di setiap
-   * pemanggilan, dan tipe masing-masing (`Uint8Array | null`, `bigint | null`,
-   * `MerkleTreePath<Uint8Array> | null`) tidak memuat `undefined` sama sekali
-   * — di bawah `strict` tsconfig, TypeScript menolak
-   * `{ credential: undefined, ... }` saat dikompilasi, bukan saat dijalankan.
+   * Lihat RawCastState untuk alasan bentuk tipenya.
    */
-  castVoteWithRawPrivateState(
-    ps: Pick<BallotPrivateState, "credential" | "option" | "salt" | "eligibilityPath">,
-  ): Ledger {
-    const full: BallotPrivateState = {
-      ...emptyBallotPrivateState(new Uint8Array(32)),
-      ...ps,
-    };
-    return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), full);
+  castVoteWithRawPrivateState(ps: RawCastState): Ledger {
+    return this.run(
+      (ctx) => this.contract.impureCircuits.castVote(ctx),
+      this.susunMentah({ ...ps, commitmentPath: null }),
+    );
+  }
+
+  /**
+   * Menaruh nilai mentah pada kunci ballot INI. `null` berarti "jangan isi sama
+   * sekali", sehingga witness yang membacanya gagal lewat `need()` — bukan
+   * lewat encoding `undefined`.
+   */
+  private susunMentah(raw: RawCastState & RawTallyState): BallotPrivateState {
+    let ps = emptyBallotPrivateState(new Uint8Array(32));
+    if (raw.credential !== null) ps = withCredential(ps, this.contractAddress, raw.credential);
+    if (raw.opening !== null) ps = withOpening(ps, this.contractAddress, raw.opening);
+    if (raw.eligibilityPath !== null) {
+      ps = withEligibilityPath(ps, this.contractAddress, raw.eligibilityPath);
+    }
+    if (raw.commitmentPath !== null) {
+      ps = withCommitmentPath(ps, this.contractAddress, raw.commitmentPath);
+    }
+    return ps;
   }
 
   /** Memfinalisasi ballot. Memajukan waktu blok melewati tallyDeadline. */

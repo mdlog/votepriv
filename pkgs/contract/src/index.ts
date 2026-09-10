@@ -5,7 +5,14 @@ export {
   BallotPrivateStateId,
   ballotWitnesses,
   emptyBallotPrivateState,
+  withCredential,
+  withOpening,
+  withEligibilityPath,
+  withCommitmentPath,
+  credentialFor,
+  openingFor,
   type BallotPrivateState,
+  type BallotOpening,
 } from "./ballot-witnesses.js";
 
 export {

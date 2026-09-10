@@ -44,6 +44,15 @@ export type BallotOpts = {
   description?: string;
   community?: string;
   options?: string[];
+  /**
+   * Menimpa nOptions yang biasanya diturunkan dari `options.length`. Ada supaya
+   * uji dapat mencoba men-deploy ballot dengan jumlah opsi yang TIDAK sah (0, 8)
+   * — sesuatu yang tidak bisa dinyatakan lewat `options` saja, karena panjang
+   * array label dan nilai optionCount yang di-seal adalah dua hal berbeda, dan
+   * justru perbedaan itulah yang membuat nOptions = 8 berbahaya: opsi 4..7
+   * tidak punya label on-chain sama sekali.
+   */
+  optionCount?: number;
   quorumPercent?: number;
   eligibleCount?: number;
   eligibilityPolicy?: string;
@@ -91,7 +100,7 @@ export class BallotSimulator {
       options[1] ?? "",
       options[2] ?? "",
       options[3] ?? "",
-      BigInt(options.length),
+      BigInt(opts.optionCount ?? options.length),
       opts.voteDeadline ?? BigInt(Math.floor(Date.now() / 1000) + 7 * HARI),
       opts.tallyDeadline ?? BigInt(Math.floor(Date.now() / 1000) + 14 * HARI),
       BigInt(opts.quorumPercent ?? 50),

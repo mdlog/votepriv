@@ -197,21 +197,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 151 char 1',
+                                     'ballot.compact line 188 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(Array.isArray(leaves_0) && leaves_0.length === 8 && leaves_0.every((t) => t.buffer instanceof ArrayBuffer && t.BYTES_PER_ELEMENT === 1 && t.length === 32))) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'ballot.compact line 151 char 1',
+                                     'ballot.compact line 188 char 1',
                                      'Vector<8, Bytes<32>>',
                                      leaves_0)
         }
         if (!(typeof(n_0) === 'bigint' && n_0 >= 0n && n_0 <= 255n)) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'ballot.compact line 151 char 1',
+                                     'ballot.compact line 188 char 1',
                                      'Uint<0..256>',
                                      n_0)
         }
@@ -240,7 +240,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('castVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 184 char 1',
+                                     'ballot.compact line 221 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -263,7 +263,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('tallyVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 239 char 1',
+                                     'ballot.compact line 276 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -286,7 +286,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('finalize',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 291 char 1',
+                                     'ballot.compact line 328 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -349,42 +349,42 @@ export class Contract {
     if (!(typeof(nOptions_0) === 'bigint' && nOptions_0 >= 0n && nOptions_0 <= 255n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 8 (argument 9 as invoked from Typescript)',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 121 char 1',
                                  'Uint<0..256>',
                                  nOptions_0)
     }
     if (!(typeof(voteDl_0) === 'bigint' && voteDl_0 >= 0n && voteDl_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 9 (argument 10 as invoked from Typescript)',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 121 char 1',
                                  'Uint<0..18446744073709551616>',
                                  voteDl_0)
     }
     if (!(typeof(tallyDl_0) === 'bigint' && tallyDl_0 >= 0n && tallyDl_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 10 (argument 11 as invoked from Typescript)',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 121 char 1',
                                  'Uint<0..18446744073709551616>',
                                  tallyDl_0)
     }
     if (!(typeof(quorum_0) === 'bigint' && quorum_0 >= 0n && quorum_0 <= 255n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 11 (argument 12 as invoked from Typescript)',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 121 char 1',
                                  'Uint<0..256>',
                                  quorum_0)
     }
     if (!(typeof(eligible_0) === 'bigint' && eligible_0 >= 0n && eligible_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 12 (argument 13 as invoked from Typescript)',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 121 char 1',
                                  'Uint<0..18446744073709551616>',
                                  eligible_0)
     }
     if (!(nonce_0.buffer instanceof ArrayBuffer && nonce_0.BYTES_PER_ELEMENT === 1 && nonce_0.length === 32)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 14 (argument 15 as invoked from Typescript)',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 121 char 1',
                                  'Bytes<32>',
                                  nonce_0)
     }
@@ -868,6 +868,16 @@ export class Contract {
                                                                                               alignment: _descriptor_0.alignment() }).encode() } },
                                        { ins: { cached: false, n: 1 } },
                                        { ins: { cached: true, n: 1 } }]);
+    __compactRuntime.assert(nOptions_0 >= 2n && nOptions_0 <= 4n,
+                            'Jumlah opsi harus 2 sampai 4');
+    __compactRuntime.assert(tallyDl_0 > voteDl_0,
+                            'Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara');
+    __compactRuntime.assert(eligible_0 >= 1n,
+                            'Jumlah pemilih yang berhak minimal 1');
+    __compactRuntime.assert(eligible_0 <= 1024n,
+                            'Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)');
+    __compactRuntime.assert(quorum_0 <= 100n,
+                            'Persentase kuorum tidak boleh melebihi 100');
     __compactRuntime.queryLedgerState(context,
                                       partialProofData,
                                       [
@@ -2371,7 +2381,7 @@ export class Contract {
     {
       const tmp_2 = ((t1) => {
                       if (t1 > 18446744073709551615n) {
-                        throw new __compactRuntime.CompactError('ballot.compact line 269 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                        throw new __compactRuntime.CompactError('ballot.compact line 306 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                       }
                       return t1;
                     })(_descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,

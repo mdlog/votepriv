@@ -27,6 +27,19 @@ export sealed ledger optionCount:       Uint<8>;
 // uji tetap hijau sementara ballot yang di-deploy sungguhan rusak.
 export sealed ledger voteDeadline:      Uint<64>;
 export sealed ledger tallyDeadline:     Uint<64>;
+
+// METADATA SAJA — TIDAK DITEGAKKAN OLEH CIRCUIT MANA PUN.
+// quorumPercent ditulis sekali di constructor lalu tidak pernah dibaca lagi oleh
+// circuit mana pun di berkas ini. finalize() berhasil pada partisipasi 0% persis
+// seperti pada 100%: tidak ada satu jalur kode pun yang membandingkan voteCount
+// atau talliedCount terhadap nilai ini. Perlakukan sebagai keterangan yang dapat
+// diaudit publik ("kuorum yang dimaksudkan penyelenggara"), BUKAN sebagai ambang
+// yang mengikat — jangan menampilkannya di UI seolah-olah kontrak akan menolak
+// hasil yang berada di bawahnya, karena kontrak tidak menolak apa pun.
+// Satu-satunya hal yang ditegakkan kontrak adalah bahwa nilainya masuk akal
+// sebagai persen (assert quorum <= 100 di constructor), sehingga angka yang
+// ditampilkan bukan omong kosong. Menegakkan kuorum adalah keputusan produk yang
+// sengaja diambil terpisah dari perbaikan ini.
 export sealed ledger quorumPercent:     Uint<8>;
 export sealed ledger eligibleCount:     Uint<64>;
 export sealed ledger eligibilityPolicy: Opaque<"string">;
@@ -220,6 +233,19 @@ export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
 // sebuah assert gagal.
 export circuit castVote(): [] {
   assert(kernel.blockTimeLessThan(voteDeadline), "Batas waktu pemungutan suara sudah lewat");
+  // Status assert fase ini sama dengan assert fase di tallyVote (lihat catatan
+  // panjang di atas circuit itu): tidak ada state yang HANYA guard ini yang
+  // menolaknya. phase meninggalkan voting hanya lewat tallyVote (butuh waktu blok
+  // > voteDeadline) atau finalize (butuh waktu blok > tallyDeadline), dan waktu
+  // blok tidak pernah mundur — jadi setiap kali phase != voting, guard deadline
+  // satu baris di atas sudah gagal juga, dan karena ia ditulis lebih dulu,
+  // pesannyalah yang benar-benar dilihat pengguna.
+  //
+  // Bedanya dengan tallyVote: di sini jaminan itu BERSANDAR pada assert
+  // tallyDl > voteDl di constructor. Tanpa assert itu, ballot dengan
+  // tallyDeadline < voteDeadline dapat difinalisasi selagi waktu blok masih
+  // < voteDeadline, dan pada state itu assert fase inilah satu-satunya yang
+  // menolak. Jadi baris ini bukan sekadar dokumentasi niat.
   assert(phase == BallotPhase.voting, "Ballot tidak sedang menerima suara");
 
   const cred = voter_credential();
@@ -263,16 +289,25 @@ export circuit castVote(): [] {
 // bisa dibuka sama sekali, dan ballot mati dengan seluruh suaranya utuh tapi
 // tidak dapat dihitung.
 //
-// CATATAN (Task 7): assert phase != finalized di bawah ini secara praktis
-// tidak pernah menjadi assert PERTAMA yang gagal, dan dibuktikan lewat fault
-// injection (lihat task-7-report.md) — begitu finalize() berhasil, waktu
-// blok sudah pasti > tallyDeadline (itu prasyarat finalize sendiri) dan waktu
-// blok tidak pernah mundur, sehingga assert blockTimeLessThan(tallyDeadline)
-// tepat di bawah ini SELALU sudah menolak lebih dulu pada kondisi yang sama.
-// Baris ini dipertahankan sebagai pertahanan berlapis dan dokumentasi niat
-// eksplisit (konsisten dengan guard fase di awal registerVoters/castVote),
-// bukan karena jangkauannya sungguh independen dari guard tallyDeadline saat
-// ini.
+// CATATAN (Task 7, DIKOREKSI pada gelombang perbaikan review branch).
+// Klaim yang benar tentang assert phase != finalized di baris pertama circuit
+// ini adalah soal JANGKAUAN, bukan soal urutan: tidak ada state yang HANYA
+// guard ini yang menolaknya. Begitu finalize() berhasil, waktu blok sudah pasti
+// > tallyDeadline (itu prasyarat finalize sendiri) dan waktu blok tidak pernah
+// mundur, sehingga guard blockTimeLessThan(tallyDeadline) juga pasti gagal pada
+// state yang sama.
+//
+// Versi sebelumnya menulis bahwa guard tallyDeadline "SELALU sudah menolak
+// lebih dulu". Itu KELIRU dan berbahaya untuk dijadikan premis: urutan evaluasi
+// mengikuti urutan penulisan, dan assert fase ditulis paling atas. Setelah
+// finalisasi, pesan yang benar-benar diterima pengguna adalah "Ballot sudah
+// difinalisasi" — bukan "Batas waktu pembukaan suara sudah lewat". Siapa pun
+// yang menyusun ulang atau menghapus guard di sini harus bernalar dari fakta
+// itu, bukan dari premis yang salah.
+//
+// Baris ini dipertahankan justru karena pesannya lebih tepat menjelaskan
+// keadaan kepada pengguna, dan sebagai pertahanan berlapis bila guard waktu
+// suatu saat berubah.
 export circuit tallyVote(): [] {
   assert(phase != BallotPhase.finalized, "Ballot sudah difinalisasi");
   assert(kernel.blockTimeGreaterThan(voteDeadline), "Pemungutan suara masih berlangsung");

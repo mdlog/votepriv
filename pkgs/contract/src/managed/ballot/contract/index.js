@@ -197,21 +197,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 188 char 1',
+                                     'ballot.compact line 201 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(Array.isArray(leaves_0) && leaves_0.length === 8 && leaves_0.every((t) => t.buffer instanceof ArrayBuffer && t.BYTES_PER_ELEMENT === 1 && t.length === 32))) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'ballot.compact line 188 char 1',
+                                     'ballot.compact line 201 char 1',
                                      'Vector<8, Bytes<32>>',
                                      leaves_0)
         }
         if (!(typeof(n_0) === 'bigint' && n_0 >= 0n && n_0 <= 255n)) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'ballot.compact line 188 char 1',
+                                     'ballot.compact line 201 char 1',
                                      'Uint<0..256>',
                                      n_0)
         }
@@ -240,7 +240,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('castVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 221 char 1',
+                                     'ballot.compact line 234 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -263,7 +263,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('tallyVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 276 char 1',
+                                     'ballot.compact line 311 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -286,7 +286,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('finalize',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 328 char 1',
+                                     'ballot.compact line 363 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -349,42 +349,42 @@ export class Contract {
     if (!(typeof(nOptions_0) === 'bigint' && nOptions_0 >= 0n && nOptions_0 <= 255n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 8 (argument 9 as invoked from Typescript)',
-                                 'ballot.compact line 121 char 1',
+                                 'ballot.compact line 134 char 1',
                                  'Uint<0..256>',
                                  nOptions_0)
     }
     if (!(typeof(voteDl_0) === 'bigint' && voteDl_0 >= 0n && voteDl_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 9 (argument 10 as invoked from Typescript)',
-                                 'ballot.compact line 121 char 1',
+                                 'ballot.compact line 134 char 1',
                                  'Uint<0..18446744073709551616>',
                                  voteDl_0)
     }
     if (!(typeof(tallyDl_0) === 'bigint' && tallyDl_0 >= 0n && tallyDl_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 10 (argument 11 as invoked from Typescript)',
-                                 'ballot.compact line 121 char 1',
+                                 'ballot.compact line 134 char 1',
                                  'Uint<0..18446744073709551616>',
                                  tallyDl_0)
     }
     if (!(typeof(quorum_0) === 'bigint' && quorum_0 >= 0n && quorum_0 <= 255n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 11 (argument 12 as invoked from Typescript)',
-                                 'ballot.compact line 121 char 1',
+                                 'ballot.compact line 134 char 1',
                                  'Uint<0..256>',
                                  quorum_0)
     }
     if (!(typeof(eligible_0) === 'bigint' && eligible_0 >= 0n && eligible_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 12 (argument 13 as invoked from Typescript)',
-                                 'ballot.compact line 121 char 1',
+                                 'ballot.compact line 134 char 1',
                                  'Uint<0..18446744073709551616>',
                                  eligible_0)
     }
     if (!(nonce_0.buffer instanceof ArrayBuffer && nonce_0.BYTES_PER_ELEMENT === 1 && nonce_0.length === 32)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 14 (argument 15 as invoked from Typescript)',
-                                 'ballot.compact line 121 char 1',
+                                 'ballot.compact line 134 char 1',
                                  'Bytes<32>',
                                  nonce_0)
     }
@@ -1203,7 +1203,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('admin_secret_key',
                                  'return value',
-                                 'ballot.compact line 78 char 1',
+                                 'ballot.compact line 91 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1220,7 +1220,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('voter_credential',
                                  'return value',
-                                 'ballot.compact line 79 char 1',
+                                 'ballot.compact line 92 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1237,7 +1237,7 @@ export class Contract {
     if (!(typeof(result_0) === 'object' && result_0.leaf.buffer instanceof ArrayBuffer && result_0.leaf.BYTES_PER_ELEMENT === 1 && result_0.leaf.length === 32 && Array.isArray(result_0.path) && result_0.path.length === 10 && result_0.path.every((t) => typeof(t) === 'object' && typeof(t.sibling) === 'object' && typeof(t.sibling.field) === 'bigint' && t.sibling.field >= 0 && t.sibling.field <= __compactRuntime.MAX_FIELD && typeof(t.goes_left) === 'boolean'))) {
       __compactRuntime.typeError('eligibility_path',
                                  'return value',
-                                 'ballot.compact line 80 char 1',
+                                 'ballot.compact line 93 char 1',
                                  'struct MerkleTreePath<leaf: Bytes<32>, path: Vector<10, struct MerkleTreePathEntry<sibling: struct MerkleTreeDigest<field: Field>, goes_left: Boolean>>>',
                                  result_0)
     }
@@ -1254,7 +1254,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0n && result_0 <= 255n)) {
       __compactRuntime.typeError('get_my_option',
                                  'return value',
-                                 'ballot.compact line 81 char 1',
+                                 'ballot.compact line 94 char 1',
                                  'Uint<0..256>',
                                  result_0)
     }
@@ -1271,7 +1271,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('get_my_salt',
                                  'return value',
-                                 'ballot.compact line 82 char 1',
+                                 'ballot.compact line 95 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1290,7 +1290,7 @@ export class Contract {
     if (!(Array.isArray(result_0) && result_0.length === 0 )) {
       __compactRuntime.typeError('store_opening',
                                  'return value',
-                                 'ballot.compact line 83 char 1',
+                                 'ballot.compact line 96 char 1',
                                  '[]',
                                  result_0)
     }
@@ -1307,7 +1307,7 @@ export class Contract {
     if (!(typeof(result_0) === 'object' && result_0.leaf.buffer instanceof ArrayBuffer && result_0.leaf.BYTES_PER_ELEMENT === 1 && result_0.leaf.length === 32 && Array.isArray(result_0.path) && result_0.path.length === 10 && result_0.path.every((t) => typeof(t) === 'object' && typeof(t.sibling) === 'object' && typeof(t.sibling.field) === 'bigint' && t.sibling.field >= 0 && t.sibling.field <= __compactRuntime.MAX_FIELD && typeof(t.goes_left) === 'boolean'))) {
       __compactRuntime.typeError('commitment_path',
                                  'return value',
-                                 'ballot.compact line 84 char 1',
+                                 'ballot.compact line 97 char 1',
                                  'struct MerkleTreePath<leaf: Bytes<32>, path: Vector<10, struct MerkleTreePathEntry<sibling: struct MerkleTreeDigest<field: Field>, goes_left: Boolean>>>',
                                  result_0)
     }
@@ -1334,7 +1334,7 @@ export class Contract {
     return this._persistentHash_0([new Uint8Array([118, 111, 116, 101, 112, 114, 105, 118, 58, 118, 111, 116, 101, 58, 118, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                                    __compactRuntime.convertFieldToBytes(32,
                                                                         option_0,
-                                                                        'ballot.compact line 105 char 5'),
+                                                                        'ballot.compact line 118 char 5'),
                                    salt_0]);
   }
   _tally_nullifier_0(salt_0) {
@@ -2381,7 +2381,7 @@ export class Contract {
     {
       const tmp_2 = ((t1) => {
                       if (t1 > 18446744073709551615n) {
-                        throw new __compactRuntime.CompactError('ballot.compact line 306 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                        throw new __compactRuntime.CompactError('ballot.compact line 341 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                       }
                       return t1;
                     })(_descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
@@ -2889,7 +2889,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(rt_0) === 'object' && typeof(rt_0.field) === 'bigint' && rt_0.field >= 0 && rt_0.field <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('checkRoot',
                                      'argument 1',
-                                     'ballot.compact line 42 char 1',
+                                     'ballot.compact line 55 char 1',
                                      'struct MerkleTreeDigest<field: Field>',
                                      rt_0)
         }
@@ -2942,14 +2942,14 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(index_0) === 'bigint' && index_0 >= 0 && index_0 <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 42 char 1',
+                                     'ballot.compact line 55 char 1',
                                      'Field',
                                      index_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 2',
-                                     'ballot.compact line 42 char 1',
+                                     'ballot.compact line 55 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -2964,7 +2964,7 @@ export function ledger(stateOrChargedState) {
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('find_path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 42 char 1',
+                                     'ballot.compact line 55 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -3068,7 +3068,7 @@ export function ledger(stateOrChargedState) {
         if (!(elem_0.buffer instanceof ArrayBuffer && elem_0.BYTES_PER_ELEMENT === 1 && elem_0.length === 32)) {
           __compactRuntime.typeError('member',
                                      'argument 1',
-                                     'ballot.compact line 65 char 1',
+                                     'ballot.compact line 78 char 1',
                                      'Bytes<32>',
                                      elem_0)
         }
@@ -3140,7 +3140,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(rt_0) === 'object' && typeof(rt_0.field) === 'bigint' && rt_0.field >= 0 && rt_0.field <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('checkRoot',
                                      'argument 1',
-                                     'ballot.compact line 68 char 1',
+                                     'ballot.compact line 81 char 1',
                                      'struct MerkleTreeDigest<field: Field>',
                                      rt_0)
         }
@@ -3194,14 +3194,14 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(index_0) === 'bigint' && index_0 >= 0 && index_0 <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 68 char 1',
+                                     'ballot.compact line 81 char 1',
                                      'Field',
                                      index_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 2',
-                                     'ballot.compact line 68 char 1',
+                                     'ballot.compact line 81 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -3216,7 +3216,7 @@ export function ledger(stateOrChargedState) {
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('find_path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 68 char 1',
+                                     'ballot.compact line 81 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -3279,7 +3279,7 @@ export function ledger(stateOrChargedState) {
         if (!(elem_0.buffer instanceof ArrayBuffer && elem_0.BYTES_PER_ELEMENT === 1 && elem_0.length === 32)) {
           __compactRuntime.typeError('member',
                                      'argument 1',
-                                     'ballot.compact line 74 char 1',
+                                     'ballot.compact line 87 char 1',
                                      'Bytes<32>',
                                      elem_0)
         }
@@ -3366,7 +3366,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 255n)) {
           __compactRuntime.typeError('member',
                                      'argument 1',
-                                     'ballot.compact line 75 char 1',
+                                     'ballot.compact line 88 char 1',
                                      'Uint<0..256>',
                                      key_0)
         }
@@ -3398,7 +3398,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 255n)) {
           __compactRuntime.typeError('lookup',
                                      'argument 1',
-                                     'ballot.compact line 75 char 1',
+                                     'ballot.compact line 88 char 1',
                                      'Uint<0..256>',
                                      key_0)
         }
@@ -3472,7 +3472,7 @@ export const pureCircuits = {
     if (!(sk_0.buffer instanceof ArrayBuffer && sk_0.BYTES_PER_ELEMENT === 1 && sk_0.length === 32)) {
       __compactRuntime.typeError('admin_pk',
                                  'argument 1',
-                                 'ballot.compact line 90 char 1',
+                                 'ballot.compact line 103 char 1',
                                  'Bytes<32>',
                                  sk_0)
     }
@@ -3486,7 +3486,7 @@ export const pureCircuits = {
     if (!(cred_0.buffer instanceof ArrayBuffer && cred_0.BYTES_PER_ELEMENT === 1 && cred_0.length === 32)) {
       __compactRuntime.typeError('cred_leaf',
                                  'argument 1',
-                                 'ballot.compact line 94 char 1',
+                                 'ballot.compact line 107 char 1',
                                  'Bytes<32>',
                                  cred_0)
     }
@@ -3501,14 +3501,14 @@ export const pureCircuits = {
     if (!(nonce_0.buffer instanceof ArrayBuffer && nonce_0.BYTES_PER_ELEMENT === 1 && nonce_0.length === 32)) {
       __compactRuntime.typeError('vote_nullifier',
                                  'argument 1',
-                                 'ballot.compact line 98 char 1',
+                                 'ballot.compact line 111 char 1',
                                  'Bytes<32>',
                                  nonce_0)
     }
     if (!(cred_0.buffer instanceof ArrayBuffer && cred_0.BYTES_PER_ELEMENT === 1 && cred_0.length === 32)) {
       __compactRuntime.typeError('vote_nullifier',
                                  'argument 2',
-                                 'ballot.compact line 98 char 1',
+                                 'ballot.compact line 111 char 1',
                                  'Bytes<32>',
                                  cred_0)
     }
@@ -3523,14 +3523,14 @@ export const pureCircuits = {
     if (!(typeof(option_0) === 'bigint' && option_0 >= 0n && option_0 <= 255n)) {
       __compactRuntime.typeError('vote_commitment',
                                  'argument 1',
-                                 'ballot.compact line 102 char 1',
+                                 'ballot.compact line 115 char 1',
                                  'Uint<0..256>',
                                  option_0)
     }
     if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
       __compactRuntime.typeError('vote_commitment',
                                  'argument 2',
-                                 'ballot.compact line 102 char 1',
+                                 'ballot.compact line 115 char 1',
                                  'Bytes<32>',
                                  salt_0)
     }
@@ -3544,7 +3544,7 @@ export const pureCircuits = {
     if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
       __compactRuntime.typeError('tally_nullifier',
                                  'argument 1',
-                                 'ballot.compact line 110 char 1',
+                                 'ballot.compact line 123 char 1',
                                  'Bytes<32>',
                                  salt_0)
     }

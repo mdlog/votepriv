@@ -119,9 +119,15 @@ const buildDustConfig = ({ indexer, indexerWS, node, proofServer }: Config) => (
 // mengakses mesin/backup — pelanggaran terhadap semangat "seed tidak pernah
 // direpresentasikan lewat nilainya" (lihat task-2-report.md). Diganti hash
 // SHA-256 dari seed: deterministik per-seed, tidak bisa dibalik ke seed.
+//
+// `seed` di sini adalah BYTE (Uint8Array), bukan string hex — sejak dukungan
+// frasa pemulihan BIP-39 ditambahkan, seed produksi adalah seed PBKDF2 64
+// byte, bukan lagi selalu representasi hex 64 karakter. Hash dihitung
+// langsung atas byte-nya (encoding hex di sini hanya untuk INPUT hash yang
+// stabil, bukan untuk menampilkan atau menyimpan seed itu sendiri).
 
-const direktoriCacheWallet = (networkId: string, seed: string): string => {
-  const kunci = crypto.createHash("sha256").update(seed, "utf8").digest("hex").slice(0, 32);
+const direktoriCacheWallet = (networkId: string, seed: Uint8Array): string => {
+  const kunci = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 32);
   return path.resolve(currentDir, "..", "wallet-cache", networkId, kunci);
 };
 
@@ -156,12 +162,13 @@ const simpanCacheWallet = async (wallet: WalletFacade, cacheDir: string, log: Lo
 
 /**
  * Menurunkan kunci HD untuk ketiga peran (Zswap, NightExternal, Dust) dari
- * seed hex, pada account 0 index 0. Pola persis rujukan
- * `deriveKeysFromSeed`. Pesan galat di sini TIDAK BOLEH pernah menyertakan
- * `seed` — hanya menyebut kegagalan, tidak pernah nilainya.
+ * byte seed (32 byte seed hex mentah, ATAU 64/32 byte hasil turunan frasa
+ * pemulihan — lihat mnemonic.ts), pada account 0 index 0. Pola persis
+ * rujukan `deriveKeysFromSeed`. Pesan galat di sini TIDAK BOLEH pernah
+ * menyertakan `seed` — hanya menyebut kegagalan, tidak pernah nilainya.
  */
-const turunkanKunciHD = (seed: string) => {
-  const hd = HDWallet.fromSeed(Buffer.from(seed, "hex"));
+const turunkanKunciHD = (seed: Uint8Array) => {
+  const hd = HDWallet.fromSeed(seed);
   if (hd.type !== "seedOk") {
     throw new Error("Gagal menginisialisasi HDWallet dari seed.");
   }
@@ -182,9 +189,9 @@ const turunkanKunciHD = (seed: string) => {
 // ─── Membangun wallet ───────────────────────────────────────────────────────
 
 /**
- * Membangun (atau memulihkan dari cache lokal) wallet headless dari seed hex,
- * lalu memulai ketiga sub-wallet (shielded/zswap, unshielded/night, dust).
- * TIDAK menunggu sinkronisasi — itu tanggung jawab `ringkasSaldo`.
+ * Membangun (atau memulihkan dari cache lokal) wallet headless dari byte
+ * seed, lalu memulai ketiga sub-wallet (shielded/zswap, unshielded/night,
+ * dust). TIDAK menunggu sinkronisasi — itu tanggung jawab `ringkasSaldo`.
  *
  * Deviasi dari sketsa brief: menerima parameter `log` tambahan. Brief hanya
  * menulis `bangunWallet(config, seed): Promise<KonteksWallet>`, tapi temuan
@@ -194,8 +201,14 @@ const turunkanKunciHD = (seed: string) => {
  * dan satu-satunya saluran aman untuk melaporkannya adalah logger pino —
  * yang berarti fungsi ini butuh logger itu diteruskan, bukan diasumsikan
  * lewat stdout global.
+ *
+ * Deviasi lanjutan (dukungan frasa pemulihan BIP-39): `seed` sekarang byte
+ * (`Uint8Array`), bukan string hex — `seed.ts#validasiSeed` sudah
+ * menguraikan bentuk masukan (hex mentah atau frasa 24 kata) dan
+ * mengembalikan byte seed final, sehingga fungsi ini tidak perlu tahu
+ * bentuk aslinya sama sekali.
  */
-export async function bangunWallet(config: Config, seed: string, log: Logger): Promise<KonteksWallet> {
+export async function bangunWallet(config: Config, seed: Uint8Array, log: Logger): Promise<KonteksWallet> {
   const networkId = getNetworkId();
   const cacheDir = direktoriCacheWallet(networkId, seed);
 

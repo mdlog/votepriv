@@ -18,6 +18,7 @@
 import path from "node:path";
 import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
 import { DEFAULT_PROOF_SERVER_URL } from "shared";
+import { caraTurunanDariArgv } from "./args.ts";
 import { currentDir, type Config } from "./config.ts";
 import { buatLogger } from "./logger.ts";
 import { bacaSeed } from "./seed.ts";
@@ -43,8 +44,9 @@ log.info(
   "Konfigurasi jaringan (diagnostik: indexer preprod alternatif blockfrost.lw.iog.io)",
 );
 
-const seed = await bacaSeed();
-log.info(`Seed diterima (${seed.length} karakter).`);
+const caraTurunan = caraTurunanDariArgv();
+const seed = await bacaSeed(caraTurunan);
+log.info(`Seed diterima (${seed.length} byte, metode turunan: ${caraTurunan}).`);
 
 const ctx = await bangunWallet(config, seed, log);
 const saldo = await ringkasSaldo(ctx, log);

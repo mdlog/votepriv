@@ -293,6 +293,9 @@ importers:
       '@midnight-ntwrk/wallet-sdk-unshielded-wallet':
         specifier: ^3.1.0
         version: 3.1.0(ws@8.21.3)
+      '@scure/bip39':
+        specifier: ^2.4.0
+        version: 2.4.0
       contract:
         specifier: workspace:*
         version: link:../contract

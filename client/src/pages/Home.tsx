@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
-import {
-  checkProofServer,
-  proofServerHop,
-  proofServerTarget,
-  type ProofServerStatus,
-} from "@/lib/proof-server";
+import { checkProofServer, type ProofServerStatus } from "@/lib/proof-server";
 import {
   Activity,
   ArrowUpRight,
@@ -276,6 +271,13 @@ export default function Home() {
   // server, jadi 127.0.0.1:6300 berarti loopback MESIN DEV. Halaman yang dibuka
   // lewat tunnel mengirim witness menyeberangi jaringan menuju mesin itu. Karena
   // itu `reach` punya tiga nilai, bukan boolean remote/lokal.
+  //
+  // Seluruh jalur witness dibaca dari proofStatus, TIDAK dari modul. Target yang
+  // dipanggang ke bundel saat build bisa berbeda dari yang benar-benar dipakai
+  // proxy saat start; checkProofServer() menanyakannya ke server dan menyertakan
+  // `targetTerverifikasi`. Ketika target tidak dapat dikonfirmasi, panel ini
+  // menahan klaim kuatnya alih-alih menebak — indikator yang menebak lebih buruk
+  // daripada indikator yang mengaku tidak tahu.
   const privacy = useMemo(() => {
     if (!proofStatus) return { label: "Checking…", tone: "", title: "Memeriksa proof server." };
     // Keadaan privasi disampaikan lebih dulu, keterjangkauan menyusul dalam
@@ -284,17 +286,22 @@ export default function Home() {
     const jangkauan = proofStatus.reachable
       ? `Proof server menjawab v${proofStatus.version}.`
       : `Proof server juga tidak dapat dihubungi (${proofStatus.error}).`;
+    // Disematkan ke peringatan yang sudah ada, bukan menggantikannya: kalau target
+    // belum dikonfirmasi, nama host yang disebut kalimat di bawah pun belum pasti.
+    const catatanTarget = proofStatus.targetTerverifikasi
+      ? ""
+      : " Target ini berasal dari nilai build dan belum dikonfirmasi oleh server yang menyajikan halaman ini, jadi tujuan sebenarnya bisa berbeda.";
     if (proofStatus.reach === "remote")
       return {
         label: "Proof server remote",
         tone: "warn",
-        title: `Witness Anda — credential dan pilihan suara — dikirim ke ${proofServerTarget}. Karena proof server menerima witness, operatornya dapat melihat pilihan suara Anda. ${jangkauan}`,
+        title: `Witness Anda — credential dan pilihan suara — dikirim ke ${proofStatus.target}. Karena proof server menerima witness, operatornya dapat melihat pilihan suara Anda. ${jangkauan}${catatanTarget}`,
       };
     if (proofStatus.reach === "lewat-host-halaman")
       return {
         label: "Witness lewat jaringan",
         tone: "warn",
-        title: `Halaman ini disajikan dari ${location.host}, bukan dari perangkat Anda, sehingga ${proofServerTarget} adalah loopback MESIN ITU — bukan loopback Anda. Witness menempuh ${proofServerHop()}, dan siapa pun yang mengoperasikan mesin itu dapat melihat pilihan suara Anda. ${jangkauan}`,
+        title: `Halaman ini disajikan dari ${location.host}, bukan dari perangkat Anda, sehingga ${proofStatus.target} adalah loopback MESIN ITU — bukan loopback Anda. Witness menempuh ${proofStatus.hop}, dan siapa pun yang mengoperasikan mesin itu dapat melihat pilihan suara Anda. ${jangkauan}${catatanTarget}`,
       };
     if (!proofStatus.reachable)
       return {
@@ -302,10 +309,20 @@ export default function Home() {
         tone: "off",
         title: `Proof server lokal tidak dapat dihubungi (${proofStatus.error}). Jalankan: docker compose -f proof-server.yml up`,
       };
+    // Sampai di sini jalurnya lokal DAN proof server hidup. Klaim terkuat aplikasi
+    // ini boleh dibuat — tetapi hanya bila target benar-benar dikonfirmasi server.
+    // Tanpa konfirmasi, /proof-server bisa saja diteruskan reverse proxy di depan
+    // ke tempat lain sementara bundel tetap menyebut 127.0.0.1.
+    if (!proofStatus.targetTerverifikasi)
+      return {
+        label: "Target belum terverifikasi",
+        tone: "warn",
+        title: `Proof server menjawab v${proofStatus.version}, tetapi server yang menyajikan halaman ini tidak melaporkan ke mana /proof-server diteruskan. ${proofStatus.target} hanyalah nilai yang dipanggang saat build. Karena tujuan sebenarnya tidak dapat dipastikan, klaim "witness tidak pernah meninggalkan perangkat ini" tidak dibuat di sini.`,
+      };
     return {
       label: "Always on",
       tone: "",
-      title: `Proof server lokal v${proofStatus.version} di ${proofServerTarget}, diakses dari halaman lokal — witness tidak pernah meninggalkan perangkat ini.`,
+      title: `Proof server lokal v${proofStatus.version} di ${proofStatus.target}, diakses dari halaman lokal — witness tidak pernah meninggalkan perangkat ini.`,
     };
   }, [proofStatus]);
   const [voteBallot, setVoteBallot] = useState<Ballot | null>(null);

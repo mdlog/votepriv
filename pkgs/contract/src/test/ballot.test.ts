@@ -144,8 +144,57 @@ describe("ballot.compact — castVote", () => {
   });
 
   it("credential yang tidak terdaftar ditolak", () => {
+    // Ini menguji guard di simulator (findPathForLeaf mengembalikan undefined
+    // sehingga castVote() menolak sebelum circuit sempat dipanggil), bukan
+    // guard di dalam circuit itu sendiri. Lihat dua uji "in-circuit" di bawah
+    // untuk uji yang benar-benar memicu cabang gagal assert di dalam castVote.
     const sim = siap();
     expect(() => sim.castVote(ASING, 0, SALT_1)).toThrow();
+  });
+
+  it("path milik credential lain ditolak in-circuit (guard kecocokan leaf)", () => {
+    const sim = siap();
+    // Path ini benar-benar valid — tapi untuk CRED_A. castVoteWithRawPrivateState
+    // memasangkannya secara sengaja dengan credential CRED_B, sesuatu yang tidak
+    // bisa terjadi lewat castVote() biasa karena castVote() selalu menyusun path
+    // yang konsisten dengan credential yang diberikan. Ini memicu
+    // assert(disclose(path.leaf == daun), "Merkle path bukan untuk credential ini")
+    // di ballot.compact, bukan guard simulator manapun.
+    const path = sim.getLedger().eligibility.findPathForLeaf(pureCircuits.cred_leaf(CRED_A));
+    if (path === undefined) throw new Error("setup uji gagal: path CRED_A tidak ditemukan");
+    expect(() =>
+      sim.castVoteWithRawPrivateState({
+        credential: CRED_B,
+        option: 0n,
+        salt: SALT_1,
+        eligibilityPath: path,
+      }),
+    ).toThrow();
+  });
+
+  it("path dengan sibling yang diubah ditolak in-circuit (guard checkRoot)", () => {
+    const sim = siap();
+    // leaf tetap cocok dengan CRED_A (lolos guard kecocokan leaf), tapi satu
+    // sibling di dalam path diubah sehingga akar yang direkonstruksi
+    // merkleTreePathRoot() bukan akar yang pernah benar-benar dimiliki pohon
+    // eligibility. Ini memicu assert(eligibility.checkRoot(rt), "Anda tidak
+    // terdaftar sebagai pemilih pada ballot ini") di ballot.compact.
+    const path = sim.getLedger().eligibility.findPathForLeaf(pureCircuits.cred_leaf(CRED_A));
+    if (path === undefined) throw new Error("setup uji gagal: path CRED_A tidak ditemukan");
+    const pathRusak = {
+      leaf: path.leaf,
+      path: path.path.map((entri, i) =>
+        i === 0 ? { ...entri, sibling: { field: entri.sibling.field + 1n } } : entri,
+      ),
+    };
+    expect(() =>
+      sim.castVoteWithRawPrivateState({
+        credential: CRED_A,
+        option: 0n,
+        salt: SALT_1,
+        eligibilityPath: pathRusak,
+      }),
+    ).toThrow();
   });
 
   it("credential yang sama tidak bisa mencoblos dua kali", () => {

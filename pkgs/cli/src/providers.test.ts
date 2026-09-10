@@ -82,6 +82,15 @@ describe("zkDir", () => {
       ["registry", SIRKUIT_REGISTRY],
     ] as const) {
       const dir = zkDir(nama);
+      // pkgs/contract/dist/managed/{ballot,registry} berisi salinan berkas
+      // yang IDENTIK dengan src/managed (lihat brief Task 4 Step 1), jadi
+      // memeriksa keberadaan keys/zkir saja lolos walau zkDir diam-diam
+      // diganti ke dist. dist/ ada di .gitignore dan tidak dijamin ada di
+      // checkout baru — assert di sini langsung pada segmen jalurnya supaya
+      // mutasi src->dist gagal di sini, bukan lolos secara kebetulan.
+      const segmen = dir.split(path.sep);
+      expect(segmen, `${dir} harus melalui segmen "src"`).toContain("src");
+      expect(segmen, `${dir} tidak boleh melalui segmen "dist"`).not.toContain("dist");
       expect(fs.existsSync(path.join(dir, "keys")), `${dir}/keys tidak ada`).toBe(true);
       expect(fs.existsSync(path.join(dir, "zkir")), `${dir}/zkir tidak ada`).toBe(true);
       for (const id of sirkuit) {

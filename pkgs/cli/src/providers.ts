@@ -153,7 +153,12 @@ async function pastikanArtefakZk<K extends string>(
   dir: string,
 ): Promise<void> {
   try {
-    await zk.getVerifierKeys([...sirkuit]);
+    // `.get(id)` membaca ZKIR + prover key + verifier key (lihat
+    // ZKConfigProvider.get di @midnight-ntwrk/midnight-js-types), bukan hanya
+    // verifier key seperti getVerifierKeys. Prover/.bzkir yang hilang harus
+    // menggagalkan guard ini di sini, bukan lolos lalu ditelan diam-diam oleh
+    // catch { return undefined } milik httpClientProofProvider.
+    await Promise.all(sirkuit.map((id) => zk.get(id)));
   } catch (e) {
     throw new Error(
       `Artefak ZK tidak terbaca di ${dir} (butuh keys/<circuit>.prover, keys/<circuit>.verifier, zkir/<circuit>.bzkir untuk ${sirkuit.join(", ")}). Penyebab: ${(e as Error).message}`,

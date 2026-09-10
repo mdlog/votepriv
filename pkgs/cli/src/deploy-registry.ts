@@ -7,7 +7,7 @@
 // Alamat DIKEMBALIKAN lewat kode dan ditulis ke berkas, tidak untuk dipungut
 // dari stdout: SDK wallet menulis galat sinkronisasi mentah langsung ke stdout
 // di luar pino, jadi keluaran terminal bukan saluran data yang bisa dipercaya.
-import { bacaArtefak, tulisArtefak } from "./artefak.ts";
+import { bacaArtefak, jalurArtefak, tulisArtefak } from "./artefak.ts";
 import { hentikanWallet, siapkanSesi, tutupSesi } from "./bootstrap.ts";
 import { bacaLedgerRegistry, deployRegistry } from "./deploy.ts";
 import { rakitProvidersRegistry } from "./providers.ts";
@@ -28,6 +28,13 @@ if (sudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
 const providers = await rakitProvidersRegistry(kp, "admin");
 const { alamat: alamatRegistry } = await deployRegistry(providers, log);
 
+// Simpan alamat SEGERA setelah deploy sukses — sebelum membaca ledger dari
+// indexer. Berkas artefak adalah saluran catatan resmi untuk alamat ini
+// (lihat komentar berkas di atas); throw apa pun antara sini dan pembacaan
+// ledger tidak boleh menghilangkan alamat dari sebuah deploy yang sudah
+// berhasil dan sudah membayar biaya.
+tulisArtefak(config.networkId, { registry: alamatRegistry });
+
 // Indexer menyusul node beberapa detik. Membaca ledger tepat setelah deploy
 // dapat mengembalikan null; itu bukan kegagalan, itu keterlambatan.
 const { nilai: ledger, galatTerakhir, percobaan } = await ulangiSampai(
@@ -39,15 +46,16 @@ const { nilai: ledger, galatTerakhir, percobaan } = await ulangiSampai(
 if (ledger === undefined) {
   log.error(
     { galatTerakhir, percobaan },
-    "Registry ter-deploy tapi tidak pernah terbaca dari indexer. Alamatnya TETAP disimpan — deploy-nya sukses.",
+    "Registry ter-deploy tapi tidak pernah terbaca dari indexer. Alamatnya TETAP tersimpan — deploy-nya sukses.",
   );
-  tulisArtefak(config.networkId, { registry: alamatRegistry });
   await hentikanWallet(sesi.ctx, log);
   process.exit(1);
 }
 log.info({ count: ledger.count.toString(), kosong: ledger.ballots.isEmpty() }, "Ledger registry terbaca dari indexer");
 
-const artefak = tulisArtefak(config.networkId, { registry: alamatRegistry });
-log.info({ berkas: `pkgs/cli/artefak/${config.networkId}.json`, artefak }, "Alamat registry tersimpan");
+// Log hanya jalur berkas dan alamat, BUKAN objek artefak: Task 5/6 mengisi
+// ArtefakDeploy.credentials, dan menulis objek itu ke log berarti credential
+// pemilih ikut mendarat mentah-mentah di pkgs/cli/logs/.
+log.info({ berkas: jalurArtefak(config.networkId), alamat: alamatRegistry }, "Alamat registry tersimpan");
 
 await tutupSesi(sesi, 0);

@@ -18,6 +18,7 @@
 import type { FinalizedTransaction, TransactionId } from "@midnight-ntwrk/ledger-v8";
 import type { MidnightProvider, UnboundTransaction, WalletProvider } from "@midnight-ntwrk/midnight-js-types";
 import * as Rx from "rxjs";
+import { BATAS_MS, denganBatasWaktu } from "./tunggu.ts";
 import type { KonteksWallet } from "./wallet.ts";
 
 /**
@@ -38,7 +39,17 @@ export const buatWalletProvider = async (
   // sub-wallet sinkron SERENTAK. `waitForSyncedState()` memakai Promise.all
   // per sub-wallet sehingga momen "sinkron"-nya boleh tidak berimpitan —
   // bentuk Rx inilah yang benar.
-  const state = await Rx.firstValueFrom(ctx.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
+  //
+  // Dibungkus denganBatasWaktu: tanpa ini, WS indexer yang putus atau
+  // re-sync yang macet persis di sini membuat CLI diam SELAMANYA tanpa satu
+  // pun baris log — kegagalan yang seluruh tugas ini dibuat untuk mencegah.
+  // Lihat BATAS_MS.sinkron di tunggu.ts untuk kenapa anggarannya jauh lebih
+  // kecil daripada deploy/panggilBerat.
+  const state = await denganBatasWaktu(
+    Rx.firstValueFrom(ctx.wallet.state().pipe(Rx.filter((s) => s.isSynced))),
+    BATAS_MS.sinkron,
+    `Wallet tidak sinkron ulang dalam ${BATAS_MS.sinkron / 60_000} menit saat menyiapkan provider. Kemungkinan WS indexer terputus atau re-sync macet.`,
+  );
 
   return {
     // HEX, bukan bech32m. midnight-js menormalkan coin public key lewat

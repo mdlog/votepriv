@@ -22,6 +22,17 @@ export function pastikan(kondisi: boolean, pesan: string): asserts kondisi {
  */
 export const BATAS_MS = {
   /**
+   * buatWalletProvider: menunggu ketiga sub-wallet sinkron ULANG sebelum
+   * membaca coin/encryption public key. BUKAN sinkronisasi dingin — di jalur
+   * normal siapkanSesi sudah menunggu ringkasSaldo sesaat sebelumnya, jadi
+   * emisi pertama dari state() lazimnya sudah sinkron dan await ini selesai
+   * seketika. Anggaran ini hanya menangkap kasus WS indexer putus atau
+   * re-sync terpicu di antara kedua panggilan itu — jauh lebih murah
+   * daripada sinkronisasi awal dari nol, karena itu jauh lebih kecil
+   * daripada `deploy`/`panggilBerat` (15 menit).
+   */
+  sinkron: 2 * 60_000,
+  /**
    * deployContract: satu proof ZK + penyeimbangan + finalisasi node +
    * watchForDeployTxData (tak berbatas secara desain). 15 menit ≈ 6× terburuk.
    */

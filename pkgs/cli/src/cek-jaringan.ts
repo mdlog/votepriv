@@ -66,6 +66,7 @@ export async function jalankanCekJaringan(config: Config): Promise<void> {
   // menunggu proses berakhir "secara alami" bergantung pada TIDAK ADA
   // handle lain yang masih terbuka (mis. transport pino) — lebih aman
   // menyatakan exit code sukses secara eksplisit daripada berharap begitu.
+  await hentikanWallet(ctx, log);
   log.info({ kode: 0 }, "Sesi ditutup");
   process.exit(0);
 }

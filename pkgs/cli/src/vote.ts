@@ -123,10 +123,13 @@ export async function siapkanPembukaan(
  * Dipertahankan (bukan dihapus) sebagai jaring pengaman murah untuk dua
  * kelas risiko yang TIDAK bisa disingkirkan hanya dengan membaca sumber
  * versi saat ini: (1) upgrade `midnight-js-contracts` di masa depan yang
- * mengubah perilaku ini — `package.json` mengunci rentang `^4.0.1`, bukan
- * versi persis; dan (2) pemanggilan lewat transaction context bersama
- * (`outerTxCtx`) suatu hari nanti, yang jalur `scoped`-nya (dist/index.mjs:
- * 812-833) mengembalikan `CallResult` TANPA field `status` sama sekali,
+ * mengubah perilaku ini — `package.json` mengunci versi PERSIS `4.0.4`
+ * untuk paket ini (bukan rentang; rentang `^4.0.1` itu milik paket LAIN,
+ * `wallet-sdk-facade`), tapi pin persis ini hanya bertahan sampai seseorang
+ * menaikkannya secara manual, dan perilaku pada versi berikutnya belum
+ * diverifikasi terhadap sumbernya; dan (2) pemanggilan lewat transaction
+ * context bersama (`outerTxCtx`) suatu hari nanti, yang jalur `scoped`-nya
+ * (dist/index.mjs:812-833) mengembalikan `CallResult` TANPA field `status` sama sekali,
  * bukan tanpa syarat melempar — belum dipakai di berkas mana pun di CLI ini,
  * tapi bila kelak dipakai, guard ini adalah satu-satunya yang berdiri antara
  * status gagal yang lolos dan log "Suara masuk" yang keliru. Biayanya satu

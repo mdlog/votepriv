@@ -117,3 +117,7 @@ pkgs/cli/wallet-cache/
 pkgs/cli/logs/
 *.seed
 .seed
+
+# Store private state terenkripsi dan artefak deploy (memuat credential uji)
+pkgs/cli/private-state/
+pkgs/cli/artefak/

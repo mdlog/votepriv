@@ -171,4 +171,25 @@ export class BallotSimulator {
     };
     return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), ps);
   }
+
+  /**
+   * KHUSUS UJI: menjalankan castVote dengan private state yang disusun manual,
+   * melewati pencarian path otomatis di castVote(). castVote() biasa selalu
+   * menyusun path yang benar-benar valid untuk credential yang diberikan,
+   * sehingga guard di dalam circuit (kecocokan leaf, checkRoot) tidak pernah
+   * bisa dipicu ke cabang gagalnya lewat method itu — path dan credential
+   * selalu konsisten satu sama lain. Method ini ada supaya uji dapat menembus
+   * guard tersebut secara sengaja (mis. memasangkan path milik satu credential
+   * dengan credential lain, atau meng-utak-atik satu sibling di dalam path)
+   * tanpa mengubah kode circuit maupun memakai `as any` di tiap titik panggil.
+   */
+  castVoteWithRawPrivateState(
+    ps: Partial<Pick<BallotPrivateState, "credential" | "option" | "salt" | "eligibilityPath">>,
+  ): Ledger {
+    const full: BallotPrivateState = {
+      ...emptyBallotPrivateState(new Uint8Array(32)),
+      ...ps,
+    };
+    return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), full);
+  }
 }

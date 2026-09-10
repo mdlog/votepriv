@@ -17,7 +17,7 @@ import {
   type BallotPrivateState,
 } from "contract";
 import type { Logger } from "pino";
-import type { MetadataBallot } from "shared";
+import { detikSekarang, type MetadataBallot } from "shared";
 import { pastikanAlamatKontrak } from "./artefak.ts";
 import { kompilasiBallot, kompilasiRegistry, type BallotC, type RegistryC } from "./kontrak.ts";
 import type { ProvidersBallot, ProvidersRegistry } from "./providers.ts";
@@ -196,8 +196,27 @@ export function validasiMetadata(meta: MetadataBallot, jumlahCredential?: number
       "voteDeadline/tallyDeadline harus dalam DETIK sejak epoch, bukan milidetik. Pakai detikDariSekarang() dari paket shared.",
     );
   }
+  // Baru diperiksa SETELAH satuannya dipastikan detik (guard di atas): deadline
+  // yang sudah lewat lolos kompilasi DAN lolos seluruh assert kontrak (kontrak
+  // tidak pernah membandingkan deadline terhadap waktu deploy), lalu ballot
+  // yang baru dibayar itu langsung berada di fase "voting sudah tutup".
+  const sekarang = detikSekarang();
+  if (meta.voteDeadline <= sekarang) {
+    throw new Error(
+      `voteDeadline sudah lewat, harus di masa depan. Diberikan voteDeadline=${meta.voteDeadline}, sekarang=${sekarang}.`,
+    );
+  }
+  if (!Number.isInteger(meta.eligibleCount)) {
+    throw new Error(`eligibleCount harus bilangan bulat; diberikan ${meta.eligibleCount}.`);
+  }
   if (meta.eligibleCount < 1) throw new Error("eligibleCount minimal 1.");
   if (meta.eligibleCount > 1024) throw new Error("eligibleCount melebihi kapasitas pohon eligibility (1024).");
+  if (!Number.isInteger(meta.quorumPercent)) {
+    throw new Error(`quorumPercent harus bilangan bulat; diberikan ${meta.quorumPercent}.`);
+  }
+  if (meta.quorumPercent < 0) {
+    throw new Error(`quorumPercent tidak boleh negatif; diberikan ${meta.quorumPercent}.`);
+  }
   if (meta.quorumPercent > 100) throw new Error(`quorumPercent tidak boleh melebihi 100; diberikan ${meta.quorumPercent}.`);
   if (jumlahCredential !== undefined && jumlahCredential > meta.eligibleCount) {
     throw new Error(
@@ -271,6 +290,21 @@ export interface HasilDeployBallot {
 }
 
 /**
+ * Titik injeksi untuk `deployContract` pada `deployBallot`, pola persis
+ * `FungsiDeployKontrak` milik `deployRegistry` di atas — dan untuk alasan yang
+ * sama persis (lihat komentar di sana): tanpa seam ini, menghapus
+ * `denganBatasWaktu(...)` di sekeliling panggilan deploy tidak digagalkan tsc
+ * ataupun satu uji pun (pembungkus itu transparan pada tipe kembalian), dan
+ * itu justru regresi yang sudah pernah lolos sekali di riwayat proyek ini
+ * (lihat deploy.test.ts). Pemanggil produksi tidak pernah meneruskan argumen
+ * ketujuh — bawaannya `deployContract` yang asli.
+ */
+type FungsiDeployBallot = (
+  providers: ProvidersBallot,
+  options: DeployContractOptionsWithPrivateState<BallotC>,
+) => Promise<DeployedContract<BallotC>>;
+
+/**
  * Deploy ballot.
  *
  * 14 argumen POSISIONAL, urutannya wajib persis:
@@ -294,6 +328,10 @@ export async function deployBallot(
   nonce: Uint8Array,
   log: Logger,
   jumlahCredential?: number,
+  // Cast eksplisit dengan alasan yang sama seperti default deployFn milik
+  // deployRegistry: deployContract asli generik + overload, tsc tidak bisa
+  // menyempitkannya sendiri sebagai nilai bawaan parameter di titik deklarasi.
+  deployFn: FungsiDeployBallot = deployContract as FungsiDeployBallot,
 ): Promise<HasilDeployBallot> {
   validasiMetadata(meta, jumlahCredential);
   if (rahasiaAdmin.length !== 32) throw new Error("Kunci rahasia admin harus 32 byte.");
@@ -316,7 +354,7 @@ export async function deployBallot(
   );
 
   const kontrak = await denganBatasWaktu(
-    deployContract(providers, {
+    deployFn(providers, {
       compiledContract: kompilasiBallot(),
       privateStateId: BallotPrivateStateId,
       initialPrivateState: emptyBallotPrivateState(rahasiaAdmin),

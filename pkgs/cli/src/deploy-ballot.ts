@@ -63,6 +63,14 @@ const daun = credentials.map(daunEligibility);
 const rahasiaAdmin = kunciAdmin(ctx); // JANGAN PERNAH di-log
 const nonce = crypto.getRandomValues(new Uint8Array(32));
 
+// rakitProvidersBallot dan rakitProvidersRegistry di bawah SAMA-SAMA memakai
+// namaStore "admin", jadi keduanya membuka direktori LevelDB private-state
+// yang sama (lihat dirPrivateState di providers.ts, dan peringatan
+// LEVEL_LOCKED-nya). Itu AMAN di sini hanya karena pemanggilannya berurutan:
+// rakitProvidersBallot dipakai habis (deploy + daftarkanVoter) sebelum
+// rakitProvidersRegistry dibuat. Bila kelak dipanggil bersamaan (mis.
+// Promise.all), keduanya akan bertabrakan di berkas LOCK dan salah satu
+// melempar LEVEL_LOCKED — jangan paralelkan pemanggilan ini.
 const providersBallot = await rakitProvidersBallot(kp, "admin");
 const { alamat: alamatBallot, kontrak: ballot } = await deployBallot(
   providersBallot,
@@ -73,11 +81,36 @@ const { alamat: alamatBallot, kontrak: ballot } = await deployBallot(
   JUMLAH_PEMILIH,
 );
 
+// Simpan SEGERA setelah deploy sukses — pola sama seperti
+// deploy-registry.ts ("Simpan alamat SEGERA setelah deploy sukses"), dan
+// untuk alasan yang lebih tajam di sini: ballot sudah membayar tDUST nyata
+// di titik ini, DAN ketiga credential pemilih hidup HANYA di memori proses
+// (sengaja tidak pernah di-log — lihat komentar di atas `credentials`).
+// Throw apa pun antara sini dan akhir skrip lama (timeout daftarkanVoter,
+// temukanRegistry, catatKeRegistry, atau bacaLedgerRegistry) dulu membuat
+// proses mati SEBELUM artefak ditulis — ballot yang sudah dibayar itu jadi
+// tidak bisa dipakai selamanya karena credential-nya tidak pernah
+// tersimpan di mana pun. Menulis di sini, sebelum registrasi apa pun,
+// menutup celah itu.
+const artefak = tulisArtefak(config.networkId, {
+  ballot: alamatBallot,
+  voteDeadline: metadata.voteDeadline.toString(),
+  tallyDeadline: metadata.tallyDeadline.toString(),
+  options: metadata.options,
+  credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
+});
+log.info(
+  { berkas: `pkgs/cli/artefak/${config.networkId}.json`, ballot: artefak.ballot },
+  "Alamat ballot dan credential tersimpan (berkas ini di-gitignore — credential adalah bahan uji)",
+);
+
 // `ballot` datang langsung dari deployContract — private state awal (kunci
 // admin) sudah tertulis olehnya. Tidak ada temukanBallot di sini: itu akan
 // mengulang lima perjalanan indexer dan menimpa private state yang sudah benar.
 await daftarkanVoter(ballot, daun, log);
 
+// Sama seperti di atas: berurutan dengan rakitProvidersBallot, tidak boleh
+// tumpang tindih dengannya (LEVEL_LOCKED pada direktori "admin" yang sama).
 const providersRegistry = await rakitProvidersRegistry(kp, "admin");
 const registry = await temukanRegistry(providersRegistry, alamatRegistry);
 await catatKeRegistry(registry, alamatBallot, log);
@@ -95,41 +128,36 @@ const { nilai: lb, cocok, galatTerakhir, percobaan } = await ulangiSampai(
 if (!cocok || lb === undefined) {
   log.error(
     { registeredCount: lb?.registeredCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
-    `registeredCount tidak pernah mencapai ${JUMLAH_PEMILIH} setelah ${percobaan} pembacaan. Ballot dan credential TETAP disimpan supaya keadaan ini bisa diperiksa.`,
+    `registeredCount tidak pernah mencapai ${JUMLAH_PEMILIH} setelah ${percobaan} pembacaan. Alamat ballot dan credential SUDAH tersimpan di artefak (ditulis segera setelah deploy), jadi keadaan ini tetap bisa diperiksa.`,
   );
-  tulisArtefak(config.networkId, {
-    ballot: alamatBallot,
-    voteDeadline: metadata.voteDeadline.toString(),
-    tallyDeadline: metadata.tallyDeadline.toString(),
-    options: metadata.options,
-    credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
-  });
   await hentikanWallet(ctx, log);
   process.exit(1);
 }
 
-const lr = await bacaLedgerRegistry(kp.publicDataProvider, alamatRegistry);
+// registryCount di sini murni kosmetik — hanya mengisi satu field log di
+// bawah. Ballot dan credential SUDAH aman tersimpan (tulisArtefak di atas),
+// jadi kegagalan baca ini TIDAK BOLEH menggagalkan proses: degradasi baris
+// log, bukan throw yang membunuh sisa skrip.
+let registryCount = "(tidak terbaca)";
+try {
+  const lr = await bacaLedgerRegistry(kp.publicDataProvider, alamatRegistry);
+  registryCount = lr.count.toString();
+} catch (e) {
+  log.warn(
+    { err: (e as Error).message },
+    "Gagal membaca registry.count untuk log (tidak fatal — artefak ballot sudah tersimpan)",
+  );
+}
+
 log.info(
   {
     registeredCount: lb.registeredCount.toString(),
     eligibleCount: lb.eligibleCount.toString(),
     voteCount: lb.voteCount.toString(),
     phase: lb.phase,
-    registryCount: lr.count.toString(),
+    registryCount,
   },
   "Ballot siap menerima suara",
-);
-
-const artefak = tulisArtefak(config.networkId, {
-  ballot: alamatBallot,
-  voteDeadline: metadata.voteDeadline.toString(),
-  tallyDeadline: metadata.tallyDeadline.toString(),
-  options: metadata.options,
-  credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
-});
-log.info(
-  { berkas: `pkgs/cli/artefak/${config.networkId}.json`, ballot: artefak.ballot },
-  "Alamat ballot dan credential tersimpan (berkas ini di-gitignore — credential adalah bahan uji)",
 );
 
 await tutupSesi(sesi, 0);

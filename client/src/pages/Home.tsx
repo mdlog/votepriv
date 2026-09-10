@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
 import {
   Activity,
   ArrowUpRight,
@@ -108,7 +109,12 @@ const navItems: { label: Section; icon: typeof LayoutDashboard }[] = [
 ];
 
 function shortAddress(address: string) {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+  if (!address) return "";
+  // Alamat Midnight berbentuk mn_shield-addr_test1… — prefiksnya selalu sama, jadi
+  // dibuang supaya bagian yang membedakan (jaringan + ekor) tetap terbaca.
+  const bare = address.replace(/^mn_(shield-addr|addr)_/, "");
+  if (bare.length <= 12) return bare;
+  return `${bare.slice(0, 6)}…${bare.slice(-4)}`;
 }
 
 function statusLabel(status: BallotStatus) {
@@ -246,21 +252,38 @@ export default function Home() {
   const [ballots, setBallots] = useState<Ballot[]>(initialBallots);
   const [connected, setConnected] = useState(false);
   const [wallet, setWallet] = useState("");
+  const [network, setNetwork] = useState("");
+  const [connecting, setConnecting] = useState(false);
   const [voteBallot, setVoteBallot] = useState<Ballot | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
 
-  const connectWallet = () => {
+  const connectWallet = async () => {
     if (connected) {
       setConnected(false);
       setWallet("");
+      setNetwork("");
       toast.info("Wallet disconnected");
       return;
     }
-    setWallet("0x7a3F…a91c");
-    setConnected(true);
-    toast.success("Wallet connected", { description: "Eligibility check passed · ready to vote" });
+    setConnecting(true);
+    try {
+      const result = await connectMidnightWallet();
+      setWallet(result.address);
+      setNetwork(result.networkId);
+      setConnected(true);
+      // Sengaja tidak mengklaim "eligibility check passed" seperti versi mock:
+      // pemeriksaan itu belum ada sampai kontrak ballot tersambung.
+      toast.success("Wallet connected", {
+        description: `${result.connectorName} · connector v${result.apiVersion}`,
+      });
+    } catch (error) {
+      console.error("[votepriv:wallet] connect gagal", error);
+      toast.error("Could not connect wallet", { description: describeWalletError(error) });
+    } finally {
+      setConnecting(false);
+    }
   };
 
   const handleVote = (nextReceipt: Receipt) => {
@@ -271,5 +294,5 @@ export default function Home() {
   const createBallot = (ballot: Ballot) => setBallots((current) => [ballot, ...current]);
   const currentCopy = useMemo(() => section === "Overview" ? "Your private governance workspace" : section === "Live ballots" ? "Choose with confidence" : section === "Results" ? "Trust, without the trade-off" : "Understand the protocol", [section]);
 
-  return <div className="app-shell"><aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}><div className="brand"><div className="brand-mark"><span /><span /><span /></div><span>vote<span>priv</span></span></div><button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button><div className="workspace-card"><div className="workspace-avatar">MB</div><div><strong>Midnight Builders</strong><span>Community workspace</span></div><ChevronRight size={15} /></div><div className="sidebar-label">Workspace</div><nav>{navItems.map(({ label, icon: Icon }) => <button key={label} className={section === label ? "active" : ""} onClick={() => { setSection(label); setMobileNav(false); }}><Icon size={17} /><span>{label}</span>{label === "Live ballots" && <b>12</b>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy-mode"><div className="privacy-mode-icon"><LockKeyhole size={15} /></div><div><span>Privacy mode</span><strong>Always on</strong></div><span className="status-dot" /></div><button className="help-link" onClick={() => setSection("Docs")}><CircleHelp size={16} /> Help center</button><div className="sidebar-footer"><span>VotePriv v0.1</span><span>·</span><span>Testnet</span></div></div></aside><div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} /><main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="topbar-context"><span className="context-title">{currentCopy}</span><span className="context-divider">/</span><span className="context-section">{section}</span></div><div className="topbar-actions"><div className="network-status"><span className="pulse-dot" /> Midnight testnet <ChevronRight size={14} /></div><button className={`wallet-button ${connected ? "connected" : ""}`} onClick={connectWallet}><Wallet size={16} />{connected ? shortAddress(wallet.replace("…", "")) : "Connect wallet"}</button><div className="user-avatar">AR</div></div></header><div className="page-container">{section === "Overview" && <Overview ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} onSection={setSection} />}{section === "Live ballots" && <LiveBallots ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} />}{section === "Results" && <Results ballots={ballots} receipt={receipt} />}{section === "Docs" && <Docs />}</div></main>{voteBallot && <VoteModal ballot={voteBallot} connected={connected} onClose={() => setVoteBallot(null)} onVote={handleVote} />}{createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} onCreate={createBallot} />}</div>;
+  return <div className="app-shell"><aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}><div className="brand"><div className="brand-mark"><span /><span /><span /></div><span>vote<span>priv</span></span></div><button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button><div className="workspace-card"><div className="workspace-avatar">MB</div><div><strong>Midnight Builders</strong><span>Community workspace</span></div><ChevronRight size={15} /></div><div className="sidebar-label">Workspace</div><nav>{navItems.map(({ label, icon: Icon }) => <button key={label} className={section === label ? "active" : ""} onClick={() => { setSection(label); setMobileNav(false); }}><Icon size={17} /><span>{label}</span>{label === "Live ballots" && <b>12</b>}</button>)}</nav><div className="sidebar-bottom"><div className="privacy-mode"><div className="privacy-mode-icon"><LockKeyhole size={15} /></div><div><span>Privacy mode</span><strong>Always on</strong></div><span className="status-dot" /></div><button className="help-link" onClick={() => setSection("Docs")}><CircleHelp size={16} /> Help center</button><div className="sidebar-footer"><span>VotePriv v0.1</span><span>·</span><span>Testnet</span></div></div></aside><div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} /><main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="topbar-context"><span className="context-title">{currentCopy}</span><span className="context-divider">/</span><span className="context-section">{section}</span></div><div className="topbar-actions"><div className="network-status"><span className="pulse-dot" /> {connected && network ? `Midnight ${network}` : "Midnight testnet"} <ChevronRight size={14} /></div><button className={`wallet-button ${connected ? "connected" : ""}`} onClick={connectWallet} disabled={connecting}><Wallet size={16} />{connecting ? "Connecting…" : connected ? shortAddress(wallet) : "Connect wallet"}</button><div className="user-avatar">AR</div></div></header><div className="page-container">{section === "Overview" && <Overview ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} onSection={setSection} />}{section === "Live ballots" && <LiveBallots ballots={ballots} connected={connected} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} />}{section === "Results" && <Results ballots={ballots} receipt={receipt} />}{section === "Docs" && <Docs />}</div></main>{voteBallot && <VoteModal ballot={voteBallot} connected={connected} onClose={() => setVoteBallot(null)} onVote={handleVote} />}{createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} onCreate={createBallot} />}</div>;
 }

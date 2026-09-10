@@ -1,6 +1,7 @@
 import {
   deployContract,
   findDeployedContract,
+  type DeployContractOptionsWithPrivateState,
   type DeployedContract,
   type FoundContract,
 } from "@midnight-ntwrk/midnight-js-contracts";
@@ -21,6 +22,18 @@ export interface HasilDeployRegistry {
 }
 
 /**
+ * Titik injeksi untuk `deployContract`, semata supaya `deployRegistry` bisa
+ * diuji tanpa jaringan (lihat deploy.test.ts: memastikan pembungkus
+ * `denganBatasWaktu` di bawah tidak bisa dihapus tanpa membuat satu uji pun
+ * gagal). Pemanggil produksi tidak pernah meneruskan argumen ketiga —
+ * bawaannya `deployContract` yang asli.
+ */
+type FungsiDeployKontrak = (
+  providers: ProvidersRegistry,
+  options: DeployContractOptionsWithPrivateState<RegistryC>,
+) => Promise<DeployedContract<RegistryC>>;
+
+/**
  * Deploy kontrak registry.
  *
  * Memakai overload BER-private-state, bukan yang tanpa. Overload pertama
@@ -36,14 +49,23 @@ export interface HasilDeployRegistry {
  * `signingKey` dibiarkan kosong: deployContract mengambil sampel sendiri dan
  * menyimpannya di privateStateProvider di bawah alamat baru.
  */
-export async function deployRegistry(providers: ProvidersRegistry, log: Logger): Promise<HasilDeployRegistry> {
+export async function deployRegistry(
+  providers: ProvidersRegistry,
+  log: Logger,
+  // Cast eksplisit: deployContract asli adalah generik + overload, dan tsc
+  // tidak bisa menyempitkannya sendiri ke bentuk non-generik FungsiDeployKontrak
+  // sebagai nilai bawaan parameter. Ini murni keterbatasan inferensi tipe di
+  // titik deklarasi — pemanggilan sesungguhnya (RegistryC konkret) tetap
+  // diperiksa penuh lewat FungsiDeployKontrak di posisi parameter.
+  deployFn: FungsiDeployKontrak = deployContract as FungsiDeployKontrak,
+): Promise<HasilDeployRegistry> {
   log.info(
     { batasMenit: BATAS_MS.deploy / 60_000 },
     "Men-deploy kontrak registry (menyusun transaksi, membuat proof, menunggu finalisasi — hitung menit)",
   );
 
   const kontrak = await denganBatasWaktu(
-    deployContract(providers, {
+    deployFn(providers, {
       compiledContract: kompilasiRegistry(),
       privateStateId: RegistryPrivateStateId,
       initialPrivateState: emptyRegistryPrivateState(),

@@ -35,4 +35,18 @@ describe("tulisArtefak", () => {
   it("mengembalikan null bila belum ada artefak", () => {
     expect(bacaArtefak("preview", dirSementara())).toBeNull();
   });
+
+  it("membuat direktori tujuan bila belum ada (jalur berjalan pertama kali)", () => {
+    // Kedua uji di atas memakai dirSementara(), yang SUDAH dibuat mkdtempSync
+    // — mkdirSync di tulisArtefak jadi no-op di sana dan tidak pernah teruji.
+    // Di sini direktorinya sengaja belum ada sama sekali, meniru
+    // pkgs/cli/artefak/ pada checkout baru.
+    const dir = path.join(dirSementara(), "belum-ada", "lagi");
+    expect(fs.existsSync(dir)).toBe(false);
+
+    tulisArtefak("preview", { registry: "cc".repeat(32) }, dir);
+
+    expect(fs.existsSync(dir)).toBe(true);
+    expect(bacaArtefak("preview", dir)?.registry).toBe("cc".repeat(32));
+  });
 });

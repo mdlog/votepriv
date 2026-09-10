@@ -38,6 +38,16 @@ export ledger voteCount: Counter;
 // yang selalu bertambah persis sebanyak leaf yang di-insert pada transaksi
 // yang sama. Nilainya publik, sehingga jumlah credential yang diterbitkan
 // tetap dapat diaudit siapa pun lewat ledger ini.
+//
+// INVARIAN: registeredCount == jumlah leaf di dalam eligibility, selalu.
+// Keduanya adalah state berpasangan yang tidak dijamin apa pun selain disiplin —
+// tidak ada tipe maupun compiler yang mencegah circuit baru mengubah salah satu
+// tanpa yang lain. Bila keduanya berpisah, batas eligibleCount berhenti bermakna
+// dan admin dapat menerbitkan credential melebihi jumlah yang di-seal saat deploy.
+// Karena itu: setiap circuit yang memanggil eligibility.insert() WAJIB menambah
+// registeredCount sebanyak jumlah insert-nya, di transaksi yang sama. Saat ini
+// hanya registerVoters yang menyentuh keduanya; castVote hanya membaca lewat
+// checkRoot dan tidak menyentuh satu pun.
 export ledger registeredCount: Counter;
 
 export ledger nullifiers: Set<Bytes<32>>;

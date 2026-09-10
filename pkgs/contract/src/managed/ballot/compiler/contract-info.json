@@ -136,6 +136,18 @@
         "types": [
         ]
       }
+    },
+    {
+      "name": "castVote",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
     }
   ],
   "witnesses": [
@@ -146,6 +158,109 @@
       "result type": {
         "type-name": "Bytes",
         "length": 32
+      }
+    },
+    {
+      "name": "voter_credential",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "eligibility_path",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Struct",
+        "name": "MerkleTreePath",
+        "elements": [
+          {
+            "name": "leaf",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "path",
+            "type": {
+              "type-name": "Vector",
+              "length": 10,
+              "type": {
+                "type-name": "Struct",
+                "name": "MerkleTreePathEntry",
+                "elements": [
+                  {
+                    "name": "sibling",
+                    "type": {
+                      "type-name": "Struct",
+                      "name": "MerkleTreeDigest",
+                      "elements": [
+                        {
+                          "name": "field",
+                          "type": {
+                            "type-name": "Field"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "goes_left",
+                    "type": {
+                      "type-name": "Boolean"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "get_my_option",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Uint",
+        "maxval": 255
+      }
+    },
+    {
+      "name": "get_my_salt",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "store_opening",
+      "arguments": [
+        {
+          "name": "o",
+          "type": {
+            "type-name": "Uint",
+            "maxval": 255
+          }
+        },
+        {
+          "name": "s",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
       }
     }
   ],
@@ -207,8 +322,8 @@
     {
       "name": "option1",
       "index": [
-        1,
-        0
+        0,
+        4
       ],
       "exported": true,
       "storage": "Cell",
@@ -220,8 +335,8 @@
     {
       "name": "option2",
       "index": [
-        1,
-        1
+        0,
+        5
       ],
       "exported": true,
       "storage": "Cell",
@@ -234,7 +349,7 @@
       "name": "option3",
       "index": [
         1,
-        2
+        0
       ],
       "exported": true,
       "storage": "Cell",
@@ -247,7 +362,7 @@
       "name": "optionCount",
       "index": [
         1,
-        3
+        1
       ],
       "exported": true,
       "storage": "Cell",
@@ -260,7 +375,7 @@
       "name": "voteDeadline",
       "index": [
         1,
-        4
+        2
       ],
       "exported": true,
       "storage": "Cell",
@@ -273,7 +388,7 @@
       "name": "tallyDeadline",
       "index": [
         1,
-        5
+        3
       ],
       "exported": true,
       "storage": "Cell",
@@ -286,7 +401,7 @@
       "name": "quorumPercent",
       "index": [
         1,
-        6
+        4
       ],
       "exported": true,
       "storage": "Cell",
@@ -299,7 +414,7 @@
       "name": "eligibleCount",
       "index": [
         1,
-        7
+        5
       ],
       "exported": true,
       "storage": "Cell",
@@ -312,7 +427,7 @@
       "name": "eligibilityPolicy",
       "index": [
         1,
-        8
+        6
       ],
       "exported": true,
       "storage": "Cell",
@@ -325,7 +440,7 @@
       "name": "adminKey",
       "index": [
         1,
-        9
+        7
       ],
       "exported": true,
       "storage": "Cell",
@@ -338,7 +453,7 @@
       "name": "ballotNonce",
       "index": [
         1,
-        10
+        8
       ],
       "exported": true,
       "storage": "Cell",
@@ -351,7 +466,7 @@
       "name": "phase",
       "index": [
         1,
-        11
+        9
       ],
       "exported": true,
       "storage": "Cell",
@@ -369,7 +484,7 @@
       "name": "eligibility",
       "index": [
         1,
-        12
+        10
       ],
       "exported": true,
       "storage": "HistoricMerkleTree",
@@ -383,7 +498,7 @@
       "name": "voteCount",
       "index": [
         1,
-        13
+        11
       ],
       "exported": true,
       "storage": "Counter"
@@ -392,10 +507,37 @@
       "name": "registeredCount",
       "index": [
         1,
-        14
+        12
       ],
       "exported": true,
       "storage": "Counter"
+    },
+    {
+      "name": "nullifiers",
+      "index": [
+        1,
+        13
+      ],
+      "exported": true,
+      "storage": "Set",
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    },
+    {
+      "name": "commitments",
+      "index": [
+        1,
+        14
+      ],
+      "exported": true,
+      "storage": "MerkleTree",
+      "depth": 10,
+      "type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
     }
   ]
 }

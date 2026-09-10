@@ -1,3 +1,5 @@
+import type { MerkleTreePath } from "@midnight-ntwrk/compact-runtime";
+
 export const BallotPrivateStateId = "votePrivBallot" as const;
 
 export type BallotPrivateState = {
@@ -10,10 +12,10 @@ export type BallotPrivateState = {
   /** Salt pengikat commitment. */
   readonly salt: Uint8Array | null;
   /** Merkle path menuju daun eligibility, disusun klien dari state on-chain. */
-  // biome-ignore lint/suspicious/noExplicitAny: bentuk MerkleTreePath berasal dari runtime
-  readonly eligibilityPath: any | null;
+  readonly eligibilityPath: MerkleTreePath<Uint8Array> | null;
   /** Merkle path menuju commitment, disusun klien saat fase tally. */
-  // biome-ignore lint/suspicious/noExplicitAny: lihat di atas
+  // biome-ignore lint/suspicious/noExplicitAny: bentuk MerkleTreePath berasal dari runtime;
+  // dikencangkan di Task 6 saat commitmentPath benar-benar dipakai.
   readonly commitmentPath: any | null;
 };
 
@@ -56,8 +58,7 @@ export const ballotWitnesses = {
     ctx.privateState,
     need(ctx.privateState.salt, "salt"),
   ],
-  // biome-ignore lint/suspicious/noExplicitAny: bentuk MerkleTreePath berasal dari runtime
-  eligibility_path: (ctx: Ctx): [BallotPrivateState, any] => [
+  eligibility_path: (ctx: Ctx): [BallotPrivateState, MerkleTreePath<Uint8Array>] => [
     ctx.privateState,
     need(ctx.privateState.eligibilityPath, "eligibilityPath"),
   ],

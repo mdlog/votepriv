@@ -1,12 +1,19 @@
 // `pnpm cli e2e` — uji end-to-end tiga pemilih di preview. Skrip tingkat-atas:
 // TIDAK mengekspor apa pun, tidak boleh diimpor dari mana pun.
 //
-// LAMANYA: sekitar 85-95 menit, dan sebagian besarnya adalah MENUNGGU. Dua
-// penantian tidak bisa dihindari: sampai voteDeadline lewat (45 menit sejak
-// metadata disusun) dan sampai tallyDeadline lewat (80 menit sejak itu).
+// LAMANYA: sekitar 100-110 menit, dan sebagian besarnya adalah MENUNGGU. Dua
+// penantian tidak bisa dihindari: sampai voteDeadline lewat (60 menit sejak
+// metadata disusun) dan sampai tallyDeadline lewat (95 menit sejak itu).
 // Kontrak membandingkan deadline terhadap WAKTU BLOK jaringan, dan waktu blok
 // jaringan publik tidak bisa dimajukan dari klien. Simulator bisa menyuntikkan
 // waktu; preview tidak. Itulah tepatnya yang membuat uji ini bernilai.
+//
+// Fix Round 3: MENIT_VOTE/MENIT_TALLY naik +15 menit masing-masing (dari
+// 45/80 ke 60/95) dibanding draf sebelumnya, supaya SISA_MINIMAL_VOTE bisa
+// disetel >= biaya TERBURUK MUTLAK satu iterasi loop coblos (835 detik),
+// bukan sekadar biaya ekspektasinya (~480 detik) — lihat komentar lengkap
+// di atas SISA_MINIMAL_VOTE. Jendela pembukaan suara (MENIT_TALLY-MENIT_VOTE)
+// tetap 35 menit persis seperti semula; hanya total run yang lebih panjang.
 //
 // SEBELAS TRANSAKSI, masing-masing dengan proof ZK sungguhan 5-20 detik plus
 // finalisasi node dan indexer: deploy registry, deploy ballot, registerVoters,
@@ -79,75 +86,121 @@ const PILIHAN = [0n, 2n, 0n] as const; // hasil yang diharapkan: opsi0=2, opsi1=
 const JUMLAH_PEMILIH = PILIHAN.length;
 
 // Lihat tabel anggaran waktu di rencana (Task 6 Step 5). Jangan menurunkan
-// angka-angka ini tanpa menghitung ulang tabel itu.
-const MENIT_VOTE = 45;
-const MENIT_TALLY = 80;
+// angka-angka ini tanpa menghitung ulang tabel itu — dan lihat komentar di
+// atas SISA_MINIMAL_VOTE di bawah: sejak Fix Round 3, MENIT_VOTE/MENIT_TALLY
+// dan kedua guard SISA_MINIMAL_* terikat satu invarian bersama, bukan lagi
+// angka independen.
+const MENIT_VOTE = 60;
+const MENIT_TALLY = 95;
 /**
  * Cukup untuk SATU iterasi loop coblos: pembacaan eligibility path (dengan
- * retry, lihat bagian 5) + temukanBallot + castVote pada kecepatan terukur.
+ * retry, lihat bagian 5) + temukanBallot + castVote.
  *
- * Fix Round 1, FIX 1: nilai sebelumnya (240 detik) lebih kecil daripada
- * pekerjaan yang justru diklaim komentar lama bisa ditampungnya. Tabel
- * anggaran Step 5 menyatakan temukanBallot = 5 menit (300 detik) dan
- * castVote = 2,5 menit (150 detik) — jumlahnya SENDIRI sudah 450 detik,
- * hampir dua kali 240. Pada sisa 241 detik, guard lama lolos, temukanBallot
- * saja bisa memakai 300 detik, dan castVote lalu tereksekusi MELEWATI
- * voteDeadline — pesan "Batas waktu pemungutan suara sudah lewat" bukan
- * bagian dari POLA_BELUM_WAKTUNYA (disengaja, lihat tunggu.ts) dan `pilih`
- * tidak dibungkus cobaSampaiWaktuBlokCocok, jadi itu throw keras: run mati
- * dengan satu atau dua dari tiga suara masuk, dan bagian 6 tak pernah
- * tercapai.
+ * INVARIAN (Fix Round 3): guard ini HARUS >= biaya TERBURUK MUTLAK satu
+ * iterasi, bukan biaya ekspektasi. Round 1 (240->540) dan Round 2 (analisis
+ * kejujuran tabel) sama-sama memakai biaya EKSPEKTASI retry (~30 detik) dan
+ * mendokumentasikan selisihnya ke biaya terburuk mutlak (385 detik) sebagai
+ * "risiko residual" alih-alih menghilangkannya. Review menolak itu: rantai
+ * akibatnya lebih penting daripada probabilitasnya — guard lolos di 540,
+ * iterasi berjalan sampai 835, castVote tereksekusi MELEWATI voteDeadline,
+ * dan itu throw KERAS (pesan "Batas waktu pemungutan suara sudah lewat"
+ * sengaja tidak ada di POLA_BELUM_WAKTUNYA, `pilih` tidak dibungkus
+ * cobaSampaiWaktuBlokCocok) yang mematikan run dengan DUA dari TIGA suara
+ * masuk, pada ballot yang sudah dibayar tDUST sungguhan, setelah operator
+ * menunggu hampir satu jam. Persis kegagalan yang FIX 1 (Ronde 1) coba
+ * cegah, satu ronde sebelumnya — mendokumentasikan tidak mencegahnya, hanya
+ * mempercepat post-mortem-nya.
  *
- * Aritmetika (kasus EKSPEKTASI — lihat catatan Fix Round 2/FIX 3 di bawah
- * untuk kasus terburuk sungguhan): 300 (temukanBallot) + 150 (castVote) =
- * 450 detik per tabel Step 5, ditambah ~30 detik biaya EKSPEKTASI untuk
- * retry pembacaan eligibility path yang baru (ulangiSampai, maks 6 x jeda
- * 5 detik — Fix Round 1/FIX 3 di bagian 5, menggantikan bacaLedgerBallot
- * telanjang yang sebelumnya ada di titik itu) = 480 detik, dibulatkan ke
- * atas dengan margin 60 detik menjadi 540 detik (9 menit).
+ * KOMPONEN BIAYA TERBURUK MUTLAK satu iterasi:
+ *   - retry eligibility path (ulangiSampai, bagian 5, maks 6 x jeda 5 detik,
+ *     tiap percobaan dibatasi BATAS_MS.bacaIndexer = 60 detik bila indexer
+ *     benar-benar tidak menjawab): 6 x 60 + 5 x 5 = 385 detik
+ *   - temukanBallot (batas mutlak BATAS_MS.temukan)               : 300 detik
+ *   - castVote (biaya TERUKUR, bukan batas mutlak BATAS_MS.panggilBerat
+ *     yang 15 menit — proof+finalisasi sungguhan terukur ~2,5 menit di
+ *     preview; lihat catatan bawah untuk kenapa castVote TIDAK ikut
+ *     ditabelkan mutlak)                                          : 150 detik
+ *   TOTAL                                                          = 835 detik
  *
- * Fix Round 2, FIX 3 — kejujuran basis biaya: "~30 detik" di atas adalah
- * kasus EKSPEKTASI (indexer biasanya sudah menyusul di titik ini — lihat
- * komentar bagian 5), sejenis dengan castVote sendiri yang ditabelkan pada
- * 2,5 menit measured-worst, BUKAN pada batas mutlaknya (BATAS_MS.panggilBerat
- * = 15 menit). Kasus terburuk SUNGGUHAN retry ini — bila keenam percobaan
- * sama-sama menyentuh batas BATAS_MS.bacaIndexer (60 detik) sebelum
- * ulangiSampai mengulang — adalah 6 x 60 + 5 x 5 (jeda antar percobaan) =
- * 385 detik per pemilih, jauh melampaui 30 detik (~13x). Bila kasus itu
- * ditabelkan pada basis yang sama seperti temukanBallot (batas mutlak,
- * bukan measured-worst) untuk KETIGA pemilih: total tabel Step 5 menjadi
- * 35,6 (asli) - 0,6 (baris bacaLedgerBallot lama yang digantikan) + 19,25
- * menit (3 x 385 detik) = 54,25 menit — melampaui jendela 45 menit sebesar
- * 9,25 menit. Dipilih TIDAK menabelkan ulang pada basis itu (opsi kedua
- * FIX 3, bukan "recost"): basis mutlak membuat jendela 45 menit mustahil
- * dipenuhi, padahal "indexer menjawab persis di detik ke-60, enam kali
- * berturut-turut, untuk satu pemilih" menandakan jaringan yang jauh lebih
- * rusak daripada yang diasumsikan SELURUH baris tabel lain — pada titik itu
- * temukanBallot dan castVote pun kemungkinan besar sudah gagal dengan
- * caranya sendiri. Risiko residual yang jujur harus diakui: guard ini
- * disusun dari biaya EKSPEKTASI satu iterasi (480 detik), bukan biaya
- * terburuk mutlak satu iterasi (385 + 300 + 150 = 835 detik) — bila retry
- * pada SATU pemilih benar-benar mengalami 385 detik itu, iterasi yang
- * SEDANG BERJALAN bisa saja tetap melewati voteDeadline walau guard-nya
- * lolos di awal. Itu bukan regresi baru, melainkan konsekuensi memilih
- * biaya measured-worst (konsisten dengan castVote) untuk baris ini.
+ * DUA JALAN JUJUR dipertimbangkan (bukan mendokumentasikan celahnya):
+ *   (a) Persempit retry supaya batas terburuknya <= 540-300-150=90 detik.
+ *       DITOLAK: memerlukan timeout per-percobaan jauh lebih ketat daripada
+ *       BATAS_MS.bacaIndexer KHUSUS pemanggilan ini — menduplikasi logika
+ *       bacaLedgerBallot di sini, atau menambah parameter opsional ke
+ *       fungsi bersama itu di deploy.ts (berkas Task 4/5 yang sudah diuji
+ *       tuntas, 22 uji, risiko perubahan tidak sepadan). Lebih penting:
+ *       retry yang diperketat SEKADAR SUPAYA ARITMETIKANYA MUAT, tapi
+ *       terlalu pendek untuk menampung keterlambatan indexer sungguhan
+ *       (alasan retry ini ada), akan mengubah kegagalan pathological langka
+ *       menjadi kegagalan UMUM — lebih buruk daripada keadaan sekarang.
+ *   (b) Besarkan jendela supaya guard bisa disetel >= 835 detik TANPA
+ *       mengorbankan cakupan retry. DIPILIH.
  *
- * Jendela 45 menit MASIH MUAT dengan guard 540 pada basis EKSPEKTASI:
- * mengganti baris "bacaLedgerBallot sebelum tiap coblos" (0,6 menit di
- * tabel lama) dengan versi ber-retry menaikkan total tabel dari 35,6 ke
- * ~36,5 menit (3 x ~30 detik dibanding 3 x ~12 detik lama, selisih ~0,9
- * menit). Sisa di akhir loop: ~8,5 menit (510 detik) — ini anggaran TOTAL
- * yang tersisa setelah SELURUH pekerjaan bagian 5 selesai, sebuah angka
- * yang TIDAK dibandingkan terhadap ambang 540 detik (510 < 540 — keduanya
- * memang bukan kuantitas yang sama; draf Ronde 1 keliru menyandingkan
- * keduanya seolah 510 "jauh di atas" 540, dikoreksi di Fix Round 2/FIX 2).
- * Yang benar-benar diperiksa terhadap ambang 540 adalah SISA DETIK SAMPAI
- * voteDeadline di AWAL tiap iterasi (kasus ekspektasi): 1950 detik sebelum
- * pemilih ke-0, 1470 detik sebelum pemilih ke-1, 990 detik sebelum pemilih
- * ke-2 — ketiganya jauh di atas 540.
+ * MENIT_VOTE dinaikkan 45 -> 60 (+15 menit), dan MENIT_TALLY 80 -> 95
+ * (+15 menit juga, MENJAGA jendela pembukaan suara MENIT_TALLY-MENIT_VOTE
+ * tetap 35 menit persis seperti semula — lihat catatan di atas
+ * SISA_MINIMAL_TALLY untuk pembuktian sisi itu tidak terganggu). Konsekuensi
+ * pada run yang sudah ~85-95 menit: +15 menit menjadi ~100-110 menit —
+ * dinyatakan eksplisit di komentar kepala berkas, bukan sesuatu yang
+ * ditemukan sendiri oleh operator di tengah jalan.
+ *
+ * Guard disetel 900 detik: 835 dibulatkan ke atas + margin 65 detik (gaya
+ * yang sama seperti Ronde 1: hitung komponen, bulatkan ke atas dengan
+ * margin eksplisit, bukan angka bulat yang ditebak).
+ *
+ * VERIFIKASI jendela 60 menit (3600 detik) MUAT untuk KASUS TERBURUK MUTLAK
+ * dirantai PENUH di ketiga iterasi berturut-turut (bukan kasus ekspektasi):
+ *   pra-loop (deployBallot 150 + daftarkanVoter 150 + temukanRegistry-
+ *     opsional 300 + catatKeRegistry 150)              = 750 detik
+ *   jendela = MENIT_VOTE x 60 = 60 x 60                = 3600 detik
+ *   iterasi ke-0: sisa 3600-750=2850 > 900 (margin 1950); konsumsi
+ *     terburuk 835 -> sisa 2015
+ *   iterasi ke-1: sisa 2015 > 900 (margin 1115); konsumsi terburuk 835 ->
+ *     sisa 1180
+ *   iterasi ke-2: sisa 1180 > 900 (margin 280); konsumsi terburuk 835 ->
+ *     sisa AKHIR 345 detik (~5,75 menit) — bahkan bila SEMUA TIGA pemilih
+ *     sama-sama mengalami kasus terburuk mutlak berturut-turut.
+ * Guard 900 >= biaya terburuk 835 di SETIAP titik pemeriksaan: invarian
+ * terpenuhi secara aritmetis pada kasus terburuk, bukan cuma kasus biasa.
  */
-const SISA_MINIMAL_VOTE = 540;
-/** Cukup untuk satu tallyVote + seluruh anggaran ulang cobaSampaiWaktuBlokCocok. */
+const SISA_MINIMAL_VOTE = 900;
+/**
+ * Cukup untuk satu tallyVote + seluruh anggaran ulang cobaSampaiWaktuBlokCocok.
+ *
+ * Fix Round 3 — diperiksa ulang setelah MENIT_VOTE/MENIT_TALLY naik (lihat
+ * SISA_MINIMAL_VOTE): jendela bagian 8 (MENIT_TALLY - MENIT_VOTE) tetap
+ * 35 menit PERSIS seperti semula (95-60=35, sama seperti 80-45=35
+ * sebelumnya) — dipilih TIDAK membiarkan jendela ini menyempit, justru
+ * MENIT_TALLY dinaikkan bersamaan dengan MENIT_VOTE untuk menjaganya.
+ *
+ * BERBEDA dari SISA_MINIMAL_VOTE: retry loop di sini (cobaSampaiWaktuBlokCocok,
+ * dipandu POLA_BELUM_WAKTUNYA) TIDAK punya kerentanan yang sama. Pesan yang
+ * membuatnya mengulang adalah kegagalan ASSERT LOKAL (dibuktikan Step 1:
+ * gagal saat eksekusi circuit, sebelum proof, sebelum submitTx) — cepat,
+ * tanpa panggilan jaringan sungguhan — bukan pembacaan indexer yang bisa
+ * menggantung sampai BATAS_MS.bacaIndexer (60 detik) per percobaan seperti
+ * retry eligibility path. Jadi biaya TERUKUR/EKSPEKTASI di sini (bukan
+ * biaya terburuk mutlak) tetap basis yang tepat, konsisten dengan bagaimana
+ * tabel Step 5 sendiri menabelkan castVote.
+ *
+ * Biaya terukur satu iterasi (dari tabel Step 5, tidak berubah oleh Fix
+ * Round 3): bacaLedgerBallot 12 + tallyVote 150 + jeda-ulang
+ * cobaSampaiWaktuBlokCocok (maks 6 x 20 detik, biasanya jauh lebih sedikit)
+ * 120 = 282 detik — sudah divalidasi review terhadap guard 300 (margin 18
+ * detik pada level KOMPONEN).
+ *
+ * VERIFIKASI ULANG pada level JENDELA (35 menit = 2100 detik, TIDAK
+ * berubah): buffer tungguSampaiDetik (~60 detik) dikonsumsi lebih dulu,
+ * sisa 2100-60=2040 detik di awal loop.
+ *   iterasi ke-0: sisa 2040 > 300 (margin 1740); konsumsi ~282 -> sisa 1758
+ *   iterasi ke-1: sisa 1758 > 300 (margin 1458); konsumsi ~282 -> sisa 1476
+ *   iterasi ke-2: sisa 1476 > 300 (margin 1176); konsumsi ~282 -> sisa
+ *     AKHIR ~1194 detik (~19,9 menit — cocok dengan "Sisa ~20 menit" di
+ *     rencana Task 6 Step 5, tidak terganggu oleh kenaikan MENIT_VOTE).
+ * Guard 300 TETAP AMAN: margin terketat (1176 detik sebelum pemilih
+ * terakhir) jauh di atas nol dan sama sekali tidak menyempit dibanding
+ * sebelum Fix Round 3, karena jendela 35 menitnya sendiri dijaga tetap sama.
+ */
 const SISA_MINIMAL_TALLY = 300;
 
 const sesi = await siapkanSesi();

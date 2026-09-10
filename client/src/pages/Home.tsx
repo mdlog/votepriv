@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
-import { checkProofServer, proofServerTarget, type ProofServerStatus } from "@/lib/proof-server";
+import {
+  checkProofServer,
+  proofServerHop,
+  proofServerTarget,
+  type ProofServerStatus,
+} from "@/lib/proof-server";
 import {
   Activity,
   ArrowUpRight,
@@ -264,13 +269,32 @@ export default function Home() {
   // Panel ini tidak boleh mengklaim "Always on" tanpa syarat. Proof server menerima
   // witness, jadi kalau ia remote — atau mati — pengguna harus melihatnya di sini,
   // bukan menemukannya setelah suaranya terlanjur dikirim.
+  //
+  // Klaim "witness tidak pernah meninggalkan perangkat ini" menuntut DUA hal
+  // sekaligus: target proxy lokal DAN asal halaman lokal. Target lokal saja tidak
+  // cukup — VITE_PROOF_SERVER_URL diselesaikan proses Node yang menjalankan dev
+  // server, jadi 127.0.0.1:6300 berarti loopback MESIN DEV. Halaman yang dibuka
+  // lewat tunnel mengirim witness menyeberangi jaringan menuju mesin itu. Karena
+  // itu `reach` punya tiga nilai, bukan boolean remote/lokal.
   const privacy = useMemo(() => {
     if (!proofStatus) return { label: "Checking…", tone: "", title: "Memeriksa proof server." };
-    if (proofStatus.remote)
+    // Keadaan privasi disampaikan lebih dulu, keterjangkauan menyusul dalam
+    // kalimat yang sama: pengguna yang witness-nya menyeberang jaringan perlu
+    // tahu hal itu terlepas dari apakah proof server-nya sedang hidup.
+    const jangkauan = proofStatus.reachable
+      ? `Proof server menjawab v${proofStatus.version}.`
+      : `Proof server juga tidak dapat dihubungi (${proofStatus.error}).`;
+    if (proofStatus.reach === "remote")
       return {
         label: "Proof server remote",
         tone: "warn",
-        title: `Proof server berjalan di ${proofServerTarget}. Karena proof server menerima witness, operatornya dapat melihat pilihan suara Anda.`,
+        title: `Witness Anda — credential dan pilihan suara — dikirim ke ${proofServerTarget}. Karena proof server menerima witness, operatornya dapat melihat pilihan suara Anda. ${jangkauan}`,
+      };
+    if (proofStatus.reach === "lewat-host-halaman")
+      return {
+        label: "Witness lewat jaringan",
+        tone: "warn",
+        title: `Halaman ini disajikan dari ${location.host}, bukan dari perangkat Anda, sehingga ${proofServerTarget} adalah loopback MESIN ITU — bukan loopback Anda. Witness menempuh ${proofServerHop()}, dan siapa pun yang mengoperasikan mesin itu dapat melihat pilihan suara Anda. ${jangkauan}`,
       };
     if (!proofStatus.reachable)
       return {
@@ -281,7 +305,7 @@ export default function Home() {
     return {
       label: "Always on",
       tone: "",
-      title: `Proof server lokal v${proofStatus.version} — witness tidak pernah meninggalkan perangkat ini.`,
+      title: `Proof server lokal v${proofStatus.version} di ${proofServerTarget}, diakses dari halaman lokal — witness tidak pernah meninggalkan perangkat ini.`,
     };
   }, [proofStatus]);
   const [voteBallot, setVoteBallot] = useState<Ballot | null>(null);

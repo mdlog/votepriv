@@ -1,0 +1,74 @@
+import { setNetworkId } from "@midnight-ntwrk/midnight-js-network-id";
+import { describe, expect, it } from "vitest";
+import { BallotPhase, BallotSimulator, pureCircuits } from "./ballot-simulator.js";
+
+setNetworkId("undeployed");
+
+const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
+const bytes32 = (fill: number) => new Uint8Array(32).fill(fill);
+
+describe("ballot.compact — metadata", () => {
+  it("menyimpan metadata yang diberikan saat deploy", () => {
+    const sim = new BallotSimulator({
+      title: "Q4 Community Treasury",
+      description: "Pilih arah dukungan treasury pada Q4.",
+      community: "Midnight Builders",
+      options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
+      quorumPercent: 60,
+      eligibleCount: 12,
+      eligibilityPolicy: "Anggota terdaftar Midnight Builders",
+    });
+    const l = sim.getLedger();
+    expect(l.title).toBe("Q4 Community Treasury");
+    expect(l.community).toBe("Midnight Builders");
+    expect(l.option0).toBe("Fund developer grants");
+    expect(l.option2).toBe("Open-source tooling");
+    expect(l.option3).toBe("");
+    expect(l.optionCount).toBe(3n);
+    expect(l.quorumPercent).toBe(60n);
+    expect(l.eligibleCount).toBe(12n);
+    expect(l.eligibilityPolicy).toBe("Anggota terdaftar Midnight Builders");
+    expect(l.phase).toBe(BallotPhase.voting);
+  });
+
+  it("menyetel adminKey dari secret key yang men-deploy", () => {
+    const adminSk = bytes32(7);
+    const sim = new BallotSimulator({ adminSecretKey: adminSk });
+    expect(hex(sim.getLedger().adminKey)).toBe(hex(pureCircuits.admin_pk(adminSk)));
+  });
+});
+
+describe("ballot.compact — pure circuit hash", () => {
+  it("cred_leaf bersifat deterministik", () => {
+    expect(hex(pureCircuits.cred_leaf(bytes32(3)))).toBe(hex(pureCircuits.cred_leaf(bytes32(3))));
+  });
+
+  it("cred_leaf berbeda untuk credential berbeda", () => {
+    expect(hex(pureCircuits.cred_leaf(bytes32(3)))).not.toBe(hex(pureCircuits.cred_leaf(bytes32(4))));
+  });
+
+  it("vote_commitment mengikat pilihan — salt sama, pilihan beda, hasil beda", () => {
+    const salt = bytes32(9);
+    expect(hex(pureCircuits.vote_commitment(0n, salt))).not.toBe(
+      hex(pureCircuits.vote_commitment(1n, salt)),
+    );
+  });
+
+  it("vote_commitment menyembunyikan pilihan — pilihan sama, salt beda, hasil beda", () => {
+    expect(hex(pureCircuits.vote_commitment(0n, bytes32(9)))).not.toBe(
+      hex(pureCircuits.vote_commitment(0n, bytes32(10))),
+    );
+  });
+
+  it("pemisahan domain — cred_leaf dan tally_nullifier tidak pernah bertabrakan", () => {
+    const x = bytes32(5);
+    expect(hex(pureCircuits.cred_leaf(x))).not.toBe(hex(pureCircuits.tally_nullifier(x)));
+  });
+
+  it("vote_nullifier terikat pada ballotNonce", () => {
+    const cred = bytes32(2);
+    expect(hex(pureCircuits.vote_nullifier(bytes32(1), cred))).not.toBe(
+      hex(pureCircuits.vote_nullifier(bytes32(2), cred)),
+    );
+  });
+});

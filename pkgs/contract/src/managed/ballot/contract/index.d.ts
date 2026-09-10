@@ -1,0 +1,83 @@
+import type * as __compactRuntime from '@midnight-ntwrk/compact-runtime';
+
+export enum BallotPhase { voting = 0, tallying = 1, finalized = 2 }
+
+export type Witnesses<PS> = {
+  admin_secret_key(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, Uint8Array];
+}
+
+export type ImpureCircuits<PS> = {
+}
+
+export type ProvableCircuits<PS> = {
+}
+
+export type PureCircuits = {
+  admin_pk(sk_0: Uint8Array): Uint8Array;
+  cred_leaf(cred_0: Uint8Array): Uint8Array;
+  vote_nullifier(nonce_0: Uint8Array, cred_0: Uint8Array): Uint8Array;
+  vote_commitment(option_0: bigint, salt_0: Uint8Array): Uint8Array;
+  tally_nullifier(salt_0: Uint8Array): Uint8Array;
+}
+
+export type Circuits<PS> = {
+  admin_pk(context: __compactRuntime.CircuitContext<PS>, sk_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  cred_leaf(context: __compactRuntime.CircuitContext<PS>, cred_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  vote_nullifier(context: __compactRuntime.CircuitContext<PS>,
+                 nonce_0: Uint8Array,
+                 cred_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  vote_commitment(context: __compactRuntime.CircuitContext<PS>,
+                  option_0: bigint,
+                  salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+  tally_nullifier(context: __compactRuntime.CircuitContext<PS>,
+                  salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;
+}
+
+export type Ledger = {
+  readonly title: string;
+  readonly description: string;
+  readonly community: string;
+  readonly option0: string;
+  readonly option1: string;
+  readonly option2: string;
+  readonly option3: string;
+  readonly optionCount: bigint;
+  readonly voteDeadline: bigint;
+  readonly tallyDeadline: bigint;
+  readonly quorumPercent: bigint;
+  readonly eligibleCount: bigint;
+  readonly eligibilityPolicy: string;
+  readonly adminKey: Uint8Array;
+  readonly ballotNonce: Uint8Array;
+  readonly phase: BallotPhase;
+}
+
+export type ContractReferenceLocations = any;
+
+export declare const contractReferenceLocations : ContractReferenceLocations;
+
+export declare class Contract<PS = any, W extends Witnesses<PS> = Witnesses<PS>> {
+  witnesses: W;
+  circuits: Circuits<PS>;
+  impureCircuits: ImpureCircuits<PS>;
+  provableCircuits: ProvableCircuits<PS>;
+  constructor(witnesses: W);
+  initialState(context: __compactRuntime.ConstructorContext<PS>,
+               t_0: string,
+               d_0: string,
+               c_0: string,
+               o0_0: string,
+               o1_0: string,
+               o2_0: string,
+               o3_0: string,
+               nOptions_0: bigint,
+               voteDl_0: bigint,
+               tallyDl_0: bigint,
+               quorum_0: bigint,
+               eligible_0: bigint,
+               policy_0: string,
+               nonce_0: Uint8Array): __compactRuntime.ConstructorResult<PS>;
+}
+
+export declare function ledger(state: __compactRuntime.StateValue | __compactRuntime.ChargedState): Ledger;
+export declare const pureCircuits: PureCircuits;

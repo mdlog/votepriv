@@ -44,6 +44,19 @@ function galatBentukTidakDikenal(): Error {
 }
 
 /**
+ * Fix round 2: dipakai saat flag ini diberikan LEBIH DARI SEKALI dengan
+ * nilai yang berbeda-beda. Aman mengutip nilainya di sini (berbeda dari
+ * `galatNilaiTidakDikenal`) — nilai-nilai ini SUDAH lolos `nilaiValid`,
+ * jadi berasal dari himpunan `CARA_TURUNAN_VALID` yang tetap dan diketahui
+ * publik (nama metode, bukan argv bebas), bukan isi sembarang yang bisa
+ * saja rahasia.
+ */
+function galatKonflik(nilai: readonly CaraTurunan[]): Error {
+  const unik = [...new Set(nilai)].join(" vs ");
+  return new Error(`--seed-derivation diberikan lebih dari sekali dengan nilai yang berbeda (${unik}); tentukan satu.`);
+}
+
+/**
  * Membaca metode turunan seed dari argv. Mendukung DUA bentuk yang setara:
  * `--seed-derivation=<metode>` DAN `--seed-derivation <metode>` (dipisah
  * spasi, ejaan yang lebih konvensional — dan sebelum fix round 1 (I1), diam-
@@ -53,15 +66,37 @@ function galatBentukTidakDikenal(): Error {
  * sekali. Ejaan yang MIRIP flag ini tapi salah (typo, bentuk campuran)
  * SELALU ditolak keras, tidak pernah diam-diam diabaikan — lihat
  * `FLAG_MIRIP`.
+ *
+ * Fix round 2: fungsi ini dulu `return` PADA KECOCOKAN VALID PERTAMA —
+ * artinya sisa argv setelahnya TIDAK PERNAH diperiksa. Itu membuat
+ * penolakan near-miss (I1) BERGANTUNG URUTAN: sebuah near-miss yang duduk
+ * SETELAH satu flag valid lolos sama sekali tanpa peringatan
+ * (`--seed-derivation=pbkdf2 --seed-derivations=entropy` diam-diam
+ * mengembalikan `pbkdf2`), dan flag yang diulang dengan nilai BERBEDA
+ * diam-diam memenangkan kemunculan pertama tanpa galat
+ * (`--seed-derivation=pbkdf2 --seed-derivation=entropy` diam-diam
+ * mengembalikan `pbkdf2`) — dua bentuk dari cacat kelas yang SAMA dengan
+ * I1: near-miss atau flag yang bertentangan diam-diam diabaikan. Sekarang
+ * SELURUH argv dipindai lebih dulu: kecocokan valid dikumpulkan (bukan
+ * langsung dikembalikan), near-miss DI MANA PUN posisinya tetap menolak
+ * keras, dan baru di akhir — hanya bila TIDAK ADA near-miss dan TIDAK ADA
+ * nilai tidak valid di mana pun — kumpulan nilai valid itu diperiksa: satu
+ * nilai unik diterima, lebih dari satu nilai unik (bertentangan) ditolak
+ * keras (`galatKonflik`). Flag yang sama diulang dengan nilai yang SAMA
+ * PERSIS diterima dengan sengaja (tidak ambigu — tidak ada informasi yang
+ * hilang dengan memilih salah satunya).
  */
 export function caraTurunanDariArgv(argv: readonly string[] = process.argv.slice(2)): CaraTurunan {
+  const ditemukan: CaraTurunan[] = [];
+
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
 
     if (a.startsWith(FLAG_EQ_PREFIX)) {
       const nilai = a.slice(FLAG_EQ_PREFIX.length);
       if (!nilaiValid(nilai)) throw galatNilaiTidakDikenal(nilai.length);
-      return nilai;
+      ditemukan.push(nilai);
+      continue;
     }
 
     if (a === FLAG_EXACT) {
@@ -71,12 +106,19 @@ export function caraTurunanDariArgv(argv: readonly string[] = process.argv.slice
       if (nilai === undefined || nilai.startsWith("--") || !nilaiValid(nilai)) {
         throw galatNilaiTidakDikenal(nilai?.length ?? 0);
       }
-      return nilai;
+      ditemukan.push(nilai);
+      i++; // nilai sudah dikonsumsi sebagai pasangan flag ini; jangan dipindai ulang sebagai argv tersendiri.
+      continue;
     }
 
     if (FLAG_MIRIP.test(a)) {
       throw galatBentukTidakDikenal();
     }
   }
-  return CARA_TURUNAN_DEFAULT;
+
+  if (ditemukan.length === 0) return CARA_TURUNAN_DEFAULT;
+
+  const unik = new Set(ditemukan);
+  if (unik.size > 1) throw galatKonflik(ditemukan);
+  return ditemukan[0];
 }

@@ -55,16 +55,29 @@ describe("caraTurunanDariArgv — penolakan keras (I1: silence adalah cacatnya)"
   });
 
   it("pesan galat tidak pernah mengutip nilai mentah yang diberikan (M1)", () => {
+    // Fix round 2 (test-hygiene): versi sebelumnya memakai
+    // `try { fn(); throw new Error("seharusnya melempar"); } catch { ... }`
+    // — pola yang lolos VAKUM kalau `fn()` berhenti melempar sama sekali,
+    // karena `catch` lalu menangkap error PENGGANTI buatan sendiri dan
+    // menjalankan assertion terhadap PESAN ITU (yang memang tidak memuat
+    // rahasianya), bukan terhadap perilaku fn() yang sesungguhnya.
+    // Diperbaiki: `expect(() => fn()).toThrow(/pola/)` gagal secara tidak-
+    // vakum bila fn() berhenti melempar (assert ini sendiri akan merah),
+    // BARU SETELAH ITU isi pesannya diperiksa tidak memuat rahasia.
     const rahasiaPalsu = "kata-rahasia-pengguna-yang-salah-ketik";
+
+    expect(() => caraTurunanDariArgv(["--seed-derivation", rahasiaPalsu])).toThrow(
+      /--seed-derivation harus salah satu dari/,
+    );
     try {
       caraTurunanDariArgv(["--seed-derivation", rahasiaPalsu]);
-      throw new Error("seharusnya melempar");
     } catch (e) {
       expect((e as Error).message).not.toContain(rahasiaPalsu);
     }
+
+    expect(() => caraTurunanDariArgv([`--seed-derivations=${rahasiaPalsu}`])).toThrow(/menyerupai/);
     try {
       caraTurunanDariArgv([`--seed-derivations=${rahasiaPalsu}`]);
-      throw new Error("seharusnya melempar");
     } catch (e) {
       expect((e as Error).message).not.toContain(rahasiaPalsu);
     }
@@ -73,5 +86,36 @@ describe("caraTurunanDariArgv — penolakan keras (I1: silence adalah cacatnya)"
   it("TIDAK menolak flag lain yang tidak mirip --seed-derivation sama sekali", () => {
     expect(caraTurunanDariArgv(["--seed-derivationX-tidak-nyambung"])).toBe("pbkdf2");
     expect(caraTurunanDariArgv(["--lain-lain=pbkdf2-32"])).toBe("pbkdf2");
+  });
+});
+
+describe("caraTurunanDariArgv — pemindaian SELURUH argv, bukan berhenti di kecocokan valid pertama (fix round 2)", () => {
+  it("near-miss yang duduk SETELAH satu flag valid tetap ditolak keras, bukan diam-diam diabaikan", () => {
+    // Regresi langsung dari laporan reviewer: sebelum fix round 2, fungsi
+    // ini `return` pada kecocokan valid PERTAMA, jadi sisa argv (termasuk
+    // near-miss ini) tidak pernah diperiksa — bug kelas yang sama dengan I1.
+    expect(() => caraTurunanDariArgv(["--seed-derivation=pbkdf2", "--seed-derivations=entropy"])).toThrow(
+      /menyerupai/,
+    );
+  });
+
+  it("near-miss yang duduk SEBELUM satu flag valid juga tetap ditolak keras", () => {
+    expect(() => caraTurunanDariArgv(["--seed-derivations=entropy", "--seed-derivation=pbkdf2"])).toThrow(
+      /menyerupai/,
+    );
+  });
+
+  it("flag diulang dengan nilai BERBEDA ditolak keras, bukan diam-diam memenangkan kemunculan pertama", () => {
+    expect(() => caraTurunanDariArgv(["--seed-derivation=pbkdf2", "--seed-derivation=entropy"])).toThrow(
+      /diberikan lebih dari sekali/,
+    );
+    expect(() => caraTurunanDariArgv(["--seed-derivation", "pbkdf2", "--seed-derivation", "entropy"])).toThrow(
+      /diberikan lebih dari sekali/,
+    );
+  });
+
+  it("flag diulang dengan nilai yang SAMA PERSIS diterima (tidak ambigu, pilihan sengaja)", () => {
+    expect(caraTurunanDariArgv(["--seed-derivation=pbkdf2-32", "--seed-derivation=pbkdf2-32"])).toBe("pbkdf2-32");
+    expect(caraTurunanDariArgv(["--seed-derivation", "entropy", "--seed-derivation=entropy"])).toBe("entropy");
   });
 });

@@ -231,19 +231,21 @@ describe("ballot.compact — pendaftaran eligibility", () => {
 
   it("bukan admin ditolak", () => {
     const sim = new BallotSimulator({ eligibleCount: 8 });
-    expect(() => sim.registerVoters([CRED_A], bytes32(0xee))).toThrow();
+    expect(() => sim.registerVoters([CRED_A], bytes32(0xee))).toThrow(
+      /Hanya admin yang boleh mendaftarkan pemilih/,
+    );
   });
 
   it("melebihi eligibleCount ditolak", () => {
     const sim = new BallotSimulator({ eligibleCount: 2 });
     sim.registerVoters([CRED_A, CRED_B]);
-    expect(() => sim.registerVoters([CRED_C])).toThrow();
+    expect(() => sim.registerVoters([CRED_C])).toThrow(/Melebihi eligibleCount/);
   });
 
   it("eligibleCount ditegakkan lintas beberapa batch", () => {
     const sim = new BallotSimulator({ eligibleCount: 3 });
     sim.registerVoters([CRED_A, CRED_B]);
-    expect(() => sim.registerVoters([CRED_C, bytes32(0x44)])).toThrow();
+    expect(() => sim.registerVoters([CRED_C, bytes32(0x44)])).toThrow(/Melebihi eligibleCount/);
   });
 });
 
@@ -287,7 +289,9 @@ describe("ballot.compact — castVote", () => {
     // guard di dalam circuit itu sendiri. Lihat dua uji "in-circuit" di bawah
     // untuk uji yang benar-benar memicu cabang gagal assert di dalam castVote.
     const sim = siap();
-    expect(() => sim.castVote(ASING, 0, SALT_1)).toThrow();
+    expect(() => sim.castVote(ASING, 0, SALT_1)).toThrow(
+      /Credential tidak ada di pohon eligibility/,
+    );
   });
 
   it("path milik credential lain ditolak in-circuit (guard kecocokan leaf)", () => {
@@ -306,7 +310,7 @@ describe("ballot.compact — castVote", () => {
         opening: { option: 0n, salt: SALT_1 },
         eligibilityPath: path,
       }),
-    ).toThrow();
+    ).toThrow(/Merkle path bukan untuk credential ini/);
   });
 
   it("path dengan sibling yang diubah ditolak in-circuit (guard checkRoot)", () => {
@@ -330,13 +334,13 @@ describe("ballot.compact — castVote", () => {
         opening: { option: 0n, salt: SALT_1 },
         eligibilityPath: pathRusak,
       }),
-    ).toThrow();
+    ).toThrow(/Anda tidak terdaftar sebagai pemilih pada ballot ini/);
   });
 
   it("credential yang sama tidak bisa mencoblos dua kali", () => {
     const sim = siap();
     sim.castVote(CRED_A, 0, SALT_1);
-    expect(() => sim.castVote(CRED_A, 1, SALT_2)).toThrow();
+    expect(() => sim.castVote(CRED_A, 1, SALT_2)).toThrow(/Credential ini sudah dipakai memilih/);
   });
 
   it("credential berbeda dapat mencoblos masing-masing sekali", () => {
@@ -348,7 +352,7 @@ describe("ballot.compact — castVote", () => {
 
   it("pilihan di luar optionCount ditolak", () => {
     const sim = siap();
-    expect(() => sim.castVote(CRED_A, 3, SALT_1)).toThrow();
+    expect(() => sim.castVote(CRED_A, 3, SALT_1)).toThrow(/Pilihan di luar opsi yang tersedia/);
   });
 
   it("ledger tidak memuat jejak pilihan apa pun setelah mencoblos", () => {
@@ -366,7 +370,9 @@ describe("ballot.compact — castVote", () => {
   it("pendaftaran ditutup setelah suara pertama", () => {
     const sim = siap();
     sim.castVote(CRED_A, 0, SALT_1);
-    expect(() => sim.registerVoters([bytes32(0x44)])).toThrow();
+    expect(() => sim.registerVoters([bytes32(0x44)])).toThrow(
+      /Pendaftaran ditutup setelah suara pertama masuk/,
+    );
   });
 });
 
@@ -389,7 +395,9 @@ describe("ballot.compact — deadline", () => {
     sim.setBlockTime(SEKARANG);
     sim.registerVoters([CRED_A]);
     sim.setBlockTime(SEKARANG + 2000n);
-    expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow();
+    expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow(
+      /Batas waktu pemungutan suara sudah lewat/,
+    );
   });
 
   it("menerima suara sebelum voteDeadline", () => {
@@ -416,7 +424,9 @@ describe("ballot.compact — deadline", () => {
     sim.setBlockTime(SEKARANG);
     sim.registerVoters([CRED_A]);
     sim.setBlockTime(SEKARANG + 1000n);
-    expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow();
+    expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow(
+      /Batas waktu pemungutan suara sudah lewat/,
+    );
   });
 });
 
@@ -454,7 +464,7 @@ describe("ballot.compact — tallyVote", () => {
   it("salt yang sama tidak bisa dibuka dua kali", () => {
     const sim = setelahDuaSuara();
     sim.tallyVote(0, SALT_1);
-    expect(() => sim.tallyVote(0, SALT_1)).toThrow();
+    expect(() => sim.tallyVote(0, SALT_1)).toThrow(/Suara ini sudah pernah dibuka/);
   });
 
   it("membuka dengan pilihan yang tidak sesuai commitment ditolak", () => {
@@ -467,7 +477,7 @@ describe("ballot.compact — tallyVote", () => {
     const sim = setelahDuaSuara();
     // Commitment mengikat (pilihan, salt); mengaku memilih 1 dengan SALT_1
     // menghasilkan commitment yang tidak ada di pohon.
-    expect(() => sim.tallyVote(1, SALT_1)).toThrow();
+    expect(() => sim.tallyVote(1, SALT_1)).toThrow(/Commitment tidak ada di pohon/);
   });
 
   it("salt yang tidak pernah dipakai memilih ditolak", () => {
@@ -475,7 +485,7 @@ describe("ballot.compact — tallyVote", () => {
     // yang tidak pernah dipakai memilih, jadi ini juga guard simulator, bukan guard
     // di dalam circuit.
     const sim = setelahDuaSuara();
-    expect(() => sim.tallyVote(0, bytes32(0xf0))).toThrow();
+    expect(() => sim.tallyVote(0, bytes32(0xf0))).toThrow(/Commitment tidak ada di pohon/);
   });
 
   it("pilihan yang tidak cocok dengan path ditolak in-circuit (guard kecocokan leaf)", () => {
@@ -495,7 +505,7 @@ describe("ballot.compact — tallyVote", () => {
         opening: { option: 1n, salt: SALT_1 },
         commitmentPath: path,
       }),
-    ).toThrow();
+    ).toThrow(/Merkle path bukan untuk commitment ini/);
   });
 
   it("path dengan sibling yang diubah ditolak in-circuit (guard checkRoot)", () => {
@@ -519,19 +529,31 @@ describe("ballot.compact — tallyVote", () => {
         opening: { option: 0n, salt: SALT_1 },
         commitmentPath: pathRusak,
       }),
-    ).toThrow();
+    ).toThrow(/Commitment tidak ditemukan pada ballot ini/);
   });
 
-  it("tidak bisa membuka selagi masih fase pemungutan suara", () => {
+  it("tidak bisa membuka sebelum voteDeadline lewat (guard deadline, bukan guard fase)", () => {
+    // Judul lama menyebut "fase". Itu keliru: yang menembak di sini adalah
+    // assert kernel.blockTimeGreaterThan(voteDeadline) — waktu blok belum
+    // dimajukan sama sekali. Pencocokan pesan di bawah yang membuktikannya,
+    // dan itu pula yang akan menangkap kesalahan pelabelan seperti ini
+    // berikutnya.
     const sim = new BallotSimulator({ eligibleCount: 4 });
     sim.registerVoters([CRED_A]);
     sim.castVote(CRED_A, 0, SALT_1);
-    expect(() => sim.tallyVote(0, SALT_1)).toThrow();
+    expect(() => sim.tallyVote(0, SALT_1)).toThrow(/Pemungutan suara masih berlangsung/);
   });
 
-  it("tidak bisa mencoblos lagi setelah fase tally dimulai", () => {
+  it("tidak bisa mencoblos lagi setelah voteDeadline lewat (fase masih voting)", () => {
+    // Judul lama menyebut "setelah fase tally dimulai" — keliru dua kali.
+    // setelahDuaSuara() hanya memajukan waktu blok; belum ada satu pun suara
+    // yang dibuka, jadi phase MASIH `voting` pada titik ini (dipastikan oleh
+    // assertion di bawah). Yang menolak adalah assert deadline castVote.
     const sim = setelahDuaSuara();
-    expect(() => sim.castVote(CRED_A, 0, bytes32(0xb1))).toThrow();
+    expect(sim.getLedger().phase).toBe(BallotPhase.voting);
+    expect(() => sim.castVote(CRED_A, 0, bytes32(0xb1))).toThrow(
+      /Batas waktu pemungutan suara sudah lewat/,
+    );
   });
 });
 
@@ -542,7 +564,7 @@ describe("ballot.compact — finalize", () => {
     // Ini memicu assert kernel.blockTimeGreaterThan(tallyDeadline) di dalam
     // circuit, bukan guard simulator manapun.
     const sim = new BallotSimulator({ eligibleCount: 2, options: ["Ya", "Tidak"] });
-    expect(() => sim.finalizeSekarang()).toThrow();
+    expect(() => sim.finalizeSekarang()).toThrow(/Batas waktu pembukaan suara belum lewat/);
   });
 
   it("menolak finalisasi dua kali", () => {
@@ -551,7 +573,7 @@ describe("ballot.compact — finalize", () => {
     expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
     // Panggilan kedua memajukan waktu blok lagi (tetap lewat tallyDeadline,
     // tidak berubah), tapi kini memicu assert phase != BallotPhase.finalized.
-    expect(() => sim.finalize()).toThrow();
+    expect(() => sim.finalize()).toThrow(/Ballot sudah difinalisasi/);
   });
 
   it("dapat difinalisasi walau belum ada satu suara pun yang dibuka (fase masih voting)", () => {
@@ -661,9 +683,10 @@ describe("ballot.compact — alur penuh tiga pemilih", () => {
     sim.majuKeFaseTally();
     sim.finalize();
     expect(sim.getLedger().phase).toBe(BallotPhase.finalized);
-    expect(() => sim.tallyVote(0, SALT[0])).toThrow();
+    expect(() => sim.tallyVote(0, SALT[0])).toThrow(/Ballot sudah difinalisasi/);
   });
 });
+
 
 describe("ballot-witnesses — private state lintas ballot", () => {
   const CRED_A = bytes32(0x11);

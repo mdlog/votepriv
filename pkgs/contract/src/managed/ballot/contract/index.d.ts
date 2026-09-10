@@ -30,6 +30,7 @@ export type ImpureCircuits<PS> = {
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
   castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
   tallyVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  finalize(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
@@ -38,6 +39,7 @@ export type ProvableCircuits<PS> = {
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
   castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
   tallyVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  finalize(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
@@ -64,6 +66,7 @@ export type Circuits<PS> = {
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
   castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
   tallyVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  finalize(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {

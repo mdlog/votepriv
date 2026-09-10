@@ -205,6 +205,32 @@ export async function tungguWallet<T>(
   }
 }
 
+/**
+ * SELURUH log diagnostik di berkas ini digerbangi `import.meta.env.DEV`, dan
+ * gerbangnya ditulis di TITIK PANGGIL, bukan di dalam sebuah helper.
+ *
+ * Alasannya bukan sekadar kebersihan. vite.config.ts menyuntikkan collector yang
+ * mem-POST setiap entri console ke dev server, yang menuliskannya ke
+ * .manus-logs/browserConsole.log. Pada konfigurasi tunnel yang didukung branch
+ * ini, "dev server" itu adalah mesin orang lain — sehingga log berisi alamat
+ * shielded, shieldedCoinPublicKey, shieldedEncryptionPublicKey, dan URI
+ * indexer/node/prover milik pengguna akan mendarat sebagai berkas di mesin itu.
+ *
+ * Gerbang di titik panggil karena Vite mengganti `import.meta.env.DEV` menjadi
+ * `false` saat build, sehingga esbuild membuang seluruh blok — termasuk argumen
+ * dan JSON.stringify di dalamnya. Helper `devLog(...)` hanya membuat BADAN-nya
+ * kosong: pemanggilannya, string-nya, dan penyusunan argumennya tetap ikut
+ * terbundel. Bentuk ini dapat diperiksa siapa pun dengan grep terhadap bundle.
+ */
+
+/**
+ * Nama field saja, tanpa nilainya. Untuk introspeksi bentuk jawaban wallet,
+ * nama field-lah yang berguna — nilainya justru bahan yang tidak boleh
+ * disalin ke mana-mana.
+ */
+const namaField = (v: unknown): string[] =>
+  v && typeof v === "object" ? Object.keys(v as object) : [];
+
 /** Memanggil method opsional pada objek API wallet; undefined bila tidak tersedia. */
 async function tryCall<T>(api: unknown, method: string): Promise<T | undefined> {
   const fn = (api as Record<string, unknown> | null)?.[method];
@@ -226,7 +252,9 @@ export async function connectMidnightWallet(
   onLambat?: () => void,
 ): Promise<WalletConnection> {
   const { info, raw } = pickConnector();
-  console.log("[votepriv:wallet] konektor terpilih", JSON.stringify(info));
+  if (import.meta.env.DEV) {
+    console.log("[votepriv:wallet] konektor terpilih", JSON.stringify(info));
+  }
 
   // Kalau pengguna menyebut jaringan, hormati itu saja. Kalau tidak, coba berurutan.
   const urutan = networkId ? [networkId] : [...PROBE_NETWORKS];
@@ -277,17 +305,26 @@ export async function connectMidnightWallet(
         "Kalau Lace sedang di mainnet, pindahkan ke salah satu jaringan testnet.",
     );
   }
-  console.log("[votepriv:wallet] tersambung di jaringan", terpakai, "— ditolak:", JSON.stringify(ditolak));
+  if (import.meta.env.DEV) {
+    console.log(
+      "[votepriv:wallet] tersambung di jaringan",
+      terpakai,
+      "— ditolak:",
+      JSON.stringify(ditolak),
+    );
+  }
 
   // Bentuk API setelah connect belum sepenuhnya pasti pada 4.x — dicatat sebagai JSON
   // supaya terbaca utuh saat disalin dari console (debug-collector menciutkan objek).
-  console.log(
-    "[votepriv:wallet] bentuk API setelah connect",
-    JSON.stringify({
-      own: api ? Object.keys(api as object) : [],
-      proto: api ? Object.getOwnPropertyNames(Object.getPrototypeOf(api)) : [],
-    }),
-  );
+  if (import.meta.env.DEV) {
+    console.log(
+      "[votepriv:wallet] bentuk API setelah connect",
+      JSON.stringify({
+        own: api ? Object.keys(api as object) : [],
+        proto: api ? Object.getOwnPropertyNames(Object.getPrototypeOf(api)) : [],
+      }),
+    );
+  }
 
   // Connector 4.0.1 tidak punya state() maupun serviceUriConfig() — itu bentuk 3.x
   // yang dipakai contoh-contoh lama. Nama method di bawah berasal dari introspeksi
@@ -296,9 +333,20 @@ export async function connectMidnightWallet(
   const unshielded = await tryCall<Record<string, unknown>>(api, "getUnshieldedAddress");
   const configuration = await tryCall<WalletConfiguration>(api, "getConfiguration");
 
-  console.log("[votepriv:wallet] getShieldedAddresses", JSON.stringify(shielded));
-  console.log("[votepriv:wallet] getUnshieldedAddress", JSON.stringify(unshielded));
-  console.log("[votepriv:wallet] getConfiguration", JSON.stringify(configuration));
+  // Nama field saja, BUKAN isinya. Ketiga jawaban ini memuat alamat shielded,
+  // shieldedCoinPublicKey, shieldedEncryptionPublicKey, dan URI indexer/node/
+  // prover milik wallet pengguna — tidak satu pun perlu tercetak untuk mengetahui
+  // bentuk jawaban wallet, dan justru itu yang membuat log ini berbahaya.
+  if (import.meta.env.DEV) {
+    console.log(
+      "[votepriv:wallet] bentuk jawaban alamat & konfigurasi",
+      JSON.stringify({
+        getShieldedAddresses: namaField(shielded),
+        getUnshieldedAddress: namaField(unshielded),
+        getConfiguration: namaField(configuration),
+      }),
+    );
+  }
 
   const unshieldedAddress = firstAddress(unshielded);
   const address = firstAddress(shielded) ?? unshieldedAddress;

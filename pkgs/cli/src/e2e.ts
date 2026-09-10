@@ -98,21 +98,53 @@ const MENIT_TALLY = 80;
  * dengan satu atau dua dari tiga suara masuk, dan bagian 6 tak pernah
  * tercapai.
  *
- * Aritmetika baru: 300 (temukanBallot) + 150 (castVote) = 450 detik per
- * tabel Step 5, ditambah hingga 30 detik untuk retry pembacaan eligibility
- * path yang baru (ulangiSampai, maks 6 x jeda 5 detik — FIX 3 di bagian 5,
- * menggantikan bacaLedgerBallot telanjang yang sebelumnya ada di titik itu)
- * = 480 detik, dibulatkan ke atas dengan margin aman 60 detik menjadi 540
- * detik (9 menit).
+ * Aritmetika (kasus EKSPEKTASI — lihat catatan Fix Round 2/FIX 3 di bawah
+ * untuk kasus terburuk sungguhan): 300 (temukanBallot) + 150 (castVote) =
+ * 450 detik per tabel Step 5, ditambah ~30 detik biaya EKSPEKTASI untuk
+ * retry pembacaan eligibility path yang baru (ulangiSampai, maks 6 x jeda
+ * 5 detik — Fix Round 1/FIX 3 di bagian 5, menggantikan bacaLedgerBallot
+ * telanjang yang sebelumnya ada di titik itu) = 480 detik, dibulatkan ke
+ * atas dengan margin 60 detik menjadi 540 detik (9 menit).
  *
- * Jendela 45 menit MASIH MUAT dengan guard yang lebih besar ini: mengganti
- * baris "bacaLedgerBallot sebelum tiap coblos" (0,6 menit di tabel lama)
- * dengan versi ber-retry menaikkan total tabel dari 35,6 ke ~36,5 menit
- * (3 x ~30 detik dibanding 3 x ~12 detik lama, selisih ~0,9 menit). Sisa di
- * akhir loop tetap positif besar: ~8,5 menit (510 detik) — jauh di atas
- * ambang 540 detik yang diperiksa SEBELUM tiap iterasi (bukan sesudahnya),
- * dan pada titik pemeriksaan paling ketat (sebelum pemilih terakhir) sisa
- * waktu masih ~990 detik, comfortably di atas 540.
+ * Fix Round 2, FIX 3 — kejujuran basis biaya: "~30 detik" di atas adalah
+ * kasus EKSPEKTASI (indexer biasanya sudah menyusul di titik ini — lihat
+ * komentar bagian 5), sejenis dengan castVote sendiri yang ditabelkan pada
+ * 2,5 menit measured-worst, BUKAN pada batas mutlaknya (BATAS_MS.panggilBerat
+ * = 15 menit). Kasus terburuk SUNGGUHAN retry ini — bila keenam percobaan
+ * sama-sama menyentuh batas BATAS_MS.bacaIndexer (60 detik) sebelum
+ * ulangiSampai mengulang — adalah 6 x 60 + 5 x 5 (jeda antar percobaan) =
+ * 385 detik per pemilih, jauh melampaui 30 detik (~13x). Bila kasus itu
+ * ditabelkan pada basis yang sama seperti temukanBallot (batas mutlak,
+ * bukan measured-worst) untuk KETIGA pemilih: total tabel Step 5 menjadi
+ * 35,6 (asli) - 0,6 (baris bacaLedgerBallot lama yang digantikan) + 19,25
+ * menit (3 x 385 detik) = 54,25 menit — melampaui jendela 45 menit sebesar
+ * 9,25 menit. Dipilih TIDAK menabelkan ulang pada basis itu (opsi kedua
+ * FIX 3, bukan "recost"): basis mutlak membuat jendela 45 menit mustahil
+ * dipenuhi, padahal "indexer menjawab persis di detik ke-60, enam kali
+ * berturut-turut, untuk satu pemilih" menandakan jaringan yang jauh lebih
+ * rusak daripada yang diasumsikan SELURUH baris tabel lain — pada titik itu
+ * temukanBallot dan castVote pun kemungkinan besar sudah gagal dengan
+ * caranya sendiri. Risiko residual yang jujur harus diakui: guard ini
+ * disusun dari biaya EKSPEKTASI satu iterasi (480 detik), bukan biaya
+ * terburuk mutlak satu iterasi (385 + 300 + 150 = 835 detik) — bila retry
+ * pada SATU pemilih benar-benar mengalami 385 detik itu, iterasi yang
+ * SEDANG BERJALAN bisa saja tetap melewati voteDeadline walau guard-nya
+ * lolos di awal. Itu bukan regresi baru, melainkan konsekuensi memilih
+ * biaya measured-worst (konsisten dengan castVote) untuk baris ini.
+ *
+ * Jendela 45 menit MASIH MUAT dengan guard 540 pada basis EKSPEKTASI:
+ * mengganti baris "bacaLedgerBallot sebelum tiap coblos" (0,6 menit di
+ * tabel lama) dengan versi ber-retry menaikkan total tabel dari 35,6 ke
+ * ~36,5 menit (3 x ~30 detik dibanding 3 x ~12 detik lama, selisih ~0,9
+ * menit). Sisa di akhir loop: ~8,5 menit (510 detik) — ini anggaran TOTAL
+ * yang tersisa setelah SELURUH pekerjaan bagian 5 selesai, sebuah angka
+ * yang TIDAK dibandingkan terhadap ambang 540 detik (510 < 540 — keduanya
+ * memang bukan kuantitas yang sama; draf Ronde 1 keliru menyandingkan
+ * keduanya seolah 510 "jauh di atas" 540, dikoreksi di Fix Round 2/FIX 2).
+ * Yang benar-benar diperiksa terhadap ambang 540 adalah SISA DETIK SAMPAI
+ * voteDeadline di AWAL tiap iterasi (kasus ekspektasi): 1950 detik sebelum
+ * pemilih ke-0, 1470 detik sebelum pemilih ke-1, 990 detik sebelum pemilih
+ * ke-2 — ketiganya jauh di atas 540.
  */
 const SISA_MINIMAL_VOTE = 540;
 /** Cukup untuk satu tallyVote + seluruh anggaran ulang cobaSampaiWaktuBlokCocok. */
@@ -215,7 +247,11 @@ try {
     // ulangiSampai memang dibuat untuk dicegah. eligibility adalah
     // HistoricMerkleTree: begitu daunnya terdaftar, path-nya tetap valid
     // selamanya, jadi mengulang pembacaan sampai indexer menyusul aman.
-    const { nilai: jalur, percobaan: percobaanJalur } = await ulangiSampai(
+    const {
+      nilai: jalur,
+      percobaan: percobaanJalur,
+      galatTerakhir: galatJalur,
+    } = await ulangiSampai(
       async () =>
         (await bacaLedgerBallot(kp.publicDataProvider, alamatBallot)).eligibility.findPathForLeaf(
           daunEligibility(credentials[i]),
@@ -226,9 +262,19 @@ try {
       6,
       5_000,
     );
+    // Fix Round 2, FIX 4: `galatTerakhir` dari ulangiSampai TIDAK dibuang
+    // seperti sebelumnya (pola yang sama seperti deploy-ballot.ts:142 —
+    // surface galat asli, jangan telan). Dua penyebab "jalur tetap
+    // undefined" berbeda maknanya: bila SETIAP pembacaan melempar (galatJalur
+    // terisi), yang gagal adalah pembacaan indexer itu sendiri, bukan
+    // pendaftarannya — pesan lama ("kemungkinan besar keterlambatan indexer")
+    // akan menyesatkan operator ke arah yang salah bila penyebabnya justru
+    // koneksi/indexer yang benar-benar tidak menjawab.
     pastikan(
       jalur !== undefined,
-      `Daun eligibility ${label} tidak ditemukan setelah ${percobaanJalur} percobaan pembacaan indexer. Ini KEMUNGKINAN BESAR keterlambatan indexer menyusul registerVoters, BUKAN pendaftaran yang gagal — periksa txId registerVoters di log sebelum menyimpulkan pendaftaran benar-benar gagal.`,
+      galatJalur !== undefined
+        ? `Daun eligibility ${label} tidak terbaca setelah ${percobaanJalur} percobaan — PEMBACAAN INDEXER ITU SENDIRI TERUS GAGAL: ${galatJalur}. Ini soal konektivitas/indexer, bukan (belum tentu) pendaftaran yang gagal — periksa status indexer dan txId registerVoters di log.`
+        : `Daun eligibility ${label} tidak ditemukan setelah ${percobaanJalur} percobaan pembacaan indexer (seluruh pembacaan BERHASIL, daunnya saja belum tampak). Ini KEMUNGKINAN BESAR keterlambatan indexer menyusul registerVoters, BUKAN pendaftaran yang gagal — periksa txId registerVoters di log sebelum menyimpulkan pendaftaran benar-benar gagal.`,
     );
 
     // temukanBallot menimpa private state, jadi ia dipanggil SEBELUM
@@ -378,12 +424,18 @@ try {
     // pemilih yang PILIHAN-nya sama dengan k. Untuk PILIHAN = [0n, 2n, 0n] ini
     // menghasilkan [2n, 0n, 1n] — dua suara opsi0, nol opsi1, satu opsi2.
     const opsiDiharapkan = metadata.options.map((_, k) => BigInt(PILIHAN.filter((p) => p === BigInt(k)).length));
-    const tally = periksaHasilTallyAkhir(lb, metadata.options.length, opsiDiharapkan, BigInt(JUMLAH_PEMILIH));
 
+    // Fix Round 2, FIX 5: log DITENANGKAN lebih dulu, SEBELUM pemeriksaan —
+    // sebelumnya baris ini ada SESUDAH periksaHasilTallyAkhir, jadi sebuah
+    // run yang gagal pada pemeriksaan itu tidak pernah mencatat array tally
+    // yang justru paling dibutuhkan untuk mendiagnosis kegagalannya.
+    const tally = ringkasTallies([...lb.tallies], metadata.options.length);
     log.info(
       { tally: tally.map(String), talliedCount: lb.talliedCount.toString(), phase: lb.phase },
       "Hasil setelah seluruh suara dibuka",
     );
+
+    periksaHasilTallyAkhir(lb, metadata.options.length, opsiDiharapkan, BigInt(JUMLAH_PEMILIH));
   }
 
   // ── 10. Menunggu tallyDeadline, lalu finalisasi ────────────────────────────
@@ -425,8 +477,16 @@ try {
   // denganBatasWaktu, dan setiap assert kontrak yang lolos sebagai galat JS —
   // sebelumnya jatuh sebagai unhandled rejection di sini dan TIDAK PERNAH
   // menutup wallet dengan tertib.
+  // Fix Round 2, FIX 5: `(e as Error).message` MELEMPAR bila `e` sungguhan
+  // `null`/`undefined` (mis. `throw null`) — cast TypeScript tidak mengubah
+  // nilai runtime, jadi `.message` pada `null` adalah TypeError yang
+  // menimpa galat asli persis di dalam penanganannya sendiri. `instanceof
+  // Error` adalah pemeriksaan runtime yang aman untuk SEMUA nilai yang bisa
+  // dilempar; `.stack` dipertahankan saat ada (sebelumnya selalu dibuang,
+  // padahal ia memuat `.message` plus lokasi lemparan).
+  const pesanGalat = e instanceof Error ? (e.stack ?? e.message) : String(e);
   log.error(
-    { err: (e as Error).message ?? String(e) },
+    { err: pesanGalat },
     "Uji end-to-end berhenti karena galat tak tertangani (lihat pesan di atas untuk detail). Menutup wallet dengan tertib — menyimpan checkpoint sinkronisasi — sebelum keluar.",
   );
   await hentikanWallet(ctx, log);

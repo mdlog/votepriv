@@ -17,8 +17,6 @@
 // KONTRAK KERAS: frasa pemulihan, byte seed, dan kunci privat TIDAK PERNAH
 // dicetak, dicatat (tidak ada logger di sini sama sekali), atau muncul di
 // pesan galat. Hanya alamat bech32 — data publik — yang boleh ke stdout.
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { HDWallet, Roles } from "@midnight-ntwrk/wallet-sdk-hd";
 import { createKeystore } from "@midnight-ntwrk/wallet-sdk-unshielded-wallet";
 import { CARA_TURUNAN_DEFAULT, type CaraTurunan, seedDariMnemonic } from "./mnemonic.ts";
@@ -137,9 +135,30 @@ async function main(): Promise<void> {
 // BUKAN saat diimpor (mis. oleh mnemonic.test.ts untuk memakai
 // `alamatUntukSemuaJaringan` — lihat fix round 1, I2). Tanpa penjaga ini,
 // mengimpor modul ini dari uji akan langsung mencoba membaca stdin.
-const dieksekusiLangsung =
-  process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (dieksekusiLangsung) {
+//
+// Fix round 2: penjaga SEBELUMNYA membandingkan
+// `fileURLToPath(import.meta.url) === path.resolve(process.argv[1])`.
+// `import.meta.url` yang diberikan Node SUDAH di-realpath (symlink
+// diselesaikan), sedangkan `path.resolve(argv[1])` HANYA menormalkan jadi
+// path absolut — tidak menyelesaikan symlink. Saat `doctor` dijalankan
+// lewat direktori atau berkas yang di-symlink, kedua sisi berbeda,
+// penjaga gagal cocok, `main()` TIDAK PERNAH berjalan, dan proses keluar
+// dengan status 0 TANPA OUTPUT SAMA SEKALI — persis alat yang tugasnya
+// mencegah pengguna memilih turunan yang salah malah diam-diam melaporkan
+// "sukses" tanpa melakukan apa pun. Diverifikasi reviewer: exit=0, 0 byte
+// output pada symlink direktori maupun symlink berkas.
+//
+// Diganti `import.meta.main` (Node >=20.11 tanpa flag, dites langsung di
+// Node 22.23.1 lewat `--experimental-strip-types` pada .ts — lihat catatan
+// verifikasi di task-3b-mnemonic-report.md, fix round 2): properti ini
+// dihitung oleh loader modul Node sendiri berdasarkan APAKAH modul ini
+// modul entri proses, bukan dengan membandingkan dua path yang dibangun
+// secara berbeda — sehingga BENAR di kedua kasus symlink (dites: direktori
+// symlink DAN berkas symlink, keduanya `true`), dan `false`/`undefined`
+// (falsy, jadi tetap aman) saat berkas ini diimpor sebagai modul biasa
+// (dites: `undefined` di bawah Vitest). Ini bukan cuma perbaikan bug
+// symlink, tapi penghapusan seluruh kelas kerapuhan yang sama: TIDAK ADA
+// lagi perbandingan path yang bisa diam-diam berbeda dari yang dimaksud.
+if (import.meta.main) {
   await main();
 }

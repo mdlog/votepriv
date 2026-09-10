@@ -13,6 +13,18 @@ export sealed ledger option1:           Opaque<"string">;
 export sealed ledger option2:           Opaque<"string">;
 export sealed ledger option3:           Opaque<"string">;
 export sealed ledger optionCount:       Uint<8>;
+
+// voteDeadline dan tallyDeadline: DETIK sejak epoch Unix (secondsSinceEpoch),
+// BUKAN milidetik. Ini bukan pilihan gaya — onchain-runtime-v3 mendeklarasikan
+// secondsSinceEpoch: bigint sebagai satuan waktu blok pada node sungguhan, dan
+// kernel.blockTimeLessThan/blockTimeGreaterThan membandingkan nilai ini mentah-
+// mentah terhadap ledger ini, tanpa skala apa pun (dikonfirmasi empiris, Task 5).
+// Bila nilai ini di-deploy dalam milidetik (mis. dari Date.now() langsung, ~1000x
+// lebih besar dari detik), deadline efektif tidak akan pernah tercapai dalam
+// rentang waktu manusia — assert deadline diam-diam tidak pernah gagal — dan
+// kegagalan ini TIDAK akan terlihat lewat simulator: simulator dapat dibuat
+// konsisten sendiri di bawah kedua konvensi (ms atau detik), sehingga seluruh
+// uji tetap hijau sementara ballot yang di-deploy sungguhan rusak.
 export sealed ledger voteDeadline:      Uint<64>;
 export sealed ledger tallyDeadline:     Uint<64>;
 export sealed ledger quorumPercent:     Uint<8>;
@@ -55,12 +67,21 @@ export ledger nullifiers: Set<Bytes<32>>;
 // karena castVote hanya boleh sebelum deadline dan tallyVote hanya sesudahnya.
 export ledger commitments: MerkleTree<10, Bytes<32>>;
 
+// ── Fase tally ───────────────────────────────────────────────────────────
+// Tidak ada circuit closeVoting terpisah. Transisi voting -> tallying dilakukan
+// secara malas oleh tallyVote() itu sendiri, dipicu pembuka suara pertama —
+// lihat komentar di tallyVote() untuk alasannya (jebakan liveness).
+export ledger tallyNullifiers: Set<Bytes<32>>;
+export ledger tallies:         Map<Uint<8>, Uint<64>>;
+export ledger talliedCount:    Counter;
+
 witness admin_secret_key(): Bytes<32>;
 witness voter_credential(): Bytes<32>;
 witness eligibility_path(): MerkleTreePath<10, Bytes<32>>;
 witness get_my_option(): Uint<8>;
 witness get_my_salt(): Bytes<32>;
 witness store_opening(o: Uint<8>, s: Bytes<32>): [];
+witness commitment_path(): MerkleTreePath<10, Bytes<32>>;
 
 // ── Hash berpemisah domain ───────────────────────────────────────────────
 // Semuanya `export pure` agar dapat dipanggil TypeScript lewat pureCircuits,
@@ -188,4 +209,55 @@ export circuit castVote(): [] {
 
   // Disimpan lokal agar pemilih dapat membuka suaranya pada fase tally.
   store_opening(opsi, salt);
+}
+
+// Dipanggil voter, setelah voteDeadline, untuk membuka commitment suaranya
+// sendiri. Membuktikan dalam zero-knowledge bahwa commitment yang dibuka ada
+// di pohon commitments, TANPA mengungkap yang mana — hanya opsi yang terpilih
+// yang menjadi publik. Nullifier tally diturunkan dari salt, bukan dari
+// commitment, sehingga tidak ada cara menghubungkan "satu suara untuk opsi X"
+// kembali ke commitment mana pun, apalagi ke pemilihnya — inilah yang membuat
+// pembukaan ini tidak dapat dilacak walau hasilnya sudah dipublikasikan.
+//
+// Tidak ada circuit closeVoting terpisah. Transisi voting -> tallying
+// dilakukan secara malas oleh pembuka suara pertama, di dalam circuit ini —
+// bukan lewat circuit penutup tersendiri. Circuit penutup akan menciptakan
+// jebakan liveness: bila tidak ada yang memanggilnya, suara tidak akan pernah
+// bisa dibuka sama sekali, dan ballot mati dengan seluruh suaranya utuh tapi
+// tidak dapat dihitung.
+export circuit tallyVote(): [] {
+  assert(phase != BallotPhase.finalized, "Ballot sudah difinalisasi");
+  assert(kernel.blockTimeGreaterThan(voteDeadline), "Pemungutan suara masih berlangsung");
+  assert(kernel.blockTimeLessThan(tallyDeadline), "Batas waktu pembukaan suara sudah lewat");
+
+  const opsi = get_my_option();
+  const salt = get_my_salt();
+  const c    = vote_commitment(opsi, salt);
+  const path = commitment_path();
+
+  // Membuktikan commitment ini ada di pohon, tanpa membuka commitment yang mana.
+  assert(disclose(path.leaf == c), "Merkle path bukan untuk commitment ini");
+  const rt: MerkleTreeDigest = disclose(merkleTreePathRoot<10, Bytes<32>>(path));
+  assert(commitments.checkRoot(rt), "Commitment tidak ditemukan pada ballot ini");
+
+  // Nullifier tally diturunkan dari salt yang rahasia — BUKAN dari commitment.
+  // Inilah yang membuat "satu suara untuk opsi X" tidak dapat dihubungkan
+  // kembali ke commitment mana pun, apalagi ke pemilihnya.
+  const tnf: Bytes<32> = disclose(tally_nullifier(salt));
+  assert(!tallyNullifiers.member(tnf), "Suara ini sudah pernah dibuka");
+
+  // Seluruh validasi di atas sudah lulus; baru sekarang ledger dimutasi.
+  // Transisi fase dulu (lihat komentar di atas circuit ini), lalu nullifier,
+  // lalu tally itu sendiri.
+  if (phase == BallotPhase.voting) { phase = BallotPhase.tallying; }
+
+  tallyNullifiers.insert(tnf);
+
+  const opsiPublik: Uint<8> = disclose(opsi);
+  if (tallies.member(opsiPublik)) {
+    tallies.insert(opsiPublik, (tallies.lookup(opsiPublik) + 1) as Uint<64>);
+  } else {
+    tallies.insert(opsiPublik, 1);
+  }
+  talliedCount.increment(1);
 }

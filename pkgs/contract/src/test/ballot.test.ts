@@ -283,3 +283,120 @@ describe("ballot.compact — deadline", () => {
     expect(() => sim.castVote(CRED_A, 0, SALT_1)).toThrow();
   });
 });
+
+describe("ballot.compact — tallyVote", () => {
+  const CRED_A = bytes32(0x11);
+  const CRED_B = bytes32(0x22);
+  const SALT_1 = bytes32(0xa1);
+  const SALT_2 = bytes32(0xa2);
+
+  const setelahDuaSuara = () => {
+    const sim = new BallotSimulator({ eligibleCount: 4, options: ["Ya", "Tidak"] });
+    sim.registerVoters([CRED_A, CRED_B]);
+    sim.castVote(CRED_A, 0, SALT_1);
+    sim.castVote(CRED_B, 0, SALT_2);
+    sim.majuKeFaseTally();
+    return sim;
+  };
+
+  it("membuka satu suara menambah hitungan opsi yang benar", () => {
+    const sim = setelahDuaSuara();
+    sim.tallyVote(0, SALT_1);
+    expect(sim.tally(0)).toBe(1n);
+    expect(sim.tally(1)).toBe(0n);
+    expect(sim.getLedger().talliedCount).toBe(1n);
+  });
+
+  it("dua suara terbuka terhitung dua", () => {
+    const sim = setelahDuaSuara();
+    sim.tallyVote(0, SALT_1);
+    sim.tallyVote(0, SALT_2);
+    expect(sim.tally(0)).toBe(2n);
+    expect(sim.getLedger().talliedCount).toBe(2n);
+  });
+
+  it("salt yang sama tidak bisa dibuka dua kali", () => {
+    const sim = setelahDuaSuara();
+    sim.tallyVote(0, SALT_1);
+    expect(() => sim.tallyVote(0, SALT_1)).toThrow();
+  });
+
+  it("membuka dengan pilihan yang tidak sesuai commitment ditolak", () => {
+    // Ini menguji guard di simulator (findPathForLeaf mengembalikan undefined untuk
+    // commitment yang salah, sehingga tallyVote() menolak sebelum circuit sempat
+    // dipanggil), bukan guard di dalam circuit itu sendiri — pola yang sama dengan
+    // "credential yang tidak terdaftar ditolak" pada castVote (Task 4). Lihat
+    // "pilihan yang tidak cocok dengan path ditolak in-circuit" di bawah untuk uji
+    // yang benar-benar memicu cabang gagal assert path.leaf == c di dalam tallyVote.
+    const sim = setelahDuaSuara();
+    // Commitment mengikat (pilihan, salt); mengaku memilih 1 dengan SALT_1
+    // menghasilkan commitment yang tidak ada di pohon.
+    expect(() => sim.tallyVote(1, SALT_1)).toThrow();
+  });
+
+  it("salt yang tidak pernah dipakai memilih ditolak", () => {
+    // Sama seperti di atas: findPathForLeaf tidak menemukan commitment untuk salt
+    // yang tidak pernah dipakai memilih, jadi ini juga guard simulator, bukan guard
+    // di dalam circuit.
+    const sim = setelahDuaSuara();
+    expect(() => sim.tallyVote(0, bytes32(0xf0))).toThrow();
+  });
+
+  it("pilihan yang tidak cocok dengan path ditolak in-circuit (guard kecocokan leaf)", () => {
+    const sim = setelahDuaSuara();
+    // Path ini benar-benar valid — untuk commitment (opsi 0, SALT_1).
+    // tallyVoteWithRawPrivateState memasangkannya secara sengaja dengan opsi 1,
+    // sesuatu yang tidak bisa terjadi lewat tallyVote() biasa karena tallyVote()
+    // selalu menyusun path dari commitment (opsi, salt) yang sama persis dengan
+    // yang diberikan. Ini memicu
+    // assert(disclose(path.leaf == c), "Merkle path bukan untuk commitment ini")
+    // di ballot.compact, bukan guard simulator manapun.
+    const c = pureCircuits.vote_commitment(0n, SALT_1);
+    const path = sim.getLedger().commitments.findPathForLeaf(c);
+    if (path === undefined) throw new Error("setup uji gagal: path commitment tidak ditemukan");
+    expect(() =>
+      sim.tallyVoteWithRawPrivateState({
+        option: 1n,
+        salt: SALT_1,
+        commitmentPath: path,
+      }),
+    ).toThrow();
+  });
+
+  it("path dengan sibling yang diubah ditolak in-circuit (guard checkRoot)", () => {
+    const sim = setelahDuaSuara();
+    // opsi dan salt tetap cocok dengan path.leaf (lolos guard kecocokan leaf), tapi
+    // satu sibling di dalam path diubah sehingga akar yang direkonstruksi
+    // merkleTreePathRoot() bukan akar yang pernah benar-benar dimiliki pohon
+    // commitments. Ini memicu assert(commitments.checkRoot(rt), "Commitment tidak
+    // ditemukan pada ballot ini") di ballot.compact.
+    const c = pureCircuits.vote_commitment(0n, SALT_1);
+    const path = sim.getLedger().commitments.findPathForLeaf(c);
+    if (path === undefined) throw new Error("setup uji gagal: path commitment tidak ditemukan");
+    const pathRusak = {
+      leaf: path.leaf,
+      path: path.path.map((entri, i) =>
+        i === 0 ? { ...entri, sibling: { field: entri.sibling.field + 1n } } : entri,
+      ),
+    };
+    expect(() =>
+      sim.tallyVoteWithRawPrivateState({
+        option: 0n,
+        salt: SALT_1,
+        commitmentPath: pathRusak,
+      }),
+    ).toThrow();
+  });
+
+  it("tidak bisa membuka selagi masih fase pemungutan suara", () => {
+    const sim = new BallotSimulator({ eligibleCount: 4 });
+    sim.registerVoters([CRED_A]);
+    sim.castVote(CRED_A, 0, SALT_1);
+    expect(() => sim.tallyVote(0, SALT_1)).toThrow();
+  });
+
+  it("tidak bisa mencoblos lagi setelah fase tally dimulai", () => {
+    const sim = setelahDuaSuara();
+    expect(() => sim.castVote(CRED_A, 0, bytes32(0xb1))).toThrow();
+  });
+});

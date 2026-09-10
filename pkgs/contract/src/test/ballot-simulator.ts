@@ -197,6 +197,62 @@ export class BallotSimulator {
     return this.run((ctx) => this.contract.impureCircuits.castVote(ctx), ps);
   }
 
+  /** Membuka satu suara. Path commitment disusun dari state on-chain. */
+  tallyVote(option: number, salt: Uint8Array): Ledger {
+    const c = pureCircuits.vote_commitment(BigInt(option), salt);
+    const path = this.getLedger().commitments.findPathForLeaf(c);
+    if (path === undefined) {
+      throw new Error("Commitment tidak ada di pohon");
+    }
+    const ps: BallotPrivateState = {
+      ...emptyBallotPrivateState(new Uint8Array(32)),
+      option: BigInt(option),
+      salt,
+      commitmentPath: path,
+    };
+    return this.run((ctx) => this.contract.impureCircuits.tallyVote(ctx), ps);
+  }
+
+  /** Membaca hitungan satu opsi; 0 bila belum ada yang membuka. */
+  tally(option: number): bigint {
+    const t = this.getLedger().tallies;
+    return t.member(BigInt(option)) ? t.lookup(BigInt(option)) : 0n;
+  }
+
+  /**
+   * KHUSUS UJI: menjalankan tallyVote dengan private state yang disusun manual,
+   * melewati pencarian path otomatis di tallyVote(). tallyVote() biasa selalu
+   * menyusun path commitment dari (option, salt) yang sama persis dengan yang
+   * diberikan (lewat vote_commitment lalu findPathForLeaf), sehingga guard di
+   * dalam circuit (kecocokan leaf, checkRoot) tidak pernah bisa dipicu ke
+   * cabang gagalnya lewat method itu — (option, salt, path) selalu konsisten
+   * satu sama lain. Method ini ada supaya uji dapat menembus guard tersebut
+   * secara sengaja tanpa mengubah kode circuit maupun memakai `as any` di
+   * tiap titik panggil.
+   *
+   * Sengaja BUKAN `Partial<Pick<...>>` seperti castVoteWithRawPrivateState:
+   * Partial mengizinkan properti diberi nilai `undefined` secara eksplisit,
+   * yang lewat spread `{...default, ...ps}` akan menimpa default `null` milik
+   * emptyBallotPrivateState dengan `undefined` — lolos dari pengecekan `=== null`
+   * pada helper `need()` di ballot-witnesses.ts, sehingga kegagalan berakhir
+   * sebagai throw TypeScript entah di mana (mis. saat runtime mencoba meng-encode
+   * `undefined` sebagai Bytes<32>), bukan sebagai penolakan assert di dalam
+   * circuit — persis kegagalan yang coba dicegah escape hatch ini. Dengan
+   * `Pick` polos (tanpa Partial), ketiga field wajib diisi, dan tipe masing-
+   * masing (`bigint | null`, `Uint8Array | null`, `MerkleTreePath<Uint8Array> | null`)
+   * tidak memuat `undefined` sama sekali — di bawah `strict` tsconfig, TypeScript
+   * menolak `{ option: undefined, ... }` saat dikompilasi, bukan saat dijalankan.
+   */
+  tallyVoteWithRawPrivateState(
+    ps: Pick<BallotPrivateState, "option" | "salt" | "commitmentPath">,
+  ): Ledger {
+    const full: BallotPrivateState = {
+      ...emptyBallotPrivateState(new Uint8Array(32)),
+      ...ps,
+    };
+    return this.run((ctx) => this.contract.impureCircuits.tallyVote(ctx), full);
+  }
+
   /**
    * KHUSUS UJI: menjalankan castVote dengan private state yang disusun manual,
    * melewati pencarian path otomatis di castVote(). castVote() biasa selalu

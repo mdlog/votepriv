@@ -16,6 +16,12 @@ export type Witnesses<PS> = {
   store_opening(context: __compactRuntime.WitnessContext<Ledger, PS>,
                 o_0: bigint,
                 s_0: Uint8Array): [PS, []];
+  commitment_path(context: __compactRuntime.WitnessContext<Ledger, PS>): [PS, { leaf: Uint8Array,
+                                                                                path: { sibling: { field: bigint
+                                                                                                 },
+                                                                                        goes_left: boolean
+                                                                                      }[]
+                                                                              }];
 }
 
 export type ImpureCircuits<PS> = {
@@ -23,6 +29,7 @@ export type ImpureCircuits<PS> = {
                  leaves_0: Uint8Array[],
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
   castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  tallyVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type ProvableCircuits<PS> = {
@@ -30,6 +37,7 @@ export type ProvableCircuits<PS> = {
                  leaves_0: Uint8Array[],
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
   castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  tallyVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type PureCircuits = {
@@ -55,6 +63,7 @@ export type Circuits<PS> = {
                  leaves_0: Uint8Array[],
                  n_0: bigint): __compactRuntime.CircuitResults<PS, []>;
   castVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
+  tallyVote(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, []>;
 }
 
 export type Ledger = {
@@ -99,6 +108,20 @@ export type Ledger = {
     pathForLeaf(index_0: bigint, leaf_0: Uint8Array): __compactRuntime.MerkleTreePath<Uint8Array>;
     findPathForLeaf(leaf_0: Uint8Array): __compactRuntime.MerkleTreePath<Uint8Array> | undefined
   };
+  tallyNullifiers: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(elem_0: Uint8Array): boolean;
+    [Symbol.iterator](): Iterator<Uint8Array>
+  };
+  tallies: {
+    isEmpty(): boolean;
+    size(): bigint;
+    member(key_0: bigint): boolean;
+    lookup(key_0: bigint): bigint;
+    [Symbol.iterator](): Iterator<[bigint, bigint]>
+  };
+  readonly talliedCount: bigint;
 }
 
 export type ContractReferenceLocations = any;

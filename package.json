@@ -11,7 +11,7 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "contract": "pnpm --filter contract",
-    "cli": "pnpm --filter cli",
+    "cli": "pnpm --filter cli run",
     "app": "pnpm --filter app"
   },
   "dependencies": {

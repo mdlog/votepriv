@@ -7,6 +7,7 @@
     "preprod": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/preprod.ts",
     "preprod-ps": "docker compose -f proof-server.yml up -d && pnpm preprod",
     "preview": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/preview.ts",
+    "doctor": "node --no-warnings --experimental-strip-types src/doctor.ts",
     "build": "rm -rf dist && tsc --project tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -30,6 +31,7 @@
     "@midnight-ntwrk/wallet-sdk-hd": "^3.0.2",
     "@midnight-ntwrk/wallet-sdk-shielded": "^3.0.1",
     "@midnight-ntwrk/wallet-sdk-unshielded-wallet": "^3.1.0",
+    "@scure/bip39": "^2.4.0",
     "contract": "workspace:*",
     "shared": "workspace:*",
     "pino": "^10.3.1",

@@ -5,6 +5,7 @@
 // "Uji jaringan preview", untuk hasil dan konteksnya. Struktur identik dengan
 // preprod.ts.
 import { faucetUrlFor } from "shared";
+import { caraTurunanDariArgv } from "./args.ts";
 import { PreviewConfig } from "./config.ts";
 import { buatLogger } from "./logger.ts";
 import { bacaSeed } from "./seed.ts";
@@ -18,8 +19,9 @@ log.info(
   "Konfigurasi jaringan",
 );
 
-const seed = await bacaSeed();
-log.info(`Seed diterima (${seed.length} karakter).`);
+const caraTurunan = caraTurunanDariArgv();
+const seed = await bacaSeed(caraTurunan);
+log.info(`Seed diterima (${seed.length} byte, metode turunan: ${caraTurunan}).`);
 
 const ctx = await bangunWallet(config, seed, log);
 const saldo = await ringkasSaldo(ctx, log);

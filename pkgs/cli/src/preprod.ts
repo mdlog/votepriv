@@ -4,6 +4,7 @@
 // di sini memakai ".ts", bukan ".js" seperti draf awal brief. Vitest (seed.test.ts)
 // tidak terkena masalah ini karena resolver Vite-nya memang memetakan ".js" -> ".ts".
 import { faucetUrlFor } from "shared";
+import { caraTurunanDariArgv } from "./args.ts";
 import { PreprodConfig } from "./config.ts";
 import { buatLogger } from "./logger.ts";
 import { bacaSeed } from "./seed.ts";
@@ -17,8 +18,9 @@ log.info(
   "Konfigurasi jaringan",
 );
 
-const seed = await bacaSeed();
-log.info(`Seed diterima (${seed.length} karakter).`);
+const caraTurunan = caraTurunanDariArgv();
+const seed = await bacaSeed(caraTurunan);
+log.info(`Seed diterima (${seed.length} byte, metode turunan: ${caraTurunan}).`);
 
 const ctx = await bangunWallet(config, seed, log);
 const saldo = await ringkasSaldo(ctx, log);

@@ -3,14 +3,40 @@ import type { MerkleTreePath, WitnessContext } from "@midnight-ntwrk/compact-run
 /**
  * SATU id untuk SELURUH ballot — dan itu memang disengaja.
  *
- * midnight-js mengunci private state provider pada id ini, jadi seluruh ballot
- * berbagi satu blob penyimpanan. Yang menentukan aman atau tidaknya hal itu
- * bukanlah id-nya, melainkan BENTUK isi blob-nya: selama setiap nilai per-ballot
- * disimpan di dalam map yang berkunci alamat kontrak (lihat BallotPrivateState),
- * satu blob bersama justru bentuk yang benar — itu pula yang diminta spec §8.
- * Yang menghancurkan suara adalah menyimpan `option`/`salt` sebagai field datar:
- * mencoblos di ballot B menimpa opening milik ballot A, dan suara A menjadi
- * permanen tidak dapat dibuka (spec §6.3: opening hilang = suara hilang).
+ * KOREKSI (review cabang penuh): komentar ini sebelumnya mengklaim bahwa
+ * midnight-js "mengunci private state provider pada id ini, jadi seluruh
+ * ballot berbagi satu blob penyimpanan". Itu SALAH, diverifikasi langsung
+ * terhadap @midnight-ntwrk/midnight-js-level-private-state-provider 4.0.4
+ * yang terpasang (src/level-private-state-provider.ts, `getScopedKey`):
+ * kunci penyimpanan sesungguhnya adalah `${contractAddress}:${privateStateId}`
+ * — ALAMAT KONTRAK ikut jadi bagian kunci, bukan hanya id ini — sehingga
+ * setiap ballot (alamat berbeda) sudah mendapat ENTRI TERPISAH di LevelDB
+ * dengan sendirinya, walau `privateStateId`-nya sama persis untuk semuanya.
+ * Ini yang benar, dan cocok dengan catatan `setContractAddress` di vote.ts
+ * (siapkanPemilih): "level provider menyusun kuncinya sebagai
+ * `${contractAddress}:${privateStateId}`" — vote.ts sudah benar; komentar
+ * inilah yang salah dan sudah dikoreksi.
+ *
+ * Yang menentukan aman atau tidaknya beberapa ballot memakai id yang sama
+ * KARENA ITU bukan bentuk isi blob-nya (provider sudah memisahkan blob per
+ * ballot sendiri, terlepas dari bentuk isinya) — melainkan supaya
+ * `BallotPrivateState` yang dibaca `psp.get(BallotPrivateStateId)` tetap
+ * MENYATAKAN SENDIRI ballot mana yang dimilikinya, sesuai spec §8: setiap
+ * field selain `secretKey` adalah map berkunci alamat kontrak ballot (lihat
+ * `BallotPrivateState` di bawah), bukan field datar. Ini penting justru
+ * karena satu penyimpan (satu direktori LevelDB) BOLEH dipakai admin yang
+ * sama untuk lebih dari satu ballot yang ia buat (lihat komentar
+ * `rakitProvidersBallot`/`namaStore` di pkgs/cli/src/deploy-ballot.ts) —
+ * dan bila kelak satu proses memegang dua `BallotPrivateState` dari dua
+ * ballot berbeda sekaligus (mis. digabung di kode aplikasi, bukan providers
+ * yang menggabungkannya), field datar `option`/`salt` tidak menyatakan
+ * ballot mana pemiliknya: menimpa satu variabel `option` datar dengan nilai
+ * ballot B menghancurkan (secara LOGIS, di level aplikasi, bukan di level
+ * penyimpanan) opening ballot A yang sedang dipegang bersamaan, dan suara A
+ * jadi permanen tidak dapat dibuka (spec §6.3: opening hilang = suara
+ * hilang). Map berkunci alamat menutup celah itu di level TIPE: nilai
+ * ballot A dan ballot B tidak pernah menempati slot yang sama walau berada
+ * di objek JS yang sama.
  */
 export const BallotPrivateStateId = "votePrivBallot" as const;
 

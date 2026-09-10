@@ -3583,7 +3583,7 @@ Urutan keluaran yang diharapkan:
 5. `Ballot tercatat di registry`.
 6. Tiga blok `castVote: membuat proof ZK ...` → `Suara masuk`, satu per pemilih, berurutan.
 7. Mungkin satu-dua baris `Indexer belum menyusul; membaca ulang` dengan `label: "voteCount === 3 ..."`.
-8. **`Keadaan chain SELAMA pemungutan suara berlangsung`** dengan `voteCount: "3"`, `tallyKosong: true`, `tally: ["0","0","0"]`, `talliedCount: "0"`, `phase: 0`. Inilah baris yang membuktikan janji privasi aplikasi ini.
+8. **`Keadaan chain SELAMA pemungutan suara berlangsung`** dengan `voteCount: "3"`, `tallyKosong: true`, `tally: ["0","0","0"]`, `talliedCount: "0"`, `phase: 0`. Inilah baris yang membuktikan bahwa tidak ada tally parsial pernah muncul di chain selama pemungutan suara berlangsung — BUKAN bahwa pilihan seorang pemilih tak terkait dengan pemilih itu (lihat "CAKUPAN BUKTI" di baris 13: uji ini memakai satu wallet untuk seluruh transaksi dengan urutan indeks pemilih yang identik, jadi klaim unlinkability itu sengaja tidak dicoba dibuktikan di sini).
 9. Baris `Menunggu voteDeadline benar-benar lewat` berulang setiap 30 detik dengan `sisaDetik` menurun. Ini bukan hang; ini waktu blok jaringan nyata yang tidak bisa dimajukan.
 10. Tiga blok `tallyVote ...` → `Suara dibuka`. Baris `Waktu blok belum melewati deadline` sebelum yang pertama adalah normal.
 11. `Hasil setelah seluruh suara dibuka` dengan `tally: ["2","0","1"]`, `talliedCount: "3"`, `phase: 1`.
@@ -3631,7 +3631,7 @@ git commit -m "test(cli): uji end-to-end tiga pemilih di preview dengan bukti ta
 | Password private state ditolak | Kebijakan: ≥16 karakter, tiga kelas karakter, tanpa empat berurutan/identik |
 | `ZKConfigurationReadError` | Periksa `zkConfigPath` memuat `keys/` dan `zkir/` |
 | Versi runtime tidak cocok | Naikkan ke versi yang disebut `contract-info.json` |
-| Endpoint jaringan berbeda dari konstanta | Ambil dari `getConfiguration()` wallet bila tersedia; konstanta di `config.ts` hanya cadangan |
+| Endpoint jaringan berbeda dari konstanta | Berlaku untuk jalur BROWSER saja (`getConfiguration()` wallet bila tersedia, konstanta hanya cadangan). CLI (`pkgs/cli/src/config.ts`) tidak pernah memanggil `getConfiguration()` — konstanta `MIDNIGHT_NETWORK_ENDPOINTS` adalah satu-satunya sumbernya, bukan cadangan; endpoint yang salah di CLI berarti memperbarui konstanta itu sendiri |
 
 ## Rencana berikutnya
 

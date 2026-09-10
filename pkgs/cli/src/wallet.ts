@@ -1,10 +1,17 @@
 // Bentuk API di berkas ini diturunkan langsung dari rujukan
 // midnight-rps-sample-app (pkgs/cli/src/api.ts, commit yang diacu di
 // task-3-brief.md), dicek ulang satu-per-satu terhadap definisi tipe paket
-// yang benar-benar terpasang di node_modules (versi persis sama dengan
-// rujukan: wallet-sdk-facade 3.0.0, wallet-sdk-hd 3.0.2, wallet-sdk-shielded
-// 2.1.0, wallet-sdk-unshielded-wallet 2.1.0, wallet-sdk-dust-wallet 3.0.0,
-// ledger-v8 8.1.0). Lihat task-3-report.md untuk rincian penurunannya.
+// yang benar-benar terpasang di node_modules.
+//
+// CATATAN VERSI (dikoreksi — lihat pkgs/cli/package.json dan
+// wallet-provider.ts untuk rincian lebih lanjut): versi yang BENAR-BENAR
+// terpasang dan dipakai package ini adalah wallet-sdk-facade 4.0.1,
+// wallet-sdk-hd 3.0.2, wallet-sdk-shielded 3.0.1, wallet-sdk-unshielded-wallet
+// 3.1.0, wallet-sdk-dust-wallet 4.1.0, ledger-v8 8.1.0 — BUKAN 3.0.0/2.1.0
+// seperti rujukan aslinya (komentar lama di sini masih menyebut nomor rujukan
+// itu; salinan 3.0.0 dkk memang ada yatim di pnpm store tapi tidak ada paket
+// di workspace ini yang menunjuknya). Lihat task-3-report.md untuk rincian
+// penurunan bentuk API-nya.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

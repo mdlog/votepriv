@@ -111,8 +111,8 @@ export sealed ledger option1:       Opaque<"string">;
 export sealed ledger option2:       Opaque<"string">;
 export sealed ledger option3:       Opaque<"string">;
 export sealed ledger optionCount:   Uint<8>;      // 2..4
-export sealed ledger voteDeadline:  Uint<64>;     // unix ms
-export sealed ledger tallyDeadline: Uint<64>;     // unix ms
+export sealed ledger voteDeadline:  Uint<64>;     // DETIK sejak epoch Unix
+export sealed ledger tallyDeadline: Uint<64>;     // DETIK sejak epoch Unix
 export sealed ledger quorumPercent: Uint<8>;
 export sealed ledger eligibleCount: Uint<64>;
 export sealed ledger eligibilityPolicy: Opaque<"string">;   // aturan penerbitan credential, dapat diaudit
@@ -176,7 +176,7 @@ Bila menyemai tree di dalam constructor ternyata tidak didukung compiler, jalur 
 
 ### 5.5 `castVote()`
 
-1. `assert(kernel.blockTimeLessThan(voteDeadline))` — deadline ditegakkan di kontrak, bukan hanya di UI (`ARCHITECTURE.md` §11).
+1. `assert(kernel.blockTimeLessThan(voteDeadline))` — deadline ditegakkan di kontrak, bukan hanya di UI (`ARCHITECTURE.md` §11). **Satuannya detik sejak epoch Unix, bukan milidetik.** Kernel membandingkan terhadap `secondsSinceEpoch` apa adanya, tanpa penskalaan, sehingga deadline yang diisi dalam milidetik menghasilkan angka sekitar seribu kali terlalu besar: perbandingannya nyaris selalu benar dan pemungutan suara tidak pernah tertutup. Simulator dapat menyuntikkan waktu blok sehingga ujinya tetap hijau dengan satuan mana pun — node sungguhan tidak bisa, jadi kekeliruan ini baru terlihat di jaringan nyata.
 2. Hitung `credHash` dari `voter_credential()`; pastikan `eligibility_path()` berdaun `credHash` dan `assert(eligibility.checkRoot(merkleTreePathRoot(path)))`.
 3. Hitung `nf`; `assert(!nullifiers.member(nf))`; `nullifiers.insert(disclose(nf))`.
 4. Hitung `c` dari `get_my_option()` dan `get_my_salt()`; `commitments.insert(disclose(c))`; `voteCount.increment(1)`.
@@ -328,7 +328,7 @@ Satu perilaku yang perlu ditegaskan: selama `phase == voting`, `tallies` masih k
 2. **End-to-end lewat CLI di testnet.** Deploy registry dan satu ballot, terbitkan tiga credential, tiga voter dengan private state terpisah mencoblos, lewati deadline, tally, periksa hitungan akhir. Ini bukti nyata bahwa rangkaiannya berjalan.
 3. **UI.** `MockAdapter` menjaga UI tetap bisa diuji tanpa wallet maupun proof server; smoke test responsif pada 375px dan 1280px sesuai `ARCHITECTURE.md` §12.
 
-Bila konteks waktu blok tidak dapat dikendalikan di dalam simulator, pengujian deadline dipindahkan ke lapisan CLI dengan deadline yang sengaja dibuat pendek.
+Waktu blok **dapat** dikendalikan di dalam simulator: `createCircuitContext` menerima waktu sebagai parameter posisional ketujuh, dalam detik sejak epoch. Rencana mundur ke pengujian lewat CLI karena itu tidak diperlukan.
 
 ## 11. Deploy dan operasional
 

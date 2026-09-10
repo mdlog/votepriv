@@ -24,9 +24,22 @@
 // (bagian 1 memakai ulang, TIDAK men-deploy lagi), SEBELAS bila belum (bagian
 // 1 turut men-deploy registry BARU). Pada urutan yang didokumentasikan di
 // rencana ini — `deploy-registry` dijalankan lebih dulu — registry sudah ada,
-// jadi run ini menandatangani SEPULUH. Setiap await ke jaringan dibungkus
-// denganBatasWaktu, jadi jeda panjang berakhir dengan pesan dan bukan dengan
-// diam tak berujung.
+// jadi run ini menandatangani SEPULUH. HAMPIR SETIAP await ke jaringan di
+// bagian 1-11 (deploy, registerVoters, castVote, tallyVote, finalize, dan
+// setiap pembacaan indexer lewat bacaLedgerBallot/temukanBallot/
+// findDeployedContract) dibungkus denganBatasWaktu (BATAS_MS, tunggu.ts),
+// jadi jeda panjang di sana berakhir dengan pesan dan bukan dengan diam tak
+// berujung. PENGECUALIANNYA: jalur setup sesi — siapkanSesi -> bangunWallet
+// -> WalletFacade.init/wallet.start (wallet.ts:255-271) dan siapkanSesi ->
+// ringkasSaldo -> ambilStateSinkron (wallet.ts:311, definisi di :339) —
+// adalah await jaringan TANPA pembungkus timeout. wallet.ts adalah kode
+// Task 3 dan sengaja TIDAK disentuh di sini. Yang menjaganya dalam praktik
+// BUKAN kode, melainkan urutan operasional: operator menjalankan
+// `pnpm cli preview` lebih dulu, yang menghangatkan cache wallet sehingga
+// saat e2e berjalan sinkronisasi ini selesai dalam ~1,4 detik (terukur,
+// lihat pkgs/cli/logs/preview/2026-09-10T23:22:18.809Z.log:
+// "detikSinkron":"1.4"), bukan sinkronisasi dingin dari genesis yang bisa
+// menggantung lama.
 //
 // SATU PEMILIH SATU STORE. Private state VotePriv berbentuk
 // Record<alamatBallot, ...>, bukan Record<pemilih, ...> — midnight-js membaca
@@ -52,6 +65,15 @@
 // yang terbuang percuma. catch di bawah menutup wallet dengan tertib pada
 // SETIAP jalur kegagalan yang belum menanganinya sendiri, dan tetap
 // melaporkan galat aslinya, bukan menelannya.
+//
+// try/catch DI ATAS itu membungkus bagian 1-11 SAJA — `siapkanSesi()`
+// (bacaSeed/bangunWallet/buatKonteksProvider) berjalan lewat try/catch
+// KEDUA yang terpisah, tepat sebelumnya (Fix Round 6, FIX C): sebelum sesi
+// berhasil dibuat belum ada `ctx`/`log` untuk dipakai hentikanWallet, jadi
+// cabang itu console.error + process.exit(1) tanpa menutup wallet apa pun
+// (tidak ada yang perlu ditutup). Dengan dua try/catch berurutan ini,
+// SETIAP await jaringan di seluruh berkas — bukan cuma bagian 1-11 —
+// berakhir dengan pesan yang tertangkap, bukan unhandled rejection.
 import crypto from "node:crypto";
 import type { FoundContract } from "@midnight-ntwrk/midnight-js-contracts";
 import { Ballot, emptyBallotPrivateState } from "contract";
@@ -64,7 +86,7 @@ import {
   type MetadataBallot,
 } from "shared";
 import { bacaArtefak, tulisArtefak } from "./artefak.ts";
-import { hentikanWallet, siapkanSesi, tutupSesi } from "./bootstrap.ts";
+import { hentikanWallet, type Sesi, siapkanSesi, tutupSesi } from "./bootstrap.ts";
 import {
   bacaLedgerBallot,
   catatKeRegistry,
@@ -232,44 +254,86 @@ const SISA_MINIMAL_VOTE = 900;
  * pembacaan ini ditabelkan pada BATAS_MS.bacaIndexer (60 detik), BUKAN pada
  * biaya terukur khasnya (~12 detik) seperti draf sebelum perbaikan ini.
  *
- * Komponen satu iterasi, pada basis yang benar:
- *   - bacaLedgerBallot (basis timeout, BATAS_MS.bacaIndexer)         : 60 detik
+ * Fix Round 6, FIX A — `bacaLedgerBallot` di atas kini DIULANG lewat
+ * ulangiSampai (predikat: commitment path ditemukan), bukan lagi dibaca
+ * TELANJANG seperti draf Fix Round 5. Kelas kegagalannya sama persis dengan
+ * Fix Round 1 FIX 3 di bagian 5 (lihat komentar di sana): pembacaan indexer
+ * telanjang di titik ini mempertaruhkan ENAM transaksi berbayar (deploy
+ * ballot, registerVoters, register registry, 3x castVote) dan ~33 menit
+ * penantian voteDeadline yang sudah dilalui pada SATU keterlambatan indexer
+ * sesaat — dengan fase tally yang tersisa tidak akan pernah tercapai. AMAN
+ * diulang dengan alasan serupa eligibility di bagian 5, lewat jalur yang
+ * sedikit berbeda: `commitments` BUKAN HistoricMerkleTree (lihat komentar
+ * kepala bagian 8: "checkRoot hanya menerima root saat ini") — tapi bagian 8
+ * berjalan SETELAH voteDeadline lewat, jadi tidak ada castVote baru yang
+ * bisa menambah daun ke pohon ini lagi selama loop bagian 8 berjalan; root
+ * commitments sudah tetap pada titik ini. Mengulang di sini karena itu
+ * hanya menunggu indexer MENYUSUL keadaan akhir yang sudah tetap, bukan
+ * mengejar target yang terus bergerak. Anggaran DIBATASI ke 3 percobaan
+ * (bukan default ulangiSampai 12x5 detik): pra-flight mengukur lag indexer
+ * preview saat ini 14-17 detik, jadi 3 percobaan x jeda 5 detik sudah jauh
+ * lebih dari cukup untuk lag NORMAL, dan tetap menampung dua siklus
+ * BATAS_MS.bacaIndexer penuh (60 detik) untuk selamat dari satu "blink"
+ * indexer yang jauh lebih buruk dari lag terukur.
+ *
+ * Komponen satu iterasi, pada basis yang benar (baris pembacaan BUKAN LAGI
+ * 60 detik tunggal — sudah jadi retry 3x di atas):
+ *   - retry commitment path (ulangiSampai, maks 3 x jeda 5 detik, tiap
+ *     percobaan dibatasi BATAS_MS.bacaIndexer = 60 detik bila indexer
+ *     benar-benar tidak menjawab): 3 x 60 + 2 x 5                    : 190 detik
  *   - jeda-ulang cobaSampaiWaktuBlokCocok (maks 6 PERCOBAAN — jeda hanya
  *     terjadi SETELAH percobaan yang gagal dan SEBELUM percobaan
  *     berikutnya, jadi 6 percobaan berarti PALING BANYAK 5 jeda: 5 x 20)  : 100 detik
  *   - tallyVote (biaya TERUKUR, bukan BATAS_MS.panggilBerat — alasan sama
  *     seperti castVote di SISA_MINIMAL_VOTE)                          : 150 detik
- *   TOTAL                                                              = 310 detik
+ *   TOTAL                                                              = 440 detik
  *
- * Guard LAMA (300) berada DI BAWAH 310 — undersized pada basis yang benar,
- * meski dengan margin sempit (10 detik) dan pada komponen yang jarang
- * benar-benar mencapai batas timeout-nya sekaligus. Guard disetel ulang ke
- * 360 detik: 310 dibulatkan ke atas + margin 50 detik (gaya sama seperti
- * SISA_MINIMAL_VOTE: hitung komponen pada basis yang dinyatakan, bulatkan ke
- * atas dengan margin eksplisit).
+ * Guard LAMA (360, dari Fix Round 5) berada DI BAWAH 440 sejak retry ini
+ * ditambahkan — WAJIB dihitung ulang di sini, bukan diam-diam diserap:
+ * menambah retry tanpa menghitung ulang guard akan mengulangi PERSIS
+ * kesalahan yang Fix Round 5 sendiri perbaiki (komponen baru yang lolos dari
+ * basis biaya). Guard disetel ulang ke 500 detik: 440 dibulatkan ke atas +
+ * margin 60 detik (gaya sama seperti SISA_MINIMAL_VOTE dan Fix Round 5:
+ * hitung komponen pada basis yang dinyatakan, bulatkan ke atas dengan margin
+ * eksplisit).
  *
  * VERIFIKASI ULANG pada level JENDELA (35 menit = 2100 detik, TIDAK
  * berubah), dirantai PENUH pada basis TERBURUK yang sama seperti komponen di
- * atas (konsisten dengan cara SISA_MINIMAL_VOTE memverifikasi jendelanya —
- * bukan lagi memakai angka "ekspektasi" terpisah dari guard seperti draf
- * sebelum perbaikan ini): buffer tungguSampaiDetik (~60 detik) dikonsumsi
- * lebih dulu, sisa 2100-60=2040 detik di awal loop.
- *   iterasi ke-0: sisa 2040 > 360 (margin 1680); konsumsi 310 -> sisa 1730
- *   iterasi ke-1: sisa 1730 > 360 (margin 1370); konsumsi 310 -> sisa 1420
- *   iterasi ke-2: sisa 1420 > 360 (margin 1060); konsumsi 310 -> sisa
- *     AKHIR 1110 detik (~18,5 menit — sedikit lebih kecil dari "~20 menit"
- *     di rencana Task 6 Step 5 karena Step 5 memakai biaya bacaLedgerBallot
- *     terukur, bukan basis timeout; selisihnya kecil dan TIDAK mengubah
- *     kesimpulan Step 5).
- * Guard 360 AMAN: margin terketat (1060 detik sebelum pemilih terakhir) jauh
- * di atas nol. Jendela ini punya banyak selisih (slack) — perbaikan ini
- * bukan untuk kegagalan yang pernah atau hampir terjadi, melainkan supaya
- * aritmetika anggaran di sini konsisten dengan basis yang sama yang
- * dipakai SISA_MINIMAL_VOTE, bukan basis yang diam-diam berbeda.
+ * atas: buffer tungguSampaiDetik (~60 detik) dikonsumsi lebih dulu, sisa
+ * 2100-60=2040 detik di awal loop.
+ *   iterasi ke-0: sisa 2040 > 500 (margin 1540); konsumsi 440 -> sisa 1600
+ *   iterasi ke-1: sisa 1600 > 500 (margin 1100); konsumsi 440 -> sisa 1160
+ *   iterasi ke-2: sisa 1160 > 500 (margin 660); konsumsi 440 -> sisa
+ *     AKHIR 720 detik (~12 menit).
+ * Guard 500 AMAN: margin terketat (660 detik sebelum pemilih terakhir) jauh
+ * di atas nol — jendela ini masih punya banyak selisih (slack) setelah
+ * retry ditambahkan, persis seperti yang diharapkan dari anggaran pra-flight
+ * (2040 detik slack terhadap guard lama 360; menambah ~130 detik pada guard
+ * jauh dari cukup untuk menghabiskannya).
  */
-const SISA_MINIMAL_TALLY = 360;
+const SISA_MINIMAL_TALLY = 500;
 
-const sesi = await siapkanSesi();
+let sesi: Sesi;
+try {
+  sesi = await siapkanSesi();
+} catch (e) {
+  // Fix Round 6, FIX C: sebelumnya `siapkanSesi()` dipanggil DI ATAS try di
+  // bawah — kegagalan bacaSeed/bangunWallet/buatKonteksProvider (await
+  // jaringan, persis seperti isi try itu) jatuh sebagai unhandled rejection,
+  // bertentangan dengan komentar kepala berkas yang mengklaim "SELURUH TUBUH
+  // SKRIP dibungkus try/catch". Try/catch KEDUA ini menutup celah itu tanpa
+  // menyentuh try/catch bagian 1-11: sebelum sesi berhasil dibuat belum ada
+  // `ctx`/`log` yang bisa dipakai memanggil hentikanWallet (siapkanSesi
+  // tidak mengekspos wallet parsial pada jalur galat) — memindahkan
+  // panggilan ini ke DALAM try bagian 1-11 begitu saja akan membuat catch di
+  // bawah menabrak `ctx`/`log` yang belum terisi, sebuah galat BARU yang
+  // menimpa galat asli persis di dalam penanganannya sendiri. Jalan yang
+  // tersisa di sini: console.error lalu process.exit(1) tanpa hentikanWallet
+  // — tidak ada wallet yang berjalan untuk ditutup.
+  const pesanGalat = e instanceof Error ? (e.stack ?? e.message) : String(e);
+  console.error(pesanGalat);
+  process.exit(1);
+}
 const { config, log, ctx, kp } = sesi;
 
 try {
@@ -514,10 +578,34 @@ try {
       `Anggaran waktu habis: tinggal ${sisaDetik} detik sampai tallyDeadline, tidak cukup untuk tallyVote ${label} (butuh ${SISA_MINIMAL_TALLY} detik). Naikkan MENIT_TALLY dan jalankan ulang.`,
     );
 
-    const lb = await bacaLedgerBallot(kp.publicDataProvider, alamatBallot);
-    const commitment = Ballot.pureCircuits.vote_commitment(PILIHAN[i], salts[i]);
-    const jalur = lb.commitments.findPathForLeaf(commitment);
-    pastikan(jalur !== undefined, `Commitment ${label} tidak ditemukan di pohon commitments`);
+    // Fix Round 6, FIX A: sebelumnya bacaLedgerBallot telanjang di sini —
+    // sama persis kelas kegagalan yang Fix Round 1 FIX 3 tutup di bagian 5
+    // (lihat komentar di sana dan di atas SISA_MINIMAL_TALLY untuk anggaran
+    // retry serta kenapa `commitments` bukan HistoricMerkleTree tidak jadi
+    // soal di sini, karena bagian 8 berjalan setelah voteDeadline lewat).
+    const {
+      nilai: jalur,
+      percobaan: percobaanJalur,
+      galatTerakhir: galatJalur,
+    } = await ulangiSampai(
+      async () =>
+        (await bacaLedgerBallot(kp.publicDataProvider, alamatBallot)).commitments.findPathForLeaf(
+          Ballot.pureCircuits.vote_commitment(PILIHAN[i], salts[i]),
+        ),
+      (j) => j !== undefined,
+      log,
+      `commitment path ${label} (menunggu indexer menyusul castVote)`,
+      3,
+      5_000,
+    );
+    // Sama seperti Fix Round 2 FIX 4 di bagian 5: `galatJalur` dibedakan dari
+    // "path belum tampak" — dua penyebab berbeda maknanya bagi operator.
+    pastikan(
+      jalur !== undefined,
+      galatJalur !== undefined
+        ? `Commitment ${label} tidak terbaca setelah ${percobaanJalur} percobaan — PEMBACAAN INDEXER ITU SENDIRI TERUS GAGAL: ${galatJalur}. Ini soal konektivitas/indexer, bukan (belum tentu) commitment yang hilang — periksa status indexer dan txId castVote ${label} di log.`
+        : `Commitment ${label} tidak ditemukan setelah ${percobaanJalur} percobaan pembacaan indexer (seluruh pembacaan BERHASIL, commitment-nya saja belum tampak). Ini KEMUNGKINAN BESAR keterlambatan indexer, BUKAN commitment yang hilang — periksa txId castVote ${label} di log sebelum menyimpulkan datanya benar-benar hilang.`,
+    );
 
     await siapkanPembukaan(providersPemilih[i], alamatBallot, PILIHAN[i], salts[i], jalur);
 

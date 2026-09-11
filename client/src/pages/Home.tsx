@@ -14,13 +14,15 @@ import {
 } from "lucide-react";
 import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
 import { checkProofServer, type ProofServerStatus } from "@/lib/proof-server";
+import { useDataRantai } from "@/hooks/useDataRantai";
+import { GridBallotMemuat, PanelGagalRantai, SpandukSebagian } from "@/components/votepriv/KeadaanRantai";
 import { CreateBallotModal } from "@/components/votepriv/CreateBallotModal";
 import { Docs } from "@/components/votepriv/Docs";
 import { LiveBallots } from "@/components/votepriv/LiveBallots";
 import { Overview } from "@/components/votepriv/Overview";
 import { Results } from "@/components/votepriv/Results";
 import { VoteModal } from "@/components/votepriv/VoteModal";
-import { initialBallots } from "@/components/votepriv/demo-data";
+import type { JaringanAktif } from "@/lib/chain";
 import type { Ballot, Receipt, Section } from "@/components/votepriv/types";
 
 const navItems: { label: Section; icon: typeof LayoutDashboard }[] = [
@@ -39,9 +41,46 @@ function shortAddress(address: string) {
   return `${bare.slice(0, 6)}…${bare.slice(-4)}`;
 }
 
+/**
+ * Kalimat toast setelah simulasi suara selesai.
+ *
+ * Praperiksa P5: sebelumnya `toast.success("Vote verified on Midnight
+ * testnet", …)` TANPA SYARAT — salah pada DUA sumbu sekaligus:
+ *
+ *   (a) jaringan dikarang sebagai kata umum "testnet", padahal sesudah C-2a
+ *       Task 8 sudah diketahui persis dari pembacaan rantai (data.jaringan);
+ *   (b) klaim "verified" dipakai pada tanda terima yang txRef-nya SELALU null
+ *       hari ini — VoteModal masih simulasi murni (jalur tulis adalah C-2b).
+ *       "Verified" pada tanda terima yang tidak pernah menyentuh kontrak
+ *       adalah klaim yang tidak ditunaikan, kelas cacat yang sama dengan
+ *       badge "Demo data" yang Task 8 buang di tempat lain.
+ *
+ * Diekspor supaya dapat diuji langsung sebagai fungsi murni, tanpa perlu
+ * menjalankan seluruh alur vote lewat DOM dan tanpa perlu memata-matai
+ * `<Toaster />` — yang toh tinggal di App.tsx, di luar akar mana pun yang
+ * pernah dirender uji manapun di pohon ini.
+ */
+export function pesanSuksesVote(
+  receipt: Receipt,
+  jaringan: JaringanAktif | null,
+): { judul: string; deskripsi: string } {
+  if (receipt.txRef === null) {
+    return {
+      judul: "Vote simulated",
+      deskripsi: "No transaction was submitted — the write path is not connected yet.",
+    };
+  }
+  return {
+    judul: `Vote verified on Midnight ${jaringan ? jaringan.networkId : "network"}`,
+    deskripsi: "Your choice remains private.",
+  };
+}
+
 export default function Home() {
+  const data = useDataRantai();
+  const ballots = data.fase === "siap" ? data.ballots : [];
+
   const [section, setSection] = useState<Section>("Overview");
-  const [ballots, setBallots] = useState<Ballot[]>(initialBallots);
   const [connected, setConnected] = useState(false);
   const [wallet, setWallet] = useState("");
   const [network, setNetwork] = useState("");
@@ -157,11 +196,177 @@ export default function Home() {
 
   const handleVote = (nextReceipt: Receipt) => {
     setReceipt(nextReceipt);
-    toast.success("Vote verified on Midnight testnet", { description: "Your choice remains private." });
+    const { judul, deskripsi } = pesanSuksesVote(nextReceipt, data.jaringan);
+    if (nextReceipt.txRef === null) {
+      toast.info(judul, { description: deskripsi });
+    } else {
+      toast.success(judul, { description: deskripsi });
+    }
   };
 
-  const createBallot = (ballot: Ballot) => setBallots((current) => [ballot, ...current]);
-  const currentCopy = useMemo(() => section === "Overview" ? "Your private governance workspace" : section === "Live ballots" ? "Choose with confidence" : section === "Results" ? "Trust, without the trade-off" : "Understand the protocol", [section]);
+  const currentCopy = useMemo(
+    () =>
+      section === "Overview" ? "Your private governance workspace"
+      : section === "Live ballots" ? "Choose with confidence"
+      : section === "Results" ? "Trust, without the trade-off"
+      : "Understand the protocol",
+    [section],
+  );
 
-  return <div className="app-shell"><aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}><div className="brand"><div className="brand-mark"><span /><span /><span /></div><span>vote<span>priv</span></span></div><button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button><div className="workspace-card"><div className="workspace-avatar">MB</div><div><strong>Midnight Builders</strong><span>Community workspace</span></div><ChevronRight size={15} /></div><div className="sidebar-label">Workspace</div><nav>{navItems.map(({ label, icon: Icon }) => <button key={label} className={section === label ? "active" : ""} onClick={() => { setSection(label); setMobileNav(false); }}><Icon size={17} /><span>{label}</span>{label === "Live ballots" && <b>12</b>}</button>)}</nav><div className="sidebar-bottom"><div className={`privacy-mode ${privacy.tone}`} title={privacy.title}><div className="privacy-mode-icon"><LockKeyhole size={15} /></div><div><span>Privacy mode</span><strong>{privacy.label}</strong></div><span className={`status-dot ${privacy.tone}`} /></div><button className="help-link" onClick={() => setSection("Docs")}><CircleHelp size={16} /> Help center</button><div className="sidebar-footer"><span>VotePriv v0.1</span><span>·</span><span>Testnet</span></div></div></aside><div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} /><main className="main-shell"><header className="topbar"><button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button><div className="topbar-context"><span className="context-title">{currentCopy}</span><span className="context-divider">/</span><span className="context-section">{section}</span></div><div className="topbar-actions"><div className="network-status"><span className="pulse-dot" /> {connected && network ? `Midnight ${network}` : "Midnight testnet"} <ChevronRight size={14} /></div><button className={`wallet-button ${connected ? "connected" : ""}`} onClick={connectWallet} disabled={connecting}><Wallet size={16} />{connecting ? "Connecting…" : connected ? shortAddress(wallet) : "Connect wallet"}</button><div className="user-avatar">AR</div></div></header><div className="page-container">{section === "Overview" && <Overview ballots={ballots} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} onSection={setSection} />}{section === "Live ballots" && <LiveBallots ballots={ballots} onVote={setVoteBallot} onCreate={() => setCreateOpen(true)} />}{section === "Results" && <Results ballots={ballots} receipt={receipt} />}{section === "Docs" && <Docs />}</div></main>{voteBallot && <VoteModal ballot={voteBallot} connected={connected} onClose={() => setVoteBallot(null)} onVote={handleVote} />}{createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} onCreate={createBallot} />}</div>;
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
+        <div className="brand">
+          <div className="brand-mark"><span /><span /><span /></div>
+          <span>vote<span>priv</span></span>
+        </div>
+        <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
+        <div className="workspace-card">
+          <div className="workspace-avatar">MB</div>
+          <div><strong>Midnight Builders</strong><span>Community workspace</span></div>
+          <ChevronRight size={15} />
+        </div>
+        <div className="sidebar-label">Workspace</div>
+        <nav>
+          {navItems.map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              className={section === label ? "active" : ""}
+              onClick={() => { setSection(label); setMobileNav(false); }}
+            >
+              <Icon size={17} />
+              <span>{label}</span>
+              {label === "Live ballots" && data.fase === "siap" && <b>{ballots.length}</b>}
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className={`privacy-mode ${privacy.tone}`} title={privacy.title}>
+            <div className="privacy-mode-icon"><LockKeyhole size={15} /></div>
+            <div><span>Privacy mode</span><strong>{privacy.label}</strong></div>
+            <span className={`status-dot ${privacy.tone}`} />
+          </div>
+          <button className="help-link" onClick={() => setSection("Docs")}><CircleHelp size={16} /> Help center</button>
+          <div className="sidebar-footer">
+            <span>VotePriv v0.1</span><span>·</span>
+            {/* Kata umum "Testnet" diganti jaringan sebenarnya — lihat P5. */}
+            <span>{data.jaringan ? data.jaringan.networkId : "no network"}</span>
+          </div>
+        </div>
+      </aside>
+      <div className={`mobile-overlay ${mobileNav ? "visible" : ""}`} onClick={() => setMobileNav(false)} />
+      <main className="main-shell">
+        <header className="topbar">
+          <button className="menu-button" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={20} /></button>
+          <div className="topbar-context">
+            <span className="context-title">{currentCopy}</span>
+            <span className="context-divider">/</span>
+            <span className="context-section">{section}</span>
+          </div>
+          <div className="topbar-actions">
+            {/* Status JARINGAN YANG DIBACA, bukan wallet. Sebelumnya ia
+                menampilkan jaringan wallet bila tersambung dan "Midnight
+                testnet" bila tidak — keduanya bisa BERBEDA, dan yang
+                menentukan isi halaman adalah yang dibaca. Jaringan wallet
+                disebut terpisah hanya ketika ia berselisih. */}
+            <div className="network-status">
+              <span className="pulse-dot" />{" "}
+              {data.jaringan ? `Midnight ${data.jaringan.networkId}` : "Midnight —"}
+              {connected && network && data.jaringan && network !== data.jaringan.networkId && (
+                <> · wallet on {network}</>
+              )}
+              <ChevronRight size={14} />
+            </div>
+            <button className={`wallet-button ${connected ? "connected" : ""}`} onClick={connectWallet} disabled={connecting}>
+              <Wallet size={16} />
+              {connecting ? "Connecting…" : connected ? shortAddress(wallet) : "Connect wallet"}
+            </button>
+            <div className="user-avatar">AR</div>
+          </div>
+        </header>
+        <div className="page-container">
+          {/*
+           * Docs TIDAK digerbangi fase pembacaan rantai (praperiksa P4):
+           * ia halaman statis yang tidak menyentuh data rantai sama sekali,
+           * dan justru halaman yang menjelaskan model privasi ini yang paling
+           * penting tetap terjangkau SAAT indexer mati — bukan tergantikan
+           * diam-diam oleh panel gagal tanpa pesan apa pun. LiveBallots,
+           * Overview, dan Results TETAP hanya dirender pada fase `siap`: itu
+           * yang diperiksa oleh cabang di bawah untuk KETIGA section itu.
+           */}
+          {section === "Docs" ? (
+            <Docs />
+          ) : data.fase === "memuat" ? (
+            <section className="page-section">
+              <div className="page-heading">
+                <div>
+                  {/* data.jaringan bernilai null ketika konfigurasi sendiri
+                      yang gagal. Itu tidak boleh dikarang menjadi "preview". */}
+                  <p className="eyebrow">
+                    <span className="eyebrow-mark" />{" "}
+                    {data.jaringan ? `Midnight ${data.jaringan.networkId}` : "Starting up"}
+                  </p>
+                  <h1>Reading the chain…</h1>
+                  <p>VotePriv is fetching registry and ballot state from the indexer.</p>
+                </div>
+              </div>
+              <GridBallotMemuat />
+            </section>
+          ) : data.fase === "gagal" ? (
+            <section className="page-section">
+              <PanelGagalRantai
+                galat={data.galat}
+                jaringan={data.jaringan}
+                percobaan={data.percobaan}
+                onCoba={data.muatUlang}
+              />
+            </section>
+          ) : (
+            <>
+              {section === "Overview" && (
+                <Overview
+                  hasil={data.hasil}
+                  ballots={ballots}
+                  onVote={setVoteBallot}
+                  onCreate={() => setCreateOpen(true)}
+                  onSection={setSection}
+                />
+              )}
+              {section === "Live ballots" && (
+                <LiveBallots
+                  ballots={ballots}
+                  onVote={setVoteBallot}
+                  onCreate={() => setCreateOpen(true)}
+                  atas={<SpandukSebagian gagal={data.hasil.gagal} />}
+                />
+              )}
+              {section === "Results" && (
+                // data.hasil.jaringan, BUKAN data.jaringan: pada fase `siap`
+                // keduanya sama, tetapi yang pertama bertipe JaringanAktif
+                // (tidak nullable) karena ia jaringan yang pembacaan ini
+                // BENAR-BENAR pakai.
+                <Results
+                  ballots={ballots}
+                  receipt={receipt}
+                  jaringan={data.hasil.jaringan}
+                  blokHeight={data.hasil.blok.height}
+                  onMuatUlang={data.muatUlang}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </main>
+      {voteBallot && (
+        <VoteModal
+          ballot={voteBallot}
+          connected={connected}
+          proofStatus={proofStatus}
+          onClose={() => setVoteBallot(null)}
+          onVote={handleVote}
+        />
+      )}
+      {createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} />}
+    </div>
+  );
 }

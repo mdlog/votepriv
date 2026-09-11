@@ -275,6 +275,8 @@ type VotePrivPrivateState = {
 
 Disimpan lewat `levelPrivateStateProvider`, dipisahkan per `networkId` agar state dari satu jaringan tidak bocor ke jaringan lain.
 
+> **Amandemen (spike browser).** Kalimat di atas ditulis untuk CLI Node dan TIDAK berlaku apa adanya di browser. Rinciannya di §14.1; ringkasnya: versi 4.0.4 yang terpasang sekarang **gagal di-build Vite**, dan browser menuntut naik ke 4.1.1 plus satu paket yang tidak ada di lockfile mana pun.
+
 ## 9. Perubahan UI
 
 ### 9.1 Yang dipertahankan apa adanya
@@ -367,3 +369,130 @@ Waktu blok **dapat** dikendalikan di dalam simulator: `createCircuitContext` men
 ## 13. Di luar lingkup
 
 Backend maupun basis data. Multi-bahasa. Pendelegasian suara atau relayer untuk tally. Penyuntingan atau pembatalan ballot. Perubahan metadata setelah deploy — sengaja `sealed`. Integrasi identitas nyata atau KYC. Gating dengan mengunci token di kontrak. Voting berbobot token. Mainnet.
+
+---
+
+## 14. Temuan spike browser (Rencana C)
+
+Bagian 8 dan 9 ditulis sebelum ada satu baris pun kode browser. Empat spike dijalankan sebelum
+menulis rencana implementasinya, seluruhnya diverifikasi terhadap paket yang **benar-benar
+terpasang** dan — jika memungkinkan — lewat percobaan yang dijalankan, bukan pembacaan dokumentasi.
+Keempatnya berkesimpulan sama: **bisa, dengan syarat.** Syarat-syarat inilah isinya.
+
+### 14.1 Private state di browser menuntut naik versi
+
+`midnight-js-level-private-state-provider@4.0.4` yang terpasang mengimpor `crypto` Node secara
+langsung tanpa fallback. Build Vite **gagal keras**: `"createHash" is not exported by
+"__vite-browser-external"`. Versi **4.1.1** membuang `crypto` Node dan menggantinya dengan
+`@noble/hashes` + `@noble/ciphers` dengan backend WebCrypto; versi itu terbukti build **dan**
+round-trip penuh di Chromium headless dengan bentuk private state persis §8.
+
+LevelDB sendiri bukan masalah: `level@10` punya field `browser` yang mengarah ke `browser-level`
+(IndexedDB), dan analisis bundle membuktikan `classic-level` tidak pernah ikut terbundel.
+
+**Syarat tersembunyi yang tidak terdokumentasi di mana pun:** paket `events` harus dipasang
+eksplisit. Tanpanya Vite meng-eksternalkan `events`, dan `abstract-level` mati saat impor dengan
+`Class extends value undefined is not a constructor or null`. Paket itu **tidak ada di lockfile
+votepriv maupun di repo rujukan**, sehingga menyalin `vite.config` rujukan bukan resep yang
+berfungsi apa adanya.
+
+Dua catatan operasional: `setContractAddress()` wajib dipanggil sebelum `get`/`set`; dan data
+mendarat di IndexedDB `level-js-midnight-level-db`, bukan localStorage.
+
+### 14.2 Pencadangan opening sebagaimana tertulis di §9.2 butir 8 tidak cukup
+
+Membersihkan site data menghapus private state **secara permanen** — diverifikasi, bukan
+diperkirakan. Vendor menuliskan peringatannya sendiri di `.d.mts`: provider ini tidak punya
+mekanisme pemulihan dan tidak untuk produksi yang menuntut persistensi.
+
+Ada jebakan diagnosis: `indexedDB.databases()` **tetap** melaporkan nama DB setelah penghapusan,
+karena provider membuatnya ulang dalam keadaan kosong. Keberadaan nama DB bukan bukti state selamat.
+
+Dan yang lebih penting: `exportPrivateStates()` menghasilkan blob yang **dienkripsi dengan password
+penyimpanan**. Bila password itu disimpan di localStorage — pola repo rujukan — ia ikut terhapus
+bersama site data, dan pemulihan gagal dengan `ExportDecryptionError`. Pencadangan karena itu wajib
+mengekspor **opening dalam bentuk yang dapat dibaca ulang tanpa password penyimpanan**, atau
+password itu wajib berasal dari sesuatu yang bertahan. Tanpa itu, fitur cadangan hanya memberi
+rasa aman yang keliru — dan taruhannya suara yang tidak pernah bisa dibuka.
+
+### 14.3 Siapa yang membuat proof: aplikasi kita, bukan Lace
+
+DApp Connector 4.0.1 menyediakan `getProvingProvider()`, tetapi jalur itu **tidak pernah tercatat
+berhasil di mesin ini**, dan ia memindahkan witness — yaitu credential pemilih **dan pilihannya** —
+ke dalam ekstensi wallet.
+
+**Keputusan:** aplikasi yang membuktikan, lewat proof server di balik proxy same-origin
+`/proof-server` yang sudah ada. Wallet hanya menyeimbangkan-menandatangani lewat
+`balanceUnsealedTransaction(tx)` dan merelay lewat `submitTransaction(tx)` — perhatikan
+`submitTransaction` mengembalikan `void`, bukan id transaksi.
+
+Bukti bahwa jalur ini nyata: repo rujukan operator melakukan `callTx` dari browser dan hasilnya
+terbaca di rantai. Konsekuensi privasinya sudah dinyatakan `client/src/lib/proof-server.ts`: proof
+server melihat witness, sehingga klaim privasi hanya berlaku bila proof server **dan** asal halaman
+sama-sama lokal. Indikator yang sudah ada menyatakan ini apa adanya dan tidak boleh dilunakkan.
+
+### 14.4 Artefak ZK: tata letak, dan dua kegagalan senyap
+
+`FetchZkConfigProvider@4.0.4` mengambil `{baseURL}/keys/{id}.prover`, `{baseURL}/keys/{id}.verifier`,
+dan `{baseURL}/zkir/{id}.bzkir` — `.bzkir`, sama seperti provider Node. `baseURL` **wajib absolut**
+(`new URL(baseURL)` melempar pada jalur relatif) dan **tanpa garis miring penutup** (4.0.4 memakai
+konkatenasi string mentah). Satu provider melayani satu direktori basis, jadi dibutuhkan dua:
+`/zk/ballot` dan `/zk/registry`.
+
+Dua kegagalan senyap yang wajib dijaga:
+
+1. **Fallback SPA membalas artefak yang hilang dengan HTTP 200 `text/html`**, dan provider 4.0.4
+   tidak punya penjaga `text/html`; galatnya lalu ditelan `catch { return undefined }`. Ini persis
+   kelas cacat yang sudah ditutup untuk `/proof-server/version` di `client/src/lib/proof-server.ts`
+   — penjagaan yang sama wajib dipasang di sini.
+2. **`cross-fetch` mengekspor `window.fetch` tanpa `bind`**, sementara provider memanggilnya sebagai
+   metode, sehingga browser melempar `Illegal invocation`. Node tidak peduli pada `this`, jadi
+   **CLI dan uji Node tidak akan pernah menangkapnya.** `fetchFunc` wajib di-override.
+
+### 14.5 Risiko nomor satu: ukuran prover key, dan urutan yang membunuhnya paling murah
+
+`castVote.prover` berukuran ~9,99 MB dan harus diunggah ke proof server pada **setiap** vote. Yang
+terbukti di mesin ini baru 2,7 MB terhadap proof server lokal; repo rujukan justru **gagal** pada
+2,7 MB terhadap prover terhosting. Angka 10 MB belum pernah diuji sama sekali.
+
+**Urutan yang diwajibkan:** buktikan rantainya lebih dulu dengan sirkuit `register` milik registry,
+yang prover key-nya hanya **24 KB**. Bila itu lolos, seluruh rantai — penemuan konektor, `connect`,
+`setNetworkId`, pengambilan artefak ZK, proof server, `balanceUnsealedTransaction`, `submitTransaction`,
+indexer — terbukti utuh dengan risiko ukuran nol. Baru setelah itu `castVote`. Bila `castVote` gagal,
+kegagalannya pasti soal ukuran dan bukan soal API — dan itu jauh lebih mudah dibaca.
+
+Naikkan pula timeout `httpClientProofProvider` ke 600.000 ms seperti yang sudah dilakukan CLI;
+default 300.000 hampir pasti kurang. Periksa juga batas ukuran body pada proxy.
+
+### 14.6 Temuan UI yang mengubah rencana
+
+Seluruh 15 baris pemetaan §9.4 yang menyebut field kontrak **terbukti ada** — tidak ada perubahan
+kontrak yang dibutuhkan. Yang menuntut keputusan ada di tempat lain:
+
+- **Transisi fase bersifat malas.** `phase` tetap `voting` setelah `voteDeadline` lewat, sampai ada
+  orang pertama yang membuka suaranya. Turunan status di UI karena itu **wajib** membandingkan waktu
+  dinding terhadap `voteDeadline`/`tallyDeadline`; membaca `phase` saja membuat ballot yang sudah
+  tutup tampil "Live now".
+- **`Ballot.id` tidak punya sumber on-chain.** Yang ada hanya alamat kontrak, sementara UI
+  menampilkan `ballot-042`. Perlu satu baris tambahan di tabel §9.4 yang menyatakan turunannya.
+- **`BallotStatus` terlalu sempit** untuk mesin-status kontrak: jendela tally tidak punya nilai,
+  sehingga §9.2 butir 4 belum punya tempat berpijak.
+- **Empat angka di UI tidak punya sumber** (`+18% this month`, `+24.6% participation`,
+  `2.4s finality`, nama workspace). Keputusan produk, bukan keputusan kode.
+- **Metrik agregat menuntut kueri per alamat** atas `registry.ballots`, yang permissionless dan tak
+  berbatas panjang. Alamat sampah yang tidak resolve — disebut sendiri di `registry.compact` — akan
+  memperlambat Overview bila tidak dibatasi.
+
+### 14.7 Rencana C dipecah dua
+
+**C-1 — pemecahan struktural `Home.tsx`** (376 baris, 32 KB, 166 nama kelas unik) menjadi tujuh
+komponen per §9.3. Tidak menyentuh kontrak, wallet, maupun proof server, sehingga dapat dieksekusi
+tanpa menunggu apa pun. Definisi operasional "murni struktural": render tiap section sebelum dan
+sesudah, lalu bandingkan himpunan nama kelasnya — harus identik.
+
+**C-2 — integrasi nyata** (§9.2 dan §9.4), dimulai dengan memindahkan `client/` ke `pkgs/app` karena
+tanpa itu klien tidak bisa mengimpor `pkgs/shared` sama sekali.
+
+Memisahkan keduanya bukan soal kerapian: mencampurnya membuat klaim "tidak menyentuh tampilan" tidak
+lagi dapat diperiksa, karena §9.2 butir 3 menuntut modal create menumbuhkan field baru yang memang
+diwajibkan constructor kontrak.

@@ -31,85 +31,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-
-type Section = "Overview" | "Live ballots" | "Results" | "Docs";
-type BallotStatus = "live" | "closing-soon" | "finalized";
-
-type Ballot = {
-  id: string;
-  title: string;
-  description: string;
-  community: string;
-  votes: number;
-  eligible: number;
-  quorum: number;
-  deadline: string;
-  status: BallotStatus;
-  options: string[];
-  accent: string;
-  tag: string;
-};
-
-/**
- * Tanda terima suara.
- *
- * `"simulated"` / `"not-consumed"` / `txRef: null` adalah keadaan MockAdapter —
- * alur UI tanpa kontrak. `"verified"` / `"consumed"` dengan txRef berupa id
- * transaksi sungguhan baru mungkin setelah MidnightAdapter terpasang (spec §8).
- * Keduanya sengaja dibedakan di TIPE, bukan hanya di teks, supaya layar sukses
- * tidak bisa lagi menampilkan tanda terima yang tidak pernah ada.
- */
-type Receipt = {
-  ballotId: string;
-  proofStatus: "verified" | "simulated";
-  nullifierStatus: "consumed" | "not-consumed";
-  txRef: string | null;
-};
-
-const initialBallots: Ballot[] = [
-  {
-    id: "ballot-042",
-    title: "Q4 Community Treasury",
-    description: "Choose how the community treasury supports public goods in Q4.",
-    community: "Midnight Builders",
-    votes: 842,
-    eligible: 1200,
-    quorum: 60,
-    deadline: "Oct 18, 2026",
-    status: "live",
-    options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
-    accent: "mint",
-    tag: "Featured",
-  },
-  {
-    id: "ballot-041",
-    title: "Protocol Grants Round 03",
-    description: "Prioritise the next cohort of privacy tooling grants.",
-    community: "ZK Commons",
-    votes: 316,
-    eligible: 500,
-    quorum: 55,
-    deadline: "Oct 16, 2026",
-    status: "closing-soon",
-    options: ["Identity primitives", "Developer education", "Audit funding"],
-    accent: "violet",
-    tag: "Closing soon",
-  },
-  {
-    id: "ballot-039",
-    title: "Network Upgrade 7B",
-    description: "Signal community support for the next network upgrade window.",
-    community: "Midnight Core",
-    votes: 1108,
-    eligible: 1500,
-    quorum: 66,
-    deadline: "Finalized Sep 28, 2026",
-    status: "finalized",
-    options: ["Support", "Abstain", "Do not support"],
-    accent: "blue",
-    tag: "Finalized",
-  },
-];
+import { statusLabel } from "@/components/votepriv/ballot-status";
+import { initialBallots } from "@/components/votepriv/demo-data";
+import type { Ballot, Receipt, Section } from "@/components/votepriv/types";
 
 const navItems: { label: Section; icon: typeof LayoutDashboard }[] = [
   { label: "Overview", icon: LayoutDashboard },
@@ -125,12 +49,6 @@ function shortAddress(address: string) {
   const bare = address.replace(/^mn_(shield-addr|addr)_/, "");
   if (bare.length <= 12) return bare;
   return `${bare.slice(0, 6)}…${bare.slice(-4)}`;
-}
-
-function statusLabel(status: BallotStatus) {
-  if (status === "closing-soon") return "Closing soon";
-  if (status === "finalized") return "Finalized";
-  return "Live now";
 }
 
 function VoteModal({

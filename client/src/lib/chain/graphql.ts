@@ -171,7 +171,11 @@ export async function postGraphQL<T>(input: {
   if (balasanHtml(res.headers.get("content-type"), teks)) {
     throw new GalatRantai(
       "balasan-html",
-      `${host} menjawab HTML, bukan JSON GraphQL (HTTP ${res.status}). Biasanya ini proxy, portal jaringan, atau fallback SPA yang berdiri di depan indexer.`,
+      // rincian adalah TEKS UI — ditulis Inggris; lihat komentar di GalatRantai.
+      // (praperiksa P3: sempat Indonesia di sini, dan case "balasan-html" adalah
+      // satu-satunya cabang pesanGagal yang TIDAK menyisipkan rincian ke layar —
+      // itulah kenapa kebocoran ini tidak pernah membuat satu uji pun merah.)
+      `${host} answered with HTML instead of JSON GraphQL (HTTP ${res.status}). This is usually a proxy, captive portal, or SPA fallback standing in front of the indexer.`,
       host,
     );
   }
@@ -194,7 +198,10 @@ export async function postGraphQL<T>(input: {
   // galat validasi atau koersi argumen. Itu kegagalan total dan BERBEDA dari
   // kegagalan sebagian, yang justru punya data terisi bersama errors.
   if (data === null) {
-    const pesan = errors.length > 0 ? errors.map(e => e.message).join("; ") : "indexer menjawab data: null tanpa errors";
+    // rincian adalah TEKS UI — ditulis Inggris; lihat komentar di GalatRantai.
+    // (praperiksa P3: fallback ini sempat Indonesia dan bocor apa adanya ke
+    // panel galat lewat case "graphql-fatal", yang MEMANG menyisipkan rincian.)
+    const pesan = errors.length > 0 ? errors.map(e => e.message).join("; ") : "the indexer answered data: null without any errors";
     throw new GalatRantai("graphql-fatal", pesan, host);
   }
 

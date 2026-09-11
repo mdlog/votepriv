@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
-import type { Ballot } from "./types";
 
-export function CreateBallotModal({ onClose, onCreate }: { onClose: () => void; onCreate: (ballot: Ballot) => void }) {
+export function CreateBallotModal({ onClose }: { onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [community, setCommunity] = useState("Midnight Builders");
   const [optionOne, setOptionOne] = useState("Fund developer grants");
@@ -14,37 +13,14 @@ export function CreateBallotModal({ onClose, onCreate }: { onClose: () => void; 
       toast.error("Complete the ballot details", { description: "A title and two options are required." });
       return;
     }
-    // C-2a Task 6: Ballot bertambah field wajib. Ballot mock ini belum pernah
-    // menyentuh kontrak (metadata tetap lokal — lihat komentar modul), jadi
-    // nilai baru di bawah adalah placeholder yang KONSISTEN dengan field lama
-    // yang sudah ada di sini (votes/eligible/registered/tallied 0, phase
-    // voting, keadaanHasil tersegel karena status live dengan tallied 0),
-    // bukan turunan dari data rantai sungguhan.
-    onCreate({
-      id: `ballot-${Math.floor(Math.random() * 90 + 10)}`,
-      nomor: 0,
-      title,
-      description: "A new community decision, ready for private voting.",
-      community,
-      votes: 0,
-      eligible: 0,
-      registered: 0,
-      tallied: 0,
-      quorum: 50,
-      eligibilityPolicy: "",
-      deadline: "Oct 24, 2026",
-      voteDeadlineMs: Date.UTC(2026, 9, 24, 12, 0),
-      tallyDeadlineMs: Date.UTC(2026, 9, 24, 13, 0),
-      phase: 0,
-      status: "live",
-      options: [optionOne, optionTwo],
-      tallies: [0, 0],
-      keadaanHasil: "tersegel",
-      accent: "mint",
-      tag: "New ballot",
-      deployHeight: 0,
+    // Deploy sungguhan adalah C-2b (spec 9.2 butir 3): ia menuntut wallet,
+    // proof server, artefak ZK, dan constructor 14 argumen. Membuat Ballot lokal
+    // di sini akan menampilkan ballot yang HILANG pada muat ulang berikutnya,
+    // karena daftar sekarang dibaca dari registry on-chain.
+    toast.info("Creating ballots needs a wallet", {
+      description:
+        "Deploying a ballot writes to the chain: it needs a wallet, a proof server, and the ZK artifacts. VotePriv reads the chain today; writing arrives next.",
     });
-    toast.success("Ballot created", { description: "Your new ballot is ready for eligible voters." });
     onClose();
   };
 

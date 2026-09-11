@@ -16,52 +16,44 @@ function submit(container: HTMLElement) {
 }
 
 describe("CreateBallotModal", () => {
-  it("menolak submit ketika judul kosong, dan tidak memanggil onCreate atau onClose", () => {
-    const onCreate = vi.fn();
+  it("menolak submit ketika judul kosong, dan tidak menutup modal", () => {
     const onClose = vi.fn();
     // Judul awal sudah "" (useState default); kedua opsi sudah terisi bawaan,
     // jadi ini murni menguji cabang !title.trim() dari penjaga validasi.
-    const { container } = render(<CreateBallotModal onClose={onClose} onCreate={onCreate} />);
+    const { container } = render(<CreateBallotModal onClose={onClose} />);
     submit(container);
-    expect(onCreate).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
 
   it("menolak submit ketika salah satu opsi dikosongkan (whitespace saja)", () => {
-    const onCreate = vi.fn();
     const onClose = vi.fn();
-    const { container } = render(<CreateBallotModal onClose={onClose} onCreate={onCreate} />);
+    const { container } = render(<CreateBallotModal onClose={onClose} />);
     const [judul, , opsiSatu] = inputs(container);
     fireEvent.change(judul, { target: { value: "Treasury allocation" } });
     fireEvent.change(opsiSatu, { target: { value: "   " } });
     submit(container);
-    expect(onCreate).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("memanggil onCreate dengan bentuk ballot yang benar lalu menutup modal ketika detail lengkap", () => {
-    const onCreate = vi.fn();
+  it("Step 9: TIDAK ADA lagi ballot yang lahir — submit dengan detail lengkap hanya menutup modal", () => {
+    // C-2a Task 8 Step 9: onCreate dicabut. Deploy sungguhan adalah C-2b, dan
+    // membuat Ballot lokal di sini akan hilang pada muat ulang berikutnya
+    // karena daftar sekarang dibaca dari registry on-chain. Satu-satunya
+    // efek submit yang SAH sekarang adalah menutup modal — tidak ada tempat
+    // lagi bagi uji ini untuk mengassert "ballot baru muncul".
     const onClose = vi.fn();
-    const { container } = render(<CreateBallotModal onClose={onClose} onCreate={onCreate} />);
+    const { container } = render(<CreateBallotModal onClose={onClose} />);
     const [judul, community] = inputs(container);
     fireEvent.change(judul, { target: { value: "Treasury allocation" } });
     fireEvent.change(community, { target: { value: "Midnight Builders" } });
     submit(container);
-    expect(onCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Treasury allocation",
-        community: "Midnight Builders",
-        description: "A new community decision, ready for private voting.",
-        votes: 0,
-        eligible: 0,
-        quorum: 50,
-        deadline: "Oct 24, 2026",
-        status: "live",
-        options: ["Fund developer grants", "Host local meetups"],
-        accent: "mint",
-        tag: "New ballot",
-      }),
-    );
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("formulir tetap dipertahankan apa adanya — bukan dihapus", () => {
+    // C-2b akan mengisi formulir ini; menghapusnya berarti menulis ulang
+    // markupnya nanti. Uji ini menjaga bahwa keempat input masih ada.
+    const { container } = render(<CreateBallotModal onClose={() => {}} />);
+    expect(inputs(container)).toHaveLength(4);
   });
 });

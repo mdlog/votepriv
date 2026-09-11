@@ -1,17 +1,13 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BallotCard } from "./BallotCard";
-import type { Ballot } from "./types";
+import { ballotUji } from "@/test/fixture-ballot";
+import { labelNomor } from "@/lib/chain/ke-ballot";
+import type { BallotStatus } from "./types";
 
 afterEach(() => cleanup());
 
-/**
- * Salinan ballot-041 dari data demo, dengan angka bulat supaya persentasenya
- * pasti. Field baru C-2a Task 6 (nomor, registered, tallied, dst.) diisi
- * placeholder konsisten — BallotCard.tsx tidak membacanya, jadi tidak
- * berpengaruh pada perilaku uji ini; hanya menutup kontrak tipe Ballot.
- */
-const BALLOT: Ballot = {
+const BALLOT = ballotUji({
   id: "ballot-041",
   nomor: 41,
   title: "Protocol Grants Round 03",
@@ -20,21 +16,16 @@ const BALLOT: Ballot = {
   votes: 250,
   eligible: 500,
   registered: 500,
-  tallied: 0,
   quorum: 55,
   eligibilityPolicy: "ZK Commons contributors with an active grant credential",
   deadline: "Oct 16, 2026",
-  voteDeadlineMs: Date.UTC(2026, 9, 16, 12, 0),
-  tallyDeadlineMs: Date.UTC(2026, 9, 16, 13, 0),
-  phase: 0,
   status: "closing-soon",
   options: ["Identity primitives", "Developer education", "Audit funding"],
   tallies: [0, 0, 0],
-  keadaanHasil: "tersegel",
   accent: "violet",
   tag: "Closing soon",
   deployHeight: 90,
-};
+});
 
 describe("BallotCard", () => {
   it("menyusun kelas accent dari template literal tanpa kehilangan spasinya", () => {
@@ -42,6 +33,10 @@ describe("BallotCard", () => {
     const kartu = container.querySelector("article")!;
     // Disalin dari Home.tsx pra-pemecahan baris 239.
     expect(kartu.getAttribute("class")).toBe("ballot-card accent-violet");
+    // "closing-soon" muncul di SINI karena statusTone("closing-soon") memang
+    // berbunyi "closing-soon" — kebetulan yang sama dengan status mentahnya.
+    // Uji "statusTone MENGGANTIKAN status mentah" di bawah membuktikan bahwa
+    // ini bukan karena kelas dibaca dari ballot.status langsung.
     expect(container.querySelector(".status-badge")!.getAttribute("class")).toBe(
       "status-badge closing-soon",
     );
@@ -50,17 +45,66 @@ describe("BallotCard", () => {
     );
   });
 
+  it("memakai statusTone untuk kelas badge, BUKAN status mentah — kelimanya dipetakan ke tiga tone", () => {
+    // Ini penjaga yang sebenarnya: lima status berbeda, tiga kelas tone. Bila
+    // BallotCard kembali membaca ballot.status langsung, tally-open dan
+    // awaiting-finalize akan menghasilkan kelas tanpa aturan CSS ("status-badge
+    // tally-open"), bukan "status-badge closing-soon".
+    const kasus: Array<[status: BallotStatus, kelas: string]> = [
+      ["live", "status-badge "],
+      ["closing-soon", "status-badge closing-soon"],
+      ["tally-open", "status-badge closing-soon"],
+      ["awaiting-finalize", "status-badge closing-soon"],
+      ["finalized", "status-badge finalized"],
+    ];
+    for (const [status, kelas] of kasus) {
+      const { container, unmount } = render(
+        <BallotCard ballot={{ ...BALLOT, status }} onVote={() => {}} />,
+      );
+      expect(container.querySelector(".status-badge")!.getAttribute("class"), status).toBe(kelas);
+      unmount();
+    }
+  });
+
   it("menampilkan label status dan persentase partisipasi apa adanya", () => {
     const { container } = render(<BallotCard ballot={BALLOT} onVote={() => {}} />);
     expect(container.querySelector(".status-badge")!.textContent).toContain("Closing soon");
     expect(container.querySelector(".ballot-progress-label strong")!.textContent).toBe("50%");
-    expect(container.querySelector(".ballot-tag")!.textContent).toBe("Closing soon");
   });
 
-  it("memberi tombol 'View result' pada ballot finalized dan 'Vote privately' pada yang lain", () => {
+  it("ballot-tag menggabungkan NOMOR URUT dan tag, bukan tag saja (P7)", () => {
+    // Sebelum perbaikan ini, .ballot-tag hanya berisi ballot.tag ("Closing
+    // soon"). Setelah Step 3 menambahkan labelNomor(ballot.nomor) di depannya,
+    // teks itu berubah bentuk — praperiksa P7 menandai bahwa uji lama akan
+    // merah kalau tidak diperbarui bersamaan.
+    const { container } = render(<BallotCard ballot={BALLOT} onVote={() => {}} />);
+    expect(container.querySelector(".ballot-tag")!.textContent).toBe(
+      `${labelNomor(41)} · Closing soon`,
+    );
+  });
+
+  it("menyebut kuorum sebagai NIAT, bukan sebagai ambang", () => {
+    const { container } = render(<BallotCard ballot={BALLOT} onVote={() => {}} />);
+    expect(container.textContent).toContain("55% intended quorum");
+    expect(container.textContent).not.toMatch(/\d+% quorum\b/);
+  });
+
+  it("menampilkan eligibilityPolicy ketika ada, dan menyembunyikannya ketika kosong", () => {
     const { container, rerender } = render(<BallotCard ballot={BALLOT} onVote={() => {}} />);
+    expect(container.textContent).toContain("ZK Commons contributors with an active grant credential");
+    rerender(<BallotCard ballot={{ ...BALLOT, eligibilityPolicy: "" }} onVote={() => {}} />);
+    expect(container.textContent).not.toContain("ZK Commons contributors with an active grant credential");
+  });
+
+  it("memberi tombol 'View result' pada ballot yang TIDAK menerima suara, dan 'Vote privately' pada yang menerima", () => {
+    const { container, rerender } = render(<BallotCard ballot={BALLOT} onVote={() => {}} />);
+    // BALLOT berstatus closing-soon — menerimaSuara(true) — jadi harus "Vote privately".
     expect(container.querySelector(".text-button")!.textContent).toContain("Vote privately");
     rerender(<BallotCard ballot={{ ...BALLOT, status: "finalized" }} onVote={() => {}} />);
+    expect(container.querySelector(".text-button")!.textContent).toContain("View result");
+    rerender(<BallotCard ballot={{ ...BALLOT, status: "tally-open" }} onVote={() => {}} />);
+    expect(container.querySelector(".text-button")!.textContent).toContain("View result");
+    rerender(<BallotCard ballot={{ ...BALLOT, status: "awaiting-finalize" }} onVote={() => {}} />);
     expect(container.querySelector(".text-button")!.textContent).toContain("View result");
   });
 

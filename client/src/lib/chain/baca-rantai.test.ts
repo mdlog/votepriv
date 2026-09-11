@@ -561,13 +561,15 @@ describe("bacaRantai — POST 3 TIDAK PERNAH menjatuhkan pembacaan", () => {
       }
       if (nama === "Registry") {
         const j = structuredClone(fxRegistry);
-        const proyeksi = proyeksikanJawabanKontrak(body.query, j.data) as { r: { terbaru: { transaction: { block: { height: number; timestamp: number } } }[] } };
+        const proyeksi = proyeksikanJawabanKontrak(body.query, j.data);
         // Aksi registry TERBARU (indeks 0) dipaksa ke tinggi/stempel waktu
         // yang jauh melebihi apa pun yang bisa dihasilkan Date.now() nyata —
         // satu-satunya cara memaksa cabang floor Math.max benar-benar
         // MEMILIH sisi rantai, bukan kebetulan sama dengan jam perangkat.
-        proyeksi.r.terbaru[0].transaction.block.height = HEIGHT_BESAR;
-        proyeksi.r.terbaru[0].transaction.block.timestamp = TS_MASA_DEPAN;
+        const aksiTerbaru = proyeksi.r?.terbaru?.[0];
+        if (!aksiTerbaru) throw new Error("proyeksi registry tak terduga: terbaru[0] hilang");
+        aksiTerbaru.transaction.block.height = HEIGHT_BESAR;
+        aksiTerbaru.transaction.block.timestamp = TS_MASA_DEPAN;
         return new Response(JSON.stringify({ ...j, data: proyeksi }), { status: 200, headers: { "content-type": "application/json" } });
       }
       const j = structuredClone(fxBallots.jawaban);

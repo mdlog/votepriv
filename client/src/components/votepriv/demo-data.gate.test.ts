@@ -28,9 +28,18 @@ function seluruhBerkasSumber(dir: string, keluar: string[] = []): string[] {
  * dilewati diam-diam: `pnpm check` tetap hijau, `pnpm test` tetap hijau,
  * tidak ada yang menegur siapa pun.
  *
- * Gerbang ini menggantikan pemaksa kompiler yang hilang itu — TANPA merusak
- * ulang tipe demo-data.ts/CreateBallotModal.tsx (dilarang oleh batasan
- * tugas). Bentuknya sengaja DIBALIK lewat `it.fails`:
+ * BATAS GERBANG INI, dinyatakan apa adanya: ia TIDAK memaksa Step 10
+ * dikerjakan. Bila Task 8 melewatkan Step 10, demo-data.ts tetap ada dan
+ * gerbang ini tetap HIJAU — sama seperti hari ini. Memaksa Step 10 dari sini
+ * mustahil: "Step 10 dilewatkan" dan "hari ini" adalah keadaan pohon yang
+ * IDENTIK, sehingga tidak ada uji yang dapat hijau sekarang lalu merah hanya
+ * pada yang pertama. Penegakan Step 10 karenanya hidup di gerbang Task 8
+ * sendiri, bukan di sini.
+ *
+ * Yang gerbang ini benar-benar lakukan lebih sempit, dan tetap berguna: ia
+ * membuat penghapusan demo-data.ts MENGUMUMKAN DIRINYA, sehingga berkas
+ * gerbang ini tidak dapat tertinggal sebagai sampah setelah Step 10 selesai.
+ * Bentuknya sengaja DIBALIK lewat `it.fails`:
  *
  *   - Badan uji di bawah menegaskan keadaan yang BENAR secara jangka panjang
  *     (demo-data.ts sudah tidak ada dan tidak diimpor berkas sumber mana

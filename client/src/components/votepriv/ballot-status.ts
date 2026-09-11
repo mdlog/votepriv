@@ -50,9 +50,18 @@ export function ambangTutupSegeraMs(k: {
 }): number {
   const jendelaTally = k.tallyDeadlineMs - k.voteDeadlineMs;
   // Kontrak menjamin tallyDeadline > voteDeadline (assert di constructor), jadi
-  // jendelaTally selalu positif. Math.max(0, …) tetap dipasang supaya data yang
-  // melanggar jaminan itu menghasilkan ambang nol — bukan ambang negatif, yang
-  // akan membuat setiap ballot berbunyi "Live now" sampai detik terakhir.
+  // jendelaTally selalu positif pada data sungguhan. Math.max(0, …) tetap
+  // dipasang sebagai KONTRAK NILAI KEMBALI fungsi ini sendiri — bukan karena
+  // ia mengubah verdict turunkanStatus() pada data yang melanggar jaminan itu.
+  // (Ia TIDAK mengubahnya: di turunkanStatus, cabang closing-soon hanya
+  // dicapai ketika voteDeadlineMs − sekarangMs > 0, jadi diff <= ambang sama
+  // FALSE baik ambang itu 0 maupun negatif — dibuktikan lewat mutasi yang
+  // menghapus klem ini: seluruh uji turunkanStatus tetap lolos, hanya uji
+  // langsung atas ambangTutupSegeraMs() yang jatuh.) Klemnya dipertahankan
+  // supaya fungsi EXPORTED ini aman dipakai pemanggil LAIN di luar
+  // turunkanStatus (mis. progress bar/hitung-mundur Task 7/8) yang mungkin
+  // menampilkan nilainya apa adanya — angka negatif di sana tidak masuk akal
+  // bagi pembaca, terlepas dari apakah turunkanStatus peduli.
   return Math.min(BATAS_ATAS_TUTUP_SEGERA_MS, Math.max(0, jendelaTally));
 }
 
@@ -78,6 +87,46 @@ export function ambangTutupSegeraMs(k: {
  *   1. finalized lebih dulu — satu-satunya penanda finalitas yang eksplisit
  *      di on-chain, dan ia tidak pernah mundur.
  *   2. lalu tallyDeadline, lalu voteDeadline — dari yang terjauh ke terdekat.
+ *
+ * KEPUTUSAN T4 — batas kiri `>=` pada baris tallyDeadline/voteDeadline di
+ * bawah DIPERTAHANKAN, sengaja, walau ballot.compact membandingkan dengan
+ * operator STRICT pada satuan DETIK.
+ *
+ * castVote menuntut `blockTimeLessThan(voteDeadline)` (strict <) dan
+ * tallyVote menuntut `blockTimeGreaterThan(voteDeadline)` (strict >) — bukan
+ * `<=`/`>=`. Dikonversi ke ms (deadline selalu kelipatan 1000, lihat
+ * ke-ballot.ts), itu berarti tallyVote baru DITERIMA mulai
+ * voteDeadlineMs + 1000 (satu blok PENUH setelah voteDeadlineMs), sementara
+ * castVote SUDAH DITOLAK sejak voteDeadlineMs. Pola yang sama berulang pada
+ * tallyDeadlineMs terhadap finalize(). Akibatnya ADA jendela satu blok —
+ * [voteDeadlineMs, voteDeadlineMs + 1000) dan [tallyDeadlineMs,
+ * tallyDeadlineMs + 1000) — di mana TIDAK SATU PUN sirkuit yang relevan mau
+ * menerima transaksi.
+ *
+ * Status LIMA nilai ini tidak punya anggota untuk "jendela mati" itu, jadi
+ * SALAH SATU sisi pasti menyandangnya secara tidak akurat selama satu blok.
+ * Dua pilihan yang tersedia:
+ *   (a) `>=` (status quo, dipertahankan): jendela mati disandang tally-open
+ *       ("Opening votes") / awaiting-finalize ("Awaiting finalization") —
+ *       pengguna yang mencoba MEMBUKA suara atau MEMFINALISASI akan ditolak
+ *       satu blok lebih awal dari yang UI janjikan.
+ *   (b) samakan ke kontrak (`>= X + 1000`): jendela mati bergeser jadi
+ *       disandang live/closing-soon / tally-open — pengguna yang mencoba
+ *       MEMILIH atau MEMBUKA suara akan ditolak satu blok SETELAH UI bilang
+ *       jendelanya sudah tutup.
+ *
+ * (a) dipilih karena kerugian kedua pilihan TIDAK setara. Pada (a), kegagalan
+ * yang terjadi adalah percobaan MEMBUKA suara/MEMFINALISASI yang gagal cepat
+ * dan murah (satu tx ditolak, retry satu blok kemudian, tidak ada nullifier
+ * ataupun kredensial yang terpakai). Pada (b), kegagalan yang terjadi adalah
+ * percobaan MEMILIH yang gagal SETELAH UI secara eksplisit mengundang
+ * ("Live now"/"Closing soon" masih tampil) — ini menciptakan URGENSI PALSU
+ * ("masih sempat memilih!") tepat pada momen paling mahal bagi pemilih,
+ * persis kekhawatiran yang sama yang mendorong formatDeadlineUtc dikunci ke
+ * UTC (lihat komentar di ke-ballot.ts). Mengundang aksi berbiaya-rendah yang
+ * gagal aman lebih baik daripada mengundang aksi bernilai tinggi yang gagal
+ * setelah diyakinkan bisa berhasil. Diuji di ballot-status.test.ts
+ * describe("turunkanStatus — T4 …").
  */
 export function turunkanStatus(
   k: { phase: 0 | 1 | 2; voteDeadlineMs: number; tallyDeadlineMs: number },

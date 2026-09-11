@@ -47,9 +47,11 @@ export function formatDeadlineUtc(ms: number): string {
 /**
  * accent diturunkan dari alamat kontrak (spec 9.4), bukan diketik tangan.
  *
- * Jumlah sederhana atas seluruh nibble, bukan hash kriptografis: yang dibutuhkan
- * hanya penyebaran warna yang stabil per alamat, dan alamat yang sama harus
- * selalu memberi warna yang sama supaya kartu tidak berganti warna tiap muat.
+ * Jumlah sederhana atas kode karakter (charCodeAt), bukan hash kriptografis
+ * dan bukan nibble hex — alamat diperlakukan sebagai string biasa, bukan
+ * diparse sebagai digit heksadesimal. Yang dibutuhkan hanya penyebaran warna
+ * yang stabil per alamat, dan alamat yang sama harus selalu memberi warna
+ * yang sama supaya kartu tidak berganti warna tiap muat.
  */
 export function accentDariAlamat(alamat: string): "mint" | "violet" | "blue" {
   let jumlah = 0;
@@ -72,7 +74,15 @@ export function keBallot(
   );
   // Map tallies JARANG: kunci tanpa suara TIDAK ADA. Dipadatkan sekali di sini
   // supaya tidak ada satu pun komponen yang tergoda mengindeksnya mentah-mentah.
-  const padat = padatkanTallies(k.tallies, k.optionCount);
+  //
+  // Panjangnya diturunkan dari k.opsi.length — BUKAN k.optionCount — supaya
+  // "tallies SELALU sepanjang options" (lihat komentar di return di bawah)
+  // benar secara STRUKTURAL, bukan hanya kebetulan. Keduanya SELALU sama pada
+  // data yang lewat dekodeBallot() (dekode.ts:110 memotong opsi persis
+  // sepanjang optionCount), tapi KeadaanBallot adalah tipe data biasa yang
+  // tidak menegakkan itu — menurunkan dari opsi.length menutup celah itu
+  // tanpa bergantung pada invarian eksternal yang tidak diperiksa compiler.
+  const padat = padatkanTallies(k.tallies, k.opsi.length);
   // Keadaan hasil digantung pada STATUS TURUNAN, bukan pada talliedCount.
   // talliedCount === 0 punya EMPAT sebab yang berbeda artinya — lihat
   // KeadaanHasil di types.ts, dan ballot f597222d… yang hari ini berada di

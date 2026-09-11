@@ -22,11 +22,16 @@ const JARINGAN: JaringanAktif = {
 };
 
 function ambilPalsu(): typeof fetch {
-  return (async (_u: string, init: RequestInit) => {
-    const nama = /query\s+(\w+)/.exec(JSON.parse(String(init.body)).query)?.[1] ?? "?";
+  // Diketik PERSIS seperti typeof fetch (input: RequestInfo | URL, init opsional)
+  // alih-alih `(_u: string, init: RequestInit) => …` yang lebih sempit lalu
+  // dipaksa lewat `as unknown as typeof fetch` — pintu keluar tipe itu diam-diam
+  // menutupi ketidakcocokan tanda tangan alih-alih menegakkannya.
+  const f: typeof fetch = async (_input, init) => {
+    const nama = /query\s+(\w+)/.exec(JSON.parse(String(init?.body)).query)?.[1] ?? "?";
     const j = nama === "Registry" ? fxRegistry : nama === "Ballots" ? fxBallots.jawaban : fxJaringan;
     return new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });
-  }) as unknown as typeof fetch;
+  };
+  return f;
 }
 
 const hasil = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
@@ -217,6 +222,48 @@ describe("keBallot — P1: memakai sekarangMs yang DISUNTIKKAN, bukan jam perang
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// T1 (temuan review enam-lensa): P1 di atas menguji keBallot() secara
+// LANGSUNG, tapi keDaftarBallot() adalah SATU-SATUNYA pintu yang dipakai
+// aplikasi — komponen Task 7/8 memanggil keDaftarBallot, bukan keBallot.
+// Sebelum uji ini, tidak ada satu pun uji yang memverifikasi bahwa
+// keDaftarBallot() benar-benar mengoper HasilRantai.sekarangMs ke keBallot()
+// alih-alih diam-diam memakai Date.now() di titik sambungannya sendiri
+// (ke-ballot.ts:141) — satu-satunya uji keDaftarBallot dengan data sintetis
+// (praperiksa P5 di bawah) hanya mengassert id dan nomor, tidak pernah
+// status/tag/keadaanHasil, dan seluruh assert atas fixture rekaman kebetulan
+// benar pada jam MANA PUN karena kedua ballot fixture sudah lewat kedua
+// deadline-nya sejak 2026.
+//
+// Sama seperti P1: deadline SINTETIS dekat epoch (1970) dipakai supaya
+// Date.now() sungguhan (2026+) — bila diam-diam terpakai — selalu
+// menghasilkan verdict yang SAMA ("awaiting-finalize") pada ketiga snapshot
+// di bawah, sehingga assert live/tally-open akan gagal.
+// ─────────────────────────────────────────────────────────────────────────
+describe("keDaftarBallot — T1: memakai HasilRantai.sekarangMs yang DISUNTIKKAN, bukan jam perangkat", () => {
+  it("status/tag/keadaanHasil berubah mengikuti sekarangMs yang dioper ke keDaftarBallot", () => {
+    const b = terbacaSintetis("t1-waktu-uji", 1, {
+      voteDeadlineDetik: 1_000_000, // voteDeadlineMs = 1_000_000_000 (12 Jan 1970)
+      tallyDeadlineDetik: 2_000_000, // tallyDeadlineMs = 2_000_000_000 (24 Jan 1970)
+    });
+
+    const live = keDaftarBallot(hasilSintetis([b], 800_000_000))[0];
+    expect(live.status).toBe("live");
+    expect(live.tag).toBe("Open");
+    expect(live.keadaanHasil).toBe("tersegel");
+
+    const tallyOpen = keDaftarBallot(hasilSintetis([b], 1_000_000_001))[0];
+    expect(tallyOpen.status).toBe("tally-open");
+    expect(tallyOpen.tag).toBe("Tally window");
+    expect(tallyOpen.keadaanHasil).toBe("menunggu-pembukaan");
+
+    const awaitingFinalize = keDaftarBallot(hasilSintetis([b], 2_000_000_001))[0];
+    expect(awaitingFinalize.status).toBe("awaiting-finalize");
+    expect(awaitingFinalize.tag).toBe("Needs finalizing");
+    expect(awaitingFinalize.keadaanHasil).toBe("tidak-ada-yang-dibuka");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // Praperiksa P5: keDaftarBallot menaruh entri deployHeight = 0 (ContractDeploy
 // tidak terbaca) di BELAKANG urutan nomor, bukan di depan. Fixture rekaman
 // tidak pernah punya deployHeight 0 (kedua ballotnya 810832 dan 813330), jadi
@@ -358,6 +405,26 @@ describe("keBallot — pemetaan field tanpa tertukar (nilai sengaja semuanya ber
     const out = keBallot(b, { nomor: 1, sekarangMs: 0 });
     expect(out.tallies).toEqual([3, 0, 5]);
   });
+
+  it("M6: tallies SELALU sepanjang options — dipadatkan dari opsi.length, bukan dari optionCount, walau keduanya dibuat SENGAJA berbeda", () => {
+    // Pada data lewat dekodeBallot() (dekode.ts:110), opsi.length ===
+    // optionCount SELALU — tapi KeadaanBallot sendiri (tipe data biasa) tidak
+    // menegakkan itu. Ballot sintetis ini SENGAJA membuat keduanya berbeda
+    // (optionCount:5, opsi tiga elemen) untuk membuktikan bahwa invarian
+    // "tallies sepanjang options" (lihat komentar di ke-ballot.ts) benar
+    // secara STRUKTURAL, bukan kebetulan karena kedua sumber selalu sama di
+    // seluruh fixture dan uji lain di berkas ini.
+    const b = terbacaSintetis("kontrak-panjang-tallies", 1, {
+      optionCount: 5,
+      opsi: ["X0", "X1", "X2"],
+      tallies: [[0, 7]],
+      talliedCount: 7,
+    });
+    const out = keBallot(b, { nomor: 1, sekarangMs: 0 });
+    expect(out.options).toHaveLength(3);
+    expect(out.tallies).toHaveLength(3);
+    expect(out.tallies).toEqual([7, 0, 0]);
+  });
 });
 
 describe("formatDeadlineUtc", () => {
@@ -417,8 +484,19 @@ describe("accentDariAlamat", () => {
     expect(accentDariAlamat("2")).toBe("blue");
   });
 
-  it("stabil untuk alamat yang sama pada dua pemanggilan berturutan", () => {
-    expect(accentDariAlamat("alamat-tetap")).toBe(accentDariAlamat("alamat-tetap"));
+  it("M12: stabil untuk alamat yang sama pada dua pemanggilan berturutan, DIPATOK ke nilai konkret — bukan sekadar 'sama dengan dirinya sendiri'", () => {
+    // Bentuk lama `expect(f(x)).toBe(f(x))` benar untuk fungsi murni APA PUN,
+    // termasuk yang rumusnya salah — ia tidak pernah bisa menjatuhkan mutasi
+    // pada isi accentDariAlamat (dibuktikan M12: mengganti badannya dengan
+    // `expect(true).toBe(true)` tetap lolos, jumlah uji tidak berubah). Uji
+    // ini memaku KEDUA pemanggilan ke nilai konkret yang sama, sehingga
+    // mutasi pada rumus (bukan hanya pada determinismenya) ikut terjatuhkan.
+    const kali1 = accentDariAlamat("alamat-tetap");
+    const kali2 = accentDariAlamat("alamat-tetap");
+    // "alamat-tetap": jumlah charCodeAt mod 3 = 2 -> "blue". Diverifikasi
+    // terpisah lewat node -e.
+    expect(kali1).toBe("blue");
+    expect(kali2).toBe("blue");
   });
 
   it("hanya menghasilkan accent yang punya kelas di index.css, untuk seluruh ballot fixture", () => {

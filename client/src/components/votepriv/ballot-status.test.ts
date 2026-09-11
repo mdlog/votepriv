@@ -42,6 +42,22 @@ describe("ambangTutupSegeraMs", () => {
   it("tidak pernah negatif walau data melanggar jaminan tallyDl > voteDl", () => {
     expect(ambangTutupSegeraMs({ voteDeadlineMs: T0, tallyDeadlineMs: T0 - 1000 })).toBe(0);
   });
+
+  it("T3: BATAS_ATAS_TUTUP_SEGERA_MS dipatok ke ANGKA ABSOLUT 24 jam, bukan diturunkan dari dirinya sendiri", () => {
+    // Kedua assert di atas (":34" dan ":39") menurunkan harapannya DARI
+    // BATAS_ATAS_TUTUP_SEGERA_MS — konstanta yang sedang diuji — sehingga
+    // besarannya bebas melayang berapa pun (35 menit sampai 200.000.000 ms,
+    // batas yang diturunkan dari ke-ballot.test.ts:209) tanpa satu uji pun
+    // jatuh. Uji ini memaku angkanya sendiri, independen dari definisi:
+    //
+    // 86.400.000 ms = 24 * 60 * 60 * 1000 = 24 JAM. Dipilih 24 jam (bukan 12
+    // atau 48) karena itu satuan yang MASUK AKAL BAGI MANUSIA sebagai batas
+    // atas "tunggu, ini akan closing soon" — cukup panjang untuk tidak
+    // mengganggu ballot bertempo bulanan (masih dominan oleh batas atas,
+    // bukan oleh jendela tally sungguhannya), cukup pendek supaya "Closing
+    // soon" tetap berarti SEGERA, bukan "kapan saja dalam sebulan ke depan".
+    expect(BATAS_ATAS_TUTUP_SEGERA_MS).toBe(86_400_000);
+  });
 });
 
 describe("turunkanStatus", () => {
@@ -80,6 +96,44 @@ describe("turunkanStatus", () => {
     expect(turunkanStatus(b, T0 - 1)).toBe("tally-open");
   });
 
+  describe("T4: batas kiri `>=` DIPERTAHANKAN — jendela mati satu blok didokumentasikan, bukan disamakan dengan blockTimeGreaterThan yang strict", () => {
+    it("pada sekarangMs PERSIS di voteDeadline, status sudah tally-open TAPI castVote (via menerimaSuara) sudah pasti ditolak kontrak", () => {
+      // ballot.compact: castVote menuntut blockTimeLessThan(voteDeadline) —
+      // STRICT. Pada sekarangMs === voteDeadlineMs, castVote SUDAH ditolak.
+      // Keputusan T4 memilih menyandang instan ini sebagai tally-open
+      // ("Opening votes"), BUKAN live/closing-soon yang akan mengundang
+      // pengguna mencoba MEMILIH pada detik yang pasti gagal.
+      const b = { phase: 0 as const, voteDeadlineMs: T0, tallyDeadlineMs: T0 + seminggu };
+      const status = turunkanStatus(b, T0);
+      expect(status).toBe("tally-open");
+      expect(menerimaSuara(status)).toBe(false);
+    });
+
+    it("seluruh jendela mati [voteDeadlineMs, voteDeadlineMs+1000) tetap disandang tally-open, tidak diam-diam bergeser ke closing-soon di tengah jendela", () => {
+      // tallyVote baru diterima kontrak mulai voteDeadlineMs + 1000 (satu blok
+      // penuh, lihat komentar keputusan T4 di ballot-status.ts). Sepanjang
+      // jendela satu blok ini TIDAK SATU PUN sirkuit menerima transaksi —
+      // keputusan T4 tetap konsisten menyandangnya tally-open di seluruh
+      // jendela, bukan hanya di titik awalnya.
+      const b = { phase: 0 as const, voteDeadlineMs: T0, tallyDeadlineMs: T0 + seminggu };
+      expect(turunkanStatus(b, T0)).toBe("tally-open");
+      expect(turunkanStatus(b, T0 + 999)).toBe("tally-open");
+      expect(turunkanStatus(b, T0 + 1000)).toBe("tally-open");
+    });
+
+    it("pola yang sama berulang di tallyDeadline: awaiting-finalize disandang satu blok sebelum finalize() sungguhan diterima", () => {
+      // finalize() menuntut blockTimeGreaterThan(tallyDeadline) — STRICT —
+      // sama seperti tallyVote di atas. Keputusan T4 yang sama berlaku:
+      // mengundang percobaan MEMFINALISASI yang gagal cepat (satu blok lebih
+      // awal) lebih aman daripada menggeser jendela mati itu ke tally-open,
+      // yang akan mengundang percobaan MEMBUKA suara yang gagal setelah UI
+      // bilang jendelanya masih terbuka.
+      const b = { phase: 0 as const, voteDeadlineMs: T0 - seminggu, tallyDeadlineMs: T0 };
+      expect(turunkanStatus(b, T0)).toBe("awaiting-finalize");
+      expect(turunkanStatus(b, T0 + 999)).toBe("awaiting-finalize");
+    });
+  });
+
   it("JEBAKAN 1: phase voting DENGAN voteDeadline lewat BUKAN live", () => {
     // Inilah keadaan yang benar-benar ada di rantai. UI lama akan berbunyi
     // "Live now" padahal castVote PASTI ditolak kontrak.
@@ -104,6 +158,29 @@ describe("turunkanStatus", () => {
     // adalah jawaban yang benar karena ia tidak pernah mundur.
     expect(
       turunkanStatus({ phase: 2, voteDeadlineMs: T0 + seminggu, tallyDeadlineMs: T0 + 2 * seminggu }, T0),
+    ).toBe("finalized");
+  });
+
+  it("T2: phase finalized menang atas tallyDeadline, pada keadaan yang BENAR-BENAR TERJANGKAU (kedua deadline sudah lewat)", () => {
+    // Uji di atas ("phase finalized menang atas waktu apa pun") memakai
+    // sekarangMs SEBELUM tallyDeadline — kombinasi yang kontraknya sendiri
+    // tidak dapat hasilkan: finalize() di ballot.compact menuntut
+    // kernel.blockTimeGreaterThan(tallyDeadline) sebelum phase boleh pindah
+    // ke finalized, jadi satu-satunya jalan phase===2 muncul adalah SETELAH
+    // tallyDeadline lewat. Uji itu karena itu tidak pernah membedakan urutan
+    // pemeriksaan phase===2 vs tallyDeadline — menukar baris 86/87 tetap
+    // lolos, karena cabang tallyDeadline di situ selalu FALSE (T0 belum
+    // sampai tallyDeadline), jadi kode tetap jatuh ke cabang phase===2 apa
+    // pun urutannya.
+    //
+    // Uji ini memakai kedua deadline yang SUDAH lewat — persis ballot kedua
+    // di fixture rekaman (JEBAKAN 1). Di sini urutan BENAR-BENAR menentukan:
+    // bila pemeriksaan tallyDeadline dijalankan lebih dulu, sekarangMs (T0)
+    // >= tallyDeadlineMs bernilai true dan fungsi pulang "awaiting-finalize"
+    // SEBELUM sempat memeriksa phase — salah, karena ballot ini sudah
+    // benar-benar final. Menukar baris 86/87 membuat uji ini MERAH.
+    expect(
+      turunkanStatus({ phase: 2, voteDeadlineMs: T0 - 2 * seminggu, tallyDeadlineMs: T0 - seminggu }, T0),
     ).toBe("finalized");
   });
 

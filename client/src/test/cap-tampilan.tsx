@@ -107,14 +107,37 @@ function atributLain(el: Element): string {
   return pasangan.length === 0 ? "" : `[${pasangan.join("|")}]`;
 }
 
+/**
+ * PERBAIKAN 1 (ronde 1, dari review): akar sendiri kini ikut dicap.
+ *
+ * Sebelumnya loop hanya berjalan atas akar.querySelectorAll("*"), yang menurut
+ * definisi DOM TIDAK PERNAH menyertakan akar itu sendiri. Reviewer merancang
+ * dua mutasi yang lolos 5/5 karena celah ini: (1) kelas hantu + id + atribut
+ * data-bocor ditempel langsung ke elemen akar, dan (2) seluruh shell dibungkus
+ * satu <div> baru. Menambahkan akar ke larik yang di-loop menutup mutasi (1).
+ * Mutasi (2) butuh perbaikan kedua yang berpasangan dengannya: lihat catatan
+ * pada closure `akar` di rekamPermukaan() — bila "akar" selalu dicari lewat
+ * selector `.app-shell`, pembungkus baru DI ATAS elemen itu tetap tidak
+ * pernah terlihat, sebab querySelectorAll dari suatu elemen tidak pernah
+ * melihat leluhurnya. `capDari()` sendiri tidak tahu dan tidak perlu tahu
+ * bagaimana akar-nya ditemukan — ia hanya menjaga bahwa APA PUN yang dioper
+ * sebagai akar, akar itu sendiri ikut tercap.
+ */
 export function capDari(akar: HTMLElement): Cap {
   const kelas = new Set<string>();
   const garisBesar: string[] = [];
-  for (const el of Array.from(akar.querySelectorAll("*"))) {
+  for (const el of [akar, ...Array.from(akar.querySelectorAll("*"))]) {
     const token = tokenKelas(el);
     for (const t of token) kelas.add(t);
+    // Kedalaman kini dihitung TERMASUK akar: akar sendiri = 0, anak
+    // langsungnya = 1, dst — skema graf standar. Skema lama ("satu langkah di
+    // atas anak langsung akar") tidak punya nilai yang masuk akal untuk akar
+    // itu sendiri, sehingga tidak bisa dipertahankan sekarang akar ikut
+    // dicap. Akibatnya SETIAP kedalaman non-akar bergeser +1 dibanding
+    // rekaman Task 2 — itu sebabnya garis dasar wajib dibuat ulang, bukan
+    // ditambal, setelah perubahan ini.
     let kedalaman = 0;
-    for (let p = el.parentElement; p !== null && p !== akar; p = p.parentElement) kedalaman += 1;
+    for (let p = el; p !== akar; p = p.parentElement!) kedalaman += 1;
     garisBesar.push(
       `${kedalaman}:${el.tagName.toLowerCase()}${token.map(t => `.${t}`).join("")}${atributLain(el)}`,
     );
@@ -220,7 +243,20 @@ export async function rekamPermukaan(Komponen: ComponentType): Promise<Record<st
   await act(async () => {
     ({ container } = render(createElement(Komponen)));
   });
-  const akar = () => container.querySelector<HTMLElement>(".app-shell")!;
+  // PERBAIKAN 1 (ronde 1): akar dicari lewat container.firstElementChild,
+  // BUKAN lagi lewat selector ".app-shell". Mutasi reviewer #2 — seluruh
+  // shell dibungkus <div> baru — tetap lolos kalau akar dicari lewat kelas
+  // tertentu, sebab querySelector(".app-shell") menemukan elemen itu di
+  // kedalaman berapa pun, termasuk saat sudah dibungkus leluhur baru yang
+  // tidak pernah masuk hitungan. firstElementChild tidak punya asumsi nama
+  // kelas: ia selalu elemen TERLUAR yang sungguh-sungguh dirender Home() ke
+  // dalam container RTL — apa pun elemen dan atributnya. Home() selalu
+  // mengembalikan SATU elemen JSX di akar (dikonfirmasi dengan membaca
+  // berkasnya: <div className="app-shell">…</div> tunggal, modal-modal
+  // dirender sebagai ANAK di dalamnya, bukan sebagai saudara di luar), jadi
+  // container hanya pernah punya satu elemen anak — pemilihan ini aman di
+  // seluruh state interaksi skrip ini.
+  const akar = () => container.firstElementChild as HTMLElement;
   const teks = (t: string) => within(container).getByText(t);
 
   const kePanel = async (label: string) => {

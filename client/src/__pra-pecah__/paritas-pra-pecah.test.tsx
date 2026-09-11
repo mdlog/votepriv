@@ -29,9 +29,18 @@ import {
 import HomePraPecah from "./HomePraPecah";
 import Home from "@/pages/Home";
 
-/** sha256 Home.tsx pada saat garis dasar dibekukan (Task 1 Step 1). */
+/** sha256 Home.tsx DAN HomePraPecah.tsx pada saat garis dasar dibekukan (Task 1 Step 1). */
 const SHA_BEKU = "bdb0d2d6d16759988a7423b4ae2c76ed27d957a21ff955c06f083a62ff3af812";
 const JALUR_HOME = "client/src/pages/Home.tsx";
+// PERBAIKAN 2 (ronde 1): gerbang sha lama hanya memeriksa Home.tsx, tidak
+// pernah HomePraPecah.tsx. Reviewer memanfaatkan celah itu: menyunting
+// salinan beku (bukan Home.tsx), lalu menjalankan TULIS_GARIS_DASAR=1 —
+// gerbang sha Home.tsx lolos (Home.tsx memang tidak disentuh), dan rekaman
+// yang tertulis ke disk diam-diam sudah mencerminkan salinan beku yang
+// tercemar, bukan kode pra-pemecahan yang sah. HomePraPecah.tsx justru
+// berkas yang LEBIH penting untuk dijaga di sini: seluruh nilai "sebelum"
+// lahir darinya.
+const JALUR_BEKU = "client/src/__pra-pecah__/HomePraPecah.tsx";
 // import.meta.url DIPISAH ke variabel dengan sengaja — bukan gaya penulisan.
 // Vite mengenali pola literal persis `new URL("...", import.meta.url)` sebagai
 // sintaksis "asset URL" bawaannya dan menulis ulang base-nya menjadi origin
@@ -67,6 +76,16 @@ const PERMUKAAN: string[] = [
   "results-dengan-tanda-terima",
   "create-ballot",
   "sidebar-mobile",
+];
+
+/** Keenam fixture privasi, dalam urutan FIXTURE_PRIVASI. Dipakai di dua tempat. */
+const PRIVASI: string[] = [
+  "menunggu",
+  "remote",
+  "lewat-host-halaman",
+  "mati",
+  "target-belum-terverifikasi",
+  "lokal",
 ];
 
 const kendali = vi.hoisted(() => ({ status: "menggantung" as StatusFixture }));
@@ -142,15 +161,48 @@ describe("paritas tampilan Home sebelum dan sesudah pemecahan", () => {
 
   it("membekukan rekaman garis dasar hanya selama Home.tsx belum tersentuh", async () => {
     if (process.env.TULIS_GARIS_DASAR !== "1") {
-      expect(true).toBe(true);
+      // PERBAIKAN 3 (ronde 1): dulu `expect(true).toBe(true)` di sini — lulus
+      // selalu, tidak menyatakan apa pun, dan ikut membengkakkan hitungan
+      // "25 lulus" tanpa menjaga apa pun. Assert yang menggantikannya nyata:
+      // rekaman YANG SUDAH ADA di disk harus masih berbentuk seperti yang
+      // dijanjikan skrip interaksi SAAT INI. Tanpa ini, seseorang bisa
+      // menambah permukaan baru di rekamPermukaan(), memperbarui PERMUKAAN di
+      // atas, lulus uji pertama di berkas ini (yang menghitung ulang dari
+      // nol dan tidak pernah membaca disk), lupa menjalankan
+      // TULIS_GARIS_DASAR=1, dan garis-dasar-tampilan.json di disk diam-diam
+      // menjadi basi tanpa satu uji pun mengeluh — sampai Task 8 menghapus
+      // salinan beku dan uji penerus (paritas-garis-dasar.test.tsx) mulai
+      // membandingkan Home hidup terhadap rekaman yang tidak lagi mewakili
+      // skrip interaksi yang sama.
+      const rekamanDiDisk = JSON.parse(readFileSync(JALUR_REKAMAN, "utf8")) as Rekaman;
+      expect(Object.keys(rekamanDiDisk.permukaan), "rekaman di disk basi terhadap PERMUKAAN saat ini").toEqual(
+        PERMUKAAN,
+      );
+      expect(Object.keys(rekamanDiDisk.privasi), "rekaman di disk basi terhadap fixture privasi saat ini").toEqual(
+        PRIVASI,
+      );
       return;
     }
-    const sha = createHash("sha256").update(readFileSync(JALUR_HOME)).digest("hex");
-    if (sha !== SHA_BEKU) {
+    // PERBAIKAN 2 (ronde 1): KEDUA sumber "sebelum" diperiksa sha256-nya di
+    // sini, bukan hanya Home.tsx. Keduanya harus lolos SEBELUM rekamPermukaan
+    // / rekamPrivasi dipanggil sama sekali — bukan hanya sebelum writeFileSync
+    // — supaya tidak ada kerja yang dilakukan atas salinan beku yang sudah
+    // tidak sah sebelum gerbangnya sendiri sempat menolak.
+    const shaHome = createHash("sha256").update(readFileSync(JALUR_HOME)).digest("hex");
+    if (shaHome !== SHA_BEKU) {
       throw new Error(
-        `Home.tsx sudah berubah (sha256 ${sha}). Rekaman garis dasar TIDAK boleh dibuat ` +
+        `Home.tsx sudah berubah (sha256 ${shaHome}). Rekaman garis dasar TIDAK boleh dibuat ` +
           `ulang setelah pemecahan dimulai — kalau ia dibuat dari kode yang sudah dipecah, ` +
           `ia berhenti menjadi nilai "sebelum" dan mulai menjadi cermin.`,
+      );
+    }
+    const shaBeku = createHash("sha256").update(readFileSync(JALUR_BEKU)).digest("hex");
+    if (shaBeku !== SHA_BEKU) {
+      throw new Error(
+        `HomePraPecah.tsx sudah berubah (sha256 ${shaBeku}). Berkas inilah sumber SELURUH nilai ` +
+          `"sebelum" — kalau ia sendiri sudah disunting, rekaman yang dibuat darinya bukan lagi ` +
+          `nilai "sebelum" yang sah, melainkan cerminan suntingan pada salinan beku itu sendiri. ` +
+          `Pulihkan HomePraPecah.tsx ke sha256 ${SHA_BEKU} sebelum membuat ulang garis dasar.`,
       );
     }
     const atur = (s: StatusFixture) => {
@@ -166,14 +218,7 @@ describe("paritas tampilan Home sebelum dan sesudah pemecahan", () => {
     // rencana ini — dan menuliskannya lebih dulu lalu melempar berarti meninggalkan
     // garis dasar yang salah di disk untuk dipakai seluruh task berikutnya.
     expect(Object.keys(rekaman.permukaan)).toEqual(PERMUKAAN);
-    expect(Object.keys(rekaman.privasi)).toEqual([
-      "menunggu",
-      "remote",
-      "lewat-host-halaman",
-      "mati",
-      "target-belum-terverifikasi",
-      "lokal",
-    ]);
+    expect(Object.keys(rekaman.privasi)).toEqual(PRIVASI);
 
     writeFileSync(JALUR_REKAMAN, `${JSON.stringify(rekaman, null, 2)}\n`);
   });

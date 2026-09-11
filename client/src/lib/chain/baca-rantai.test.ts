@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { GalatRantai } from "./graphql";
 import { bacaRantai } from "./baca-rantai";
 import type { JaringanAktif } from "./endpoint";
+import {
+  galatVariabelHilang,
+  proyeksikanJawabanJaringan,
+  proyeksikanJawabanKontrak,
+} from "../../test/proyeksi-kueri-rantai";
 
 const DIR = new URL("../../test/fixture-rantai/", import.meta.url);
 const baca = (n: string) => JSON.parse(readFileSync(new URL(n, DIR), "utf8"));
@@ -22,29 +27,32 @@ const JARINGAN: JaringanAktif = {
  * fetch palsu yang memilih jawaban menurut nama operasi di dokumen.
  * `ubah` memungkinkan tiap uji merusak satu jawaban tanpa menyalin fixture.
  *
- * Ia juga MEMANGKAS jawaban agar sesuai dokumen yang benar-benar dikirim.
- * Fixture merekam SUPERSET — `terbaru` ada pada setiap ballot — supaya menyetel
- * MAKS_BALLOT_BERAKSI tidak menuntut rekam ulang. Tanpa pemangkasan ini, uji
- * akan melihat riwayat aksi pada ballot yang aplikasinya TIDAK MEMINTANYA, dan
- * gerbang jendela biaya berhenti menggigit.
+ * Ia juga MEMPROYEKSIKAN jawaban menurut field yang BENAR-BENAR diminta pada
+ * teks kueri yang dikirim (lewat proyeksi-kueri-rantai.ts) — bukan hanya
+ * menghapus kunci `terbaru` per alias seperti sebelumnya. Fixture merekam
+ * SUPERSET — setiap field ada pada setiap ballot — supaya menyetel
+ * MAKS_BALLOT_BERAKSI atau mengubah field yang diminta di kueri.ts tidak
+ * menuntut rekam ulang; proyektorlah yang memutuskan apa yang benar-benar
+ * "dijawab". Tanpa proyeksi field ini, menghapus `state` dari BIDANG_DASAR,
+ * menghapus `state` dari blok `terbaru:`, atau mengubah `limit: 5` menjadi
+ * `limit: 1` di kueri.ts tidak mengubah jawaban palsu sama sekali — celah
+ * yang mutasi M5/M6/M7 buktikan nyata (lihat task-5-hasil-mutasi.md).
  *
  * CATATAN (praperiksa P1): fixture hanya memuat DUA ballot, jauh di bawah
- * MAKS_BALLOT_BERAKSI (6) — jadi pemangkas ini pada berkas ini SENDIRI tidak
- * pernah benar-benar menghapus `terbaru` (kedua alias selalu memakai ...Penuh).
- * Itu bukan kesalahan pemangkas ini; itu batas fixture. Gerbang jendela
- * Penuh/Ringkas dan penghitungan lintas-dokumen diuji SUNGGUHAN, dengan angka
- * yang dipaku, di baca-rantai.registry-sintetis.test.ts lewat registry
- * sintetis yang addressnya sengaja melebihi MAKS_BALLOT_BERAKSI dan
- * MAKS_ALAMAT_PER_DOKUMEN.
+ * MAKS_BALLOT_BERAKSI (6) — jadi berkas ini SENDIRI tidak pernah benar-benar
+ * menghapus `terbaru` lewat batas MAKS_BALLOT_BERAKSI (kedua alias selalu
+ * memakai ...Penuh). Itu bukan kekurangan proyektor; itu batas fixture.
+ * Gerbang jendela Penuh/Ringkas dan penghitungan lintas-dokumen diuji
+ * SUNGGUHAN, dengan angka yang dipaku, di
+ * baca-rantai.registry-sintetis.test.ts lewat registry sintetis yang
+ * addressnya sengaja melebihi MAKS_BALLOT_BERAKSI dan MAKS_ALAMAT_PER_DOKUMEN.
  */
-function pangkasMenurutDokumen(query: string, jawaban: any): any {
-  if (!/query Ballots/.test(query) || !jawaban?.data) return jawaban;
-  for (const [alias, isi] of Object.entries(jawaban.data as Record<string, any>)) {
-    if (!isi) continue;
-    // Indexer menghilangkan kunci `terbaru` sepenuhnya pada alias ...Ringkas —
-    // diverifikasi terhadap indexer sungguhan. Ditiru apa adanya di sini.
-    const memakaiPenuh = new RegExp(`\\b${alias}:\\s*contract\\([^)]*\\)\\s*\\{\\s*\\.\\.\\.Penuh\\s*\\}`).test(query);
-    if (!memakaiPenuh) delete isi.terbaru;
+function proyeksikanMenurutKueri(nama: string, query: string, jawaban: any): any {
+  if ((nama === "Registry" || nama === "Ballots") && jawaban?.data) {
+    return { ...jawaban, data: proyeksikanJawabanKontrak(query, jawaban.data) };
+  }
+  if (nama === "Jaringan" && jawaban?.data) {
+    return { ...jawaban, data: proyeksikanJawabanJaringan(query, jawaban.data) };
   }
   return jawaban;
 }
@@ -53,9 +61,21 @@ function ambilPalsu(ubah: (nama: string, jawaban: any) => any = (_n, j) => j): t
   return vi.fn(async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     const nama = /query\s+(\w+)/.exec(body.query)?.[1] ?? "?";
+    // Korespondensi nama variabel: kunci `variables` yang dikirim (`a0`, …)
+    // harus sama persis dengan `$a0`, … yang dideklarasikan tanda tangan
+    // operasi. Terhadap indexer sungguhan, ketidakcocokan ini adalah galat
+    // validasi yang menjatuhkan SELURUH kueri — ditiru di sini alih-alih
+    // diabaikan seperti sebelumnya (lihat proyeksi-kueri-rantai.ts).
+    const errVar = galatVariabelHilang(body.query, body.variables);
+    if (errVar.length > 0) {
+      return new Response(JSON.stringify({ data: null, errors: errVar }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     const asli =
       nama === "Registry" ? fxRegistry : nama === "Ballots" ? fxBallots.jawaban : fxJaringan;
-    const jawaban = ubah(nama, pangkasMenurutDokumen(body.query, structuredClone(asli)));
+    const jawaban = ubah(nama, proyeksikanMenurutKueri(nama, body.query, structuredClone(asli)));
     return new Response(JSON.stringify(jawaban), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -92,6 +112,96 @@ describe("bacaRantai — jalur sehat", () => {
   it("membawa deployHeight untuk setiap ballot — sumber nomor urut yang stabil", async () => {
     const h = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
     for (const b of h.ballot) expect(b.deployHeight).toBeGreaterThan(0);
+    // Nilai PERSIS untuk b0, diturunkan dari fixture (dekode ContractDeploy
+    // asli): bukan hanya "positif", supaya k.deploy[0]?.transaction.block.height
+    // tertukar dengan bidang lain (mis. .timestamp) benar-benar jatuh.
+    const b0 = h.ballot.find(b => b.alamat === fxBallots.alamat[0]);
+    expect(b0!.deployHeight).toBe(fxBallots.jawaban.data.b0.deploy[0].transaction.block.height);
+  });
+
+  it("memaku registry.count ke jumlah alamat registry sungguhan — bidang yang sebelumnya tak pernah diassert", async () => {
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
+    expect(h.registry.count).toBe(fxBallots.alamat.length);
+  });
+
+  /**
+   * Memaku SETIAP bidang AksiTerbaca yang sebelumnya tidak pernah diassert
+   * sama sekali (jenis, entryPoint, txHash, timestampMs, sumber), dan yang
+   * paling penting: `height` vs `timestampMs` TIDAK BOLEH tertukar. Nilainya
+   * diturunkan langsung dari ballots.json/registry.json (superset lengkap
+   * yang dikirim ke proyektor kueri di atas), bukan diketik bebas.
+   */
+  it("memaku jenis, entryPoint, txHash, height, timestampMs, dan sumber pada aksi ballot yang diketahui — tidak tertukar", async () => {
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
+    const b0 = h.ballot.find(b => b.alamat === fxBallots.alamat[0]);
+    expect(b0).toBeDefined();
+    const aksiMentah = fxBallots.jawaban.data.b0.terbaru[0];
+    const aksi0 = b0!.aksi[0];
+    expect(aksi0.jenis).toBe("ContractCall");
+    expect(aksi0.jenis).toBe(aksiMentah.__typename);
+    expect(aksi0.entryPoint).toBe("finalize");
+    expect(aksi0.entryPoint).toBe(aksiMentah.entryPoint);
+    expect(aksi0.txHash).toBe(aksiMentah.transaction.hash);
+    expect(aksi0.height).toBe(aksiMentah.transaction.block.height);
+    expect(aksi0.timestampMs).toBe(aksiMentah.transaction.block.timestamp);
+    // height dan timestampMs TIDAK boleh sama di fixture ini — kalau kebetulan
+    // sama, uji di atas tidak bisa membedakan keduanya tertukar (M10).
+    expect(aksi0.height).not.toBe(aksi0.timestampMs);
+    // sumber ballot adalah JUDUL ballot yang didekode, bukan konstanta.
+    expect(aksi0.sumber).toBe(b0!.keadaan.title);
+    expect(aksi0.sumber).not.toBe("Registry");
+  });
+
+  it("memaku jenis, entryPoint, txHash, height, dan timestampMs pada aksi REGISTRY yang diketahui (ContractDeploy tertua) — sumber selalu 'Registry'", async () => {
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
+    const aksiMentah = fxRegistry.data.r.terbaru[fxRegistry.data.r.terbaru.length - 1];
+    const tertua = h.registry.aksi[h.registry.aksi.length - 1];
+    expect(tertua.jenis).toBe("ContractDeploy");
+    expect(tertua.jenis).toBe(aksiMentah.__typename);
+    expect(tertua.entryPoint).toBeNull();
+    expect(tertua.txHash).toBe(aksiMentah.transaction.hash);
+    expect(tertua.height).toBe(aksiMentah.transaction.block.height);
+    expect(tertua.timestampMs).toBe(aksiMentah.transaction.block.timestamp);
+    expect(tertua.height).not.toBe(tertua.timestampMs);
+    expect(tertua.sumber).toBe("Registry");
+  });
+
+  /**
+   * K1: isi `perubahan` DIPAKU ke nilai konkret pada satu aksi BALLOT yang
+   * diketahui — bukan sekadar "dari ≠ ke" seperti uji lama. Tanpa ini,
+   * membalik arah (`dari`/`ke` tertukar, M3) atau mengosongkan seluruh isi
+   * cuplikanBallot() (M2) lolos, karena satu-satunya assert isi sebelumnya
+   * terpenuhi SELURUHNYA oleh selisih aksi REGISTRY — lihat temuan K1 di
+   * task-5-hasil-mutasi.md. b0.aksi[1] (tallyVote, height 813948) punya
+   * pendahulu b0.aksi[2] (tallyVote, height 813944) dengan talliedCount 2;
+   * b0.aksi[1] sendiri talliedCount 3 — SATU-SATUNYA bidang yang berubah di
+   * pasangan ini, jadi arah dan isinya bisa dipaku PERSIS tanpa ambiguitas.
+   */
+  it("memaku isi DAN ARAH perubahan pada satu aksi ballot yang diketahui — menutup jalur M2/M3 yang tidak bisa diselamatkan aksi registry", async () => {
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
+    const b0 = h.ballot.find(b => b.alamat === fxBallots.alamat[0]);
+    const aksi1 = b0!.aksi[1];
+    expect(aksi1.entryPoint).toBe("tallyVote");
+    expect(aksi1.perubahan).toEqual([{ bidang: "talliedCount", dari: 2, ke: 3 }]);
+  });
+
+  /**
+   * M19: `perubahan` mencatat SEMUA bidang yang berubah pada satu aksi, bukan
+   * hanya yang pertama ditemukan. b0.aksi[3] (tallyVote, height 813940)
+   * dibanding pendahulunya b0.aksi[4] (castVote, height 813349) punya DUA
+   * bidang yang berubah sekaligus: talliedCount (0→1) dan phase (0→1).
+   * Menambahkan `break;` setelah `perubahan.push(...)` di baca-rantai.ts akan
+   * memotong larik ini jadi panjang 1 — mutasi itulah yang uji ini tutup.
+   */
+  it("mencatat SEMUA bidang yang berubah pada satu aksi, bukan hanya yang pertama (M19)", async () => {
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil: ambilPalsu() });
+    const b0 = h.ballot.find(b => b.alamat === fxBallots.alamat[0]);
+    const aksi3 = b0!.aksi[3];
+    expect(aksi3.entryPoint).toBe("tallyVote");
+    expect(aksi3.perubahan).toEqual([
+      { bidang: "talliedCount", dari: 0, ke: 1 },
+      { bidang: "phase", dari: 0, ke: 1 },
+    ]);
   });
 
   it("MENDEKODE state setiap aksi dan menghasilkan selisih — Recent activity DIBACA, bukan disimpulkan", async () => {
@@ -250,6 +360,42 @@ describe("bacaRantai — kegagalan SEBAGIAN tetap menampilkan sisanya", () => {
     expect(tetangga.pendahuluTerbaca).toBe(false);
     expect(tetangga.perubahan).toEqual([]);
   });
+
+  /**
+   * M4: penjaga try/catch di cuplikanRegistry() sebelumnya tidak disentuh uji
+   * mana pun — menghapusnya seluruhnya tetap lolos hijau. Uji ini merusak
+   * `state` SATU AKSI REGISTRY (padanan uji P5 di atas, tapi untuk registry,
+   * bukan ballot) sehingga dekodeRegistry() di dalam cuplikanRegistry()
+   * melempar, dan catch-nya benar-benar tereksekusi: aksi itu sendiri jadi
+   * cuplikanTerbaca=false, TANPA menjatuhkan bacaRantai() atau ballot lain.
+   */
+  it("mencatat state SATU AKSI REGISTRY yang gagal didekode tanpa menjatuhkan bacaRantai() (M4)", async () => {
+    // registry.json fixture punya 3 aksi (register, register, ContractDeploy).
+    // Indeks 1 (register, height 810840) dirusak: tetangganya yang lebih baru
+    // (indeks 0) lalu kehilangan pendahulu yang terbaca.
+    const h = await bacaRantai({
+      jaringan: JARINGAN,
+      ambil: ambilPalsu((nama, j) => {
+        if (nama !== "Registry") return j;
+        j.data.r.terbaru[1].state = "bukan-hex-sama-sekali";
+        return j;
+      }),
+    });
+    // Tidak menjatuhkan pembacaan: ballot tetap lengkap seperti jalur sehat.
+    expect(h.ballot).toHaveLength(fxBallots.alamat.length);
+    expect(h.gagal).toEqual([]);
+
+    expect(h.registry.aksi).toHaveLength(3);
+    const rusak = h.registry.aksi[1];
+    expect(rusak.cuplikanTerbaca).toBe(false);
+    expect(rusak.perubahan).toEqual([]);
+    expect(rusak.pendahuluTerbaca).toBe(false);
+
+    const tetangga = h.registry.aksi[0];
+    expect(tetangga.cuplikanTerbaca).toBe(true);
+    expect(tetangga.pendahuluTerbaca).toBe(false);
+    expect(tetangga.perubahan).toEqual([]);
+  });
 });
 
 describe("bacaRantai — kegagalan TOTAL", () => {
@@ -265,13 +411,28 @@ describe("bacaRantai — kegagalan TOTAL", () => {
    * kegagalan yang diverifikasi nyata di graphql.ts (lihat komentar
    * JawabanGraphQL di sana) tapi tidak pernah diuji di Task 5 sebelumnya.
    * Tanpa perbaikan kode, ini melempar TypeError mentah, bukan GalatRantai.
+   *
+   * Sebabnya "registry-skema", BUKAN "registry-hilang": kunci `r` yang hilang
+   * berarti kuerinya sendiri gagal divalidasi (alias/skema), sedangkan
+   * "registry-hilang" (uji di atas) berarti kuerinya SAH dan indexer benar-
+   * benar menjawab "tidak ada kontrak". Melaporkan keduanya sama pernah
+   * terjadi di Task 5 — lihat konflasi P3 di laporan mutasi.
    */
-  it("melempar GalatRantai bersebab registry-hilang ketika kunci r HILANG SELURUHNYA, bukan hanya null", async () => {
+  it("melempar GalatRantai bersebab registry-skema (BUKAN registry-hilang) ketika kunci r HILANG SELURUHNYA, bukan hanya null", async () => {
     const ambil = ambilPalsu((nama, j) =>
       nama === "Registry" ? { data: {}, errors: [{ message: "invalid address: cannot hex-decode" }] } : j,
     );
     await expect(bacaRantai({ jaringan: JARINGAN, ambil })).rejects.toMatchObject({
-      sebab: "registry-hilang",
+      sebab: "registry-skema",
+    });
+    // Rincian menyebut galat skema/alias yang sesungguhnya (dari errors[]),
+    // BUKAN kalimat "No contract exists…" milik registry-hilang — itu
+    // kalimat yang salah kalau sebab sesungguhnya adalah galat kueri.
+    const ambil2 = ambilPalsu((nama, j) =>
+      nama === "Registry" ? { data: {}, errors: [{ message: "invalid address: cannot hex-decode" }] } : j,
+    );
+    await expect(bacaRantai({ jaringan: JARINGAN, ambil: ambil2 })).rejects.toMatchObject({
+      rincian: expect.stringContaining("invalid address: cannot hex-decode"),
     });
   });
 
@@ -318,5 +479,63 @@ describe("bacaRantai — POST 3 TIDAK PERNAH menjatuhkan pembacaan", () => {
     expect(h.sekarangMs).toBeLessThanOrEqual(sesudah);
     // Dan tetap tidak pernah mundur dari angka rantai yang berhasil dibaca.
     expect(h.sekarangMs).toBeGreaterThanOrEqual(h.blok.timestampMs);
+  });
+
+  /**
+   * M22 (bug nyata, bukan hanya prediksi mutasi — lihat task-5-hasil-mutasi.md):
+   * POST 3 sebelumnya TIDAK memeriksa keberadaan kunci block.height/
+   * block.timestamp sebelum membacanya — satu-satunya dari tiga POST yang
+   * begitu, padahal praperiksa P3 baru saja memaksa perbaikan yang sama di
+   * POST 1. Tanpa perbaikan itu, kunci `timestamp` yang hilang dari jawaban
+   * membuat `sekarangMs` menjadi `undefined` secara DIAM-DIAM: tidak ada
+   * entri gagal[], tidak ada GalatRantai, padahal tipenya `number`. Uji ini
+   * membuktikan perbaikannya: dengan kunci `timestamp` hilang, POST 3
+   * dianggap GAGAL dan bacaRantai() jatuh ke jalur fallback yang SUDAH ADA
+   * (tinggi aksi kontrak / jam perangkat) — bukan mewariskan nilai rusak.
+   */
+  it("jatuh ke fallback POST-3-gagal ketika kunci timestamp HILANG dari block, bukan mewariskan sekarangMs=undefined (M22)", async () => {
+    const ambil = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const nama = /query\s+(\w+)/.exec(body.query)?.[1] ?? "?";
+      if (nama === "Jaringan") {
+        // Kunci `timestamp` HILANG (bukan bernilai null) — bentuk yang sama
+        // yang praperiksa P3 verifikasi untuk kunci `r` di POST 1.
+        return new Response(
+          JSON.stringify({
+            data: { block: { height: 819599, hash: "x" } },
+            errors: [{ message: "timestamp unavailable" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      const asli = nama === "Registry" ? fxRegistry : fxBallots.jawaban;
+      return new Response(JSON.stringify(asli), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const sebelum = Date.now();
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil });
+    const sesudah = Date.now();
+    expect(h.ballot).toHaveLength(fxBallots.alamat.length);
+    expect(h.epoch).toBeNull();
+    expect(Number.isFinite(h.sekarangMs)).toBe(true);
+    // Sama seperti jalur POST-3-gagal biasa di atas: floor terhadap jam
+    // perangkat, tidak pernah mundur dari angka rantai yang terlihat.
+    expect(h.sekarangMs).toBeGreaterThanOrEqual(sebelum);
+    expect(h.sekarangMs).toBeLessThanOrEqual(sesudah);
+  });
+
+  /** Penjaga `AbortError` di catch POST 3 (M15) — sebelumnya tidak diuji sama
+   * sekali. AbortError adalah PEMBATALAN yang diminta pemanggil, bukan
+   * kegagalan; ia HARUS naik apa adanya, bukan ditelan jadi fallback jam
+   * perangkat seperti kegagalan biasa. */
+  it("meneruskan AbortError POST 3 apa adanya, TIDAK menelannya jadi fallback (M15)", async () => {
+    const abortErr = new DOMException("dibatalkan", "AbortError");
+    const ambil = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const nama = /query\s+(\w+)/.exec(body.query)?.[1] ?? "?";
+      if (nama === "Jaringan") throw abortErr;
+      const asli = nama === "Registry" ? fxRegistry : fxBallots.jawaban;
+      return new Response(JSON.stringify(asli), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    await expect(bacaRantai({ jaringan: JARINGAN, ambil })).rejects.toBe(abortErr);
   });
 });

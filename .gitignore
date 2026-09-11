@@ -121,3 +121,6 @@ pkgs/cli/logs/
 # Store private state terenkripsi dan artefak deploy (memuat credential uji)
 pkgs/cli/private-state/
 pkgs/cli/artefak/
+
+# Rekaman interaksi debug collector (teks elemen yang diklik, isi input, badan permintaan)
+.manus-logs/

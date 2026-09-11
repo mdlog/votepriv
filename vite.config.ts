@@ -228,7 +228,47 @@ function vitePluginRuntimeConfig(proofServerTarget: string): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
+/**
+ * Perkakas scaffolding Manus: HANYA untuk pengembangan, dan debug collector
+ * hanya bila diminta eksplisit.
+ *
+ * Ini bukan kerapian, ini kebocoran yang terukur. Dua hal yang diverifikasi di
+ * repo ini:
+ *
+ * 1. `vitePluginManusRuntime()` menyisipkan skrip INLINE 366.824 byte ke dalam
+ *    build PRODUKSI (`<script id="manus-runtime">` di dist/public/index.html,
+ *    total berkas 367.838 byte — jadi 99,7% halaman yang dikirim ke pemilih
+ *    adalah skrip itu). Ia tidak terlihat di client/index.html karena
+ *    disisipkan dengan enforce:"post". Akibatnya tiga-tiganya nyata: skrip
+ *    inline MUSTAHIL ditutupi Subresource Integrity; setiap skema verifikasi
+ *    kode web yang benar-benar ada menolak halaman yang mengizinkan
+ *    'unsafe-inline'; dan ia membawa postMessage ber-origin lebar ke dalam
+ *    halaman pemungutan suara.
+ *
+ * 2. `vitePluginManusDebugCollector()` merekam interaksi ke .manus-logs/ —
+ *    diperiksa isinya: 291 kemunculan field "text" (teks elemen yang diklik),
+ *    76 "value" (isi input), dan 2 "body" (badan permintaan jaringan). Selama
+ *    dev server dipakai MENYAJIKAN halaman ke orang lain (mis. lewat tunnel),
+ *    itu berarti penyelenggara menerima rekaman apa yang diklik pemilih —
+ *    jalur kebocoran yang sama sekali tidak berkaitan dengan proof server, dan
+ *    yang membatalkan klaim "tidak ada infrastruktur penyelenggara yang
+ *    menyentuh pilihan Anda".
+ *
+ * Karena itu: runtime dan storage proxy hanya di dev, dan collector harus
+ * dinyalakan sengaja lewat VOTEPRIV_DEBUG_COLLECTOR=1. Nilai bawaannya mati.
+ */
+const modePengembangan = process.env.NODE_ENV !== "production";
+const collectorDiminta = process.env.VOTEPRIV_DEBUG_COLLECTOR === "1";
+
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  ...(modePengembangan
+    ? [vitePluginManusRuntime(), vitePluginStorageProxy()]
+    : []),
+  ...(modePengembangan && collectorDiminta ? [vitePluginManusDebugCollector()] : []),
+];
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(import.meta.dirname), "");

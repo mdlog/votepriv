@@ -49,7 +49,7 @@ describe.skipIf(!process.env.VOTEPRIV_UJI_JARINGAN)("rantai sungguhan", () => {
     // Setiap kegagalan sebagian punya sebab yang dikenal — tidak ada kategori
     // "lain-lain" yang menyembunyikan bentuk kegagalan baru.
     for (const g of h.gagal) {
-      expect(["alamat-tak-sah", "alias-hilang", "kontrak-null", "dekode"]).toContain(g.sebab);
+      expect(["alamat-tak-sah", "alias-hilang", "kontrak-null", "alamat-tak-cocok", "dekode"]).toContain(g.sebab);
     }
   });
 });

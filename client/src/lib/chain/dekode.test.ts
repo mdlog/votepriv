@@ -172,6 +172,17 @@ describe("padatkanTallies", () => {
     expect(Object.keys(padat)).toEqual(["0", "1"]);
   });
 
+  it("MELEMPAR GalatRantai untuk NILAI bigint di atas Number.MAX_SAFE_INTEGER — keNomor dipanggil, bukan Number(v) telanjang", () => {
+    // Regresi untuk perbaikan padatkanTallies: sebelumnya `Number(v)` telanjang
+    // membulatkan diam-diam nilai Uint64 besar alih-alih melempar, tidak
+    // konsisten dengan dekodeBallot yang membaca map tallies yang SAMA lewat
+    // keNomor. Tanpa uji ini perbaikannya bisa dibatalkan diam-diam.
+    expect(() => padatkanTallies([[0n, BigInt(Number.MAX_SAFE_INTEGER) + 1n]], 1)).toThrow(GalatRantai);
+    expect(() => padatkanTallies([[0n, BigInt(Number.MAX_SAFE_INTEGER) + 1n]], 1)).toThrow(
+      /exceeds Number\.MAX_SAFE_INTEGER/,
+    );
+  });
+
   it("memadatkan tallies dari setiap ballot yang direkam ke panjang yang benar", () => {
     const alamat: string[] = ballots.alamat;
     for (let i = 0; i < alamat.length; i++) {

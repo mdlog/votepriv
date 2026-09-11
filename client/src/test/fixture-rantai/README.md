@@ -48,28 +48,33 @@ VOTEPRIV_UJI_JARINGAN=1 pnpm test client/src/lib/chain/jaringan-nyata.test.ts
 ## Yang TIDAK dapat diuji fixture ini, dan mengapa
 
 Fixture ini adalah rekaman APA ADANYA dari dua ballot yang ada di jaringan
-preview hari ini. Tiga sifat berikut TIDAK ADA pada keduanya, dan tidak bisa
-diadakan tanpa deploy ballot baru ke testnet memakai seed milik pengguna —
-di luar jangkauan uji otomatis ini:
+preview hari ini. Enum fase sungguhan (`pkgs/contract/src/ballot.compact`,
+tergenerasi ke `managed/ballot/contract/index.d.ts`):
 
-- **Ballot berfase 1 (voting terbuka).** b0 sudah di fase 2 (tallied), b1
-  masih di fase 0 (registration). Fase 1 tidak pernah terekam. Uji apa pun
-  atas perilaku KHUSUS fase 1 (mis. "opsi masih bisa disuarakan") tidak
-  didukung fixture ini.
+```
+export enum BallotPhase { voting = 0, tallying = 1, finalized = 2 }
+```
+
+Tiga sifat berikut TIDAK ADA pada kedua ballot fixture:
+
+- **Ballot berfase TALLYING (1).** b0 ada di fase 2 (finalized), b1 ada di
+  fase 0 (voting — voting b1 SUDAH ada di fixture, bukan "tidak ada").
+  Fase 1 (tallying) sendiri tidak pernah terekam.
 - **`voteCount != talliedCount` pada ballot yang sama.** b0 punya 3/3
   (dihitung habis), b1 punya 0/0 (belum disuarakan) — keduanya kebetulan
-  kembar. Fixture ini TIDAK punya ballot "sudah disuarakan sebagian tapi
-  belum ditally". Uji `dekode.ledger-sintetis.test.ts` menutup lubang
-  pemetaannya (voteCount vs talliedCount tidak tertukar) lewat ledger
-  SINTETIS, bukan lewat fixture ini — itu tidak sama dengan membuktikan
-  rantai sungguhan pernah punya keadaan ini.
+  kembar.
 - **Deadline di MASA DEPAN relatif terhadap `meta.sekarangMs`.** Keempat
   deadline (voteDeadline/tallyDeadline pada b0 dan b1) sudah lewat pada
-  `sekarangMs` yang sama direkamnya. Cabang "voting masih terbuka" atau
-  "jendela tally masih terbuka" pada turunan status apa pun yang dibangun di
-  atas modul ini tidak punya data fixture yang menguji jalur "belum lewat".
+  `sekarangMs` yang sama direkamnya.
 
-Menutup ketiganya lewat fixture menuntut ballot baru dengan fase/waktu yang
-berbeda direkam ulang dari jaringan sungguhan (lihat "Merekam ulang" di
-atas) — bukan menyunting `ballots.json`/`meta.json` dengan tangan, yang akan
-membuat fixture ini berhenti menjadi rekaman rantai sungguhan.
+**Ketiganya TERCAKUP uji** di `dekode.ledger-sintetis.test.ts` lewat ledger
+SINTETIS (memalsukan accessor `ledger()` tergenerasi, bukan fixture ini, dan
+diikat ke tipe `Ledger` sungguhan supaya tidak diam-diam basi kalau bentuk
+kontrak berubah) — bukan deploy testnet baru seperti sempat ditulis di sini
+sebelumnya. Yang benar-benar TIDAK bisa dilakukan tanpa deploy jauh lebih
+sempit: **tidak ada rekaman rantai sungguhan yang memperlihatkan ketiga
+keadaan ini**, jadi uji sintetis membuktikan dekoder memetakan field dengan
+benar untuk keadaan itu, tetapi TIDAK membuktikan indexer benar-benar
+menyajikannya seperti yang kita duga di jaringan nyata — itu baru bisa
+dikonfirmasi lewat rekaman ulang (lihat "Merekam ulang" di atas) begitu ada
+ballot dengan fase/waktu yang berbeda di jaringan.

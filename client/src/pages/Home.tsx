@@ -31,6 +31,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { CreateBallotModal } from "@/components/votepriv/CreateBallotModal";
+import { VoteModal } from "@/components/votepriv/VoteModal";
 import { BallotCard } from "@/components/votepriv/BallotCard";
 import { statusLabel } from "@/components/votepriv/ballot-status";
 import { initialBallots } from "@/components/votepriv/demo-data";
@@ -50,107 +52,6 @@ function shortAddress(address: string) {
   const bare = address.replace(/^mn_(shield-addr|addr)_/, "");
   if (bare.length <= 12) return bare;
   return `${bare.slice(0, 6)}…${bare.slice(-4)}`;
-}
-
-function VoteModal({
-  ballot,
-  connected,
-  onClose,
-  onVote,
-}: {
-  ballot: Ballot;
-  connected: boolean;
-  onClose: () => void;
-  onVote: (receipt: Receipt) => void;
-}) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [stage, setStage] = useState<"select" | "proving" | "success">("select");
-
-  const submit = () => {
-    if (!connected) {
-      toast.error("Connect your wallet first", { description: "VotePriv needs a wallet to check eligibility." });
-      return;
-    }
-    if (!selected) {
-      toast.error("Select an option", { description: "Your choice stays private after you submit." });
-      return;
-    }
-    setStage("proving");
-    window.setTimeout(() => setStage("success"), 1350);
-    window.setTimeout(() => {
-      // SIMULASI. Alur ini belum menyentuh kontrak: tidak ada witness yang disusun,
-      // tidak ada proof yang dibuat, tidak ada transaksi yang dikirim. txRef sengaja
-      // `null` — sebelumnya di sini ada hash palsu "0x7f…a91c" yang ditampilkan
-      // berdampingan dengan kalimat "The network accepted your proof", dan itu satu-
-      // satunya hal di aplikasi ini yang benar-benar tidak dapat dipertahankan.
-      // Diganti alur sungguhan pada Rencana C-2 (spec §9.2 butir 1).
-      onVote({ ballotId: ballot.id, proofStatus: "simulated", nullifierStatus: "not-consumed", txRef: null });
-    }, 1750);
-  };
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <div className="vote-modal" role="dialog" aria-modal="true" aria-labelledby="vote-title" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="icon-button modal-close" onClick={onClose} aria-label="Close vote dialog"><X size={18} /></button>
-        {stage === "select" && (
-          <>
-            <div className="modal-kicker"><LockKeyhole size={14} /> Private ballot</div>
-            <div className="modal-heading-row">
-              <div>
-                <p className="eyebrow">{ballot.community} · {ballot.id}</p>
-                <h2 id="vote-title">{ballot.title}</h2>
-              </div>
-              <span className="live-pill"><span /> {statusLabel(ballot.status)}</span>
-            </div>
-            <p className="modal-description">Choose one option. Your selection will be sealed into a zero-knowledge proof and never exposed as a public wallet action.</p>
-            <div className="choice-list">
-              {ballot.options.map((option, index) => (
-                <button key={option} className={`choice-row ${selected === option ? "selected" : ""}`} onClick={() => setSelected(option)}>
-                  <span className={`choice-index choice-${index}`}>{String(index + 1).padStart(2, "0")}</span>
-                  <span className="choice-label">{option}</span>
-                  <span className="choice-radio">{selected === option && <Check size={14} />}</span>
-                </button>
-              ))}
-            </div>
-            <div className="privacy-callout"><ShieldCheck size={17} /><span><strong>Your choice stays private.</strong> Only the proof, nullifier status, and aggregate tally are verifiable.</span></div>
-            <div className="modal-actions"><button className="ghost-button" onClick={onClose}>Cancel</button><button className="primary-button" onClick={submit}><Sparkles size={16} /> Generate proof & vote</button></div>
-          </>
-        )}
-        {stage === "proving" && (
-          <div className="proof-state">
-            <div className="proof-orbit"><Fingerprint size={32} /><span className="orbit-ring ring-one" /><span className="orbit-ring ring-two" /></div>
-            <p className="eyebrow mint-text">ZK proof in progress</p>
-            <h2>Sealing your ballot</h2>
-            <p>VotePriv is proving eligibility without revealing your identity or selection.</p>
-            <div className="progress-track"><span /></div>
-            <div className="proof-steps"><span className="done"><Check size={12} /> Eligibility checked</span><span className="active"><Zap size={12} /> Generating proof</span><span><Clock3 size={12} /> Submitting receipt</span></div>
-          </div>
-        )}
-        {stage === "success" && (
-          <div className="proof-state success-state"><div className="success-mark"><Check size={28} /></div><p className="eyebrow mint-text">Simulated vote</p><h2>This is a preview of the flow.</h2><p>No proof was generated and nothing was submitted to the network. The contract, the ZK proof and the on-chain receipt arrive with the Midnight adapter.</p><div className="receipt-mini"><div><span>Proof status</span><strong>Simulated</strong></div><div><span>Nullifier</span><strong>Not consumed</strong></div><div><span>Receipt</span><strong>None — no transaction</strong></div></div><button className="primary-button full-button" onClick={onClose}>Back to dashboard <ArrowUpRight size={15} /></button></div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CreateBallotModal({ onClose, onCreate }: { onClose: () => void; onCreate: (ballot: Ballot) => void }) {
-  const [title, setTitle] = useState("");
-  const [community, setCommunity] = useState("Midnight Builders");
-  const [optionOne, setOptionOne] = useState("Fund developer grants");
-  const [optionTwo, setOptionTwo] = useState("Host local meetups");
-
-  const create = () => {
-    if (!title.trim() || !optionOne.trim() || !optionTwo.trim()) {
-      toast.error("Complete the ballot details", { description: "A title and two options are required." });
-      return;
-    }
-    onCreate({ id: `ballot-${Math.floor(Math.random() * 90 + 10)}`, title, description: "A new community decision, ready for private voting.", community, votes: 0, eligible: 0, quorum: 50, deadline: "Oct 24, 2026", status: "live", options: [optionOne, optionTwo], accent: "mint", tag: "New ballot" });
-    toast.success("Ballot created", { description: "Your new ballot is ready for eligible voters." });
-    onClose();
-  };
-
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><div className="create-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="icon-button modal-close" onClick={onClose} aria-label="Close create ballot dialog"><X size={18} /></button><div className="modal-kicker"><Plus size={14} /> Create ballot</div><h2>Put a decision on-chain.</h2><p className="modal-description">Create a proposal with privacy-first defaults. This demo keeps metadata local until a backend is connected.</p><div className="form-stack"><label>Ballot title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Community treasury allocation" /></label><label>Community<input value={community} onChange={(event) => setCommunity(event.target.value)} /></label><div className="form-grid"><label>Option one<input value={optionOne} onChange={(event) => setOptionOne(event.target.value)} /></label><label>Option two<input value={optionTwo} onChange={(event) => setOptionTwo(event.target.value)} /></label></div></div><div className="modal-actions"><button className="ghost-button" onClick={onClose}>Cancel</button><button className="primary-button" onClick={create}><Plus size={16} /> Create ballot</button></div></div></div>;
 }
 
 function Overview({ ballots, connected, onVote, onCreate, onSection }: { ballots: Ballot[]; connected: boolean; onVote: (ballot: Ballot) => void; onCreate: () => void; onSection: (section: Section) => void }) {

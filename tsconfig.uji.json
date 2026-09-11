@@ -1,0 +1,15 @@
+{
+  // tsconfig.json meng-exclude "**/*.test.ts", sehingga `pnpm check` tidak pernah
+  // memeriksa berkas uji berakhiran .test.ts — dan C-2a menulis DELAPAN di
+  // antaranya. Berkas ini memakai konfigurasi yang sama TANPA exclude itu.
+  //
+  // tsBuildInfoFile dipisah supaya ia tidak menimpa cache incremental milik
+  // `pnpm check`; dua program dengan himpunan berkas berbeda berbagi satu cache
+  // akan saling membatalkan dan membuat keduanya lambat.
+  "extends": "./tsconfig.json",
+  "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
+  "exclude": ["node_modules", "build", "dist"],
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo-uji"
+  }
+}

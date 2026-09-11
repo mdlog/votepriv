@@ -12,7 +12,7 @@ import {
 
 export type BallotGagal = {
   alamat: string;
-  sebab: "alamat-tak-sah" | "alias-hilang" | "kontrak-null" | "dekode";
+  sebab: "alamat-tak-sah" | "alias-hilang" | "kontrak-null" | "alamat-tak-cocok" | "dekode";
   pesan: string;
 };
 
@@ -134,6 +134,24 @@ function potong<T>(arr: T[], n: number): T[][] {
   const keping: T[][] = [];
   for (let i = 0; i < arr.length; i += n) keping.push(arr.slice(i, i + n));
   return keping;
+}
+
+/**
+ * Menormalkan alamat HANYA untuk perbandingan — tidak pernah dipakai untuk
+ * mengirim ke indexer (itu tetap `alamat` apa adanya).
+ *
+ * Alasan menormalkan sama sekali: alamat yang sama boleh datang dalam bentuk
+ * teks berbeda (prefiks `0x` ada/tidak, kapitalisasi hex berbeda) tanpa
+ * berarti alamatnya BEDA. Membandingkan APA ADANYA (case-sensitive, peka
+ * prefiks) akan membunyikan alarm PALSU pada SETIAP pembacaan begitu indexer
+ * memilih salah satu bentuk itu — dan alarm palsu yang berbunyi setiap kali
+ * berujung operator mematikan pemeriksaan ini sama sekali, yang menghapus
+ * jaring pengaman yang justru ingin dipasang. `trim()` menjaga dari spasi
+ * tersisa di salah satu sisi; ia BUKAN normalisasi panjang/format hex secara
+ * umum — itu di luar apa yang perbandingan alias->alamat ini butuh.
+ */
+function normalisasiAlamat(alamat: string): string {
+  return alamat.trim().toLowerCase().replace(/^0x/, "");
 }
 
 /** Cuplikan ledger pada satu aksi. Hanya bidang yang spec 9.4 minta diselisihkan. */
@@ -345,6 +363,24 @@ export async function bacaRantai(opsi: {
           alamat,
           sebab: "kontrak-null",
           pesan: `Tidak ada kontrak pada alamat ini di jaringan ${jaringan.networkId}.`,
+        });
+        continue;
+      }
+      // Periksa silang alias<->alamat SEBELUM dekode. Pemetaan `ballot.push`
+      // di bawah bergantung MURNI pada posisi: `alamat` di sini datang dari
+      // `keping[i]`, dan `kunci` dari `b${i}` — keduanya disusun terpisah dari
+      // jawaban `k` itu sendiri (lihat susunKueriBallot). Bila indexer pernah
+      // menjawab alias pada urutan yang tidak selaras dengan yang kita kirim,
+      // dekode di bawah TETAP "berhasil" — `state`-nya adalah state kontrak
+      // LAIN yang sah — dan ballot ini akan dilabeli alamat ballot lain tanpa
+      // ada yang mendeteksinya. `address` pada jawaban adalah satu-satunya
+      // pemeriksa silang yang membuktikan itu tidak terjadi, jadi dibaca dan
+      // dibandingkan di sini, bukan dibuang seperti sebelumnya.
+      if (normalisasiAlamat(k.address) !== normalisasiAlamat(alamat)) {
+        gagal.push({
+          alamat,
+          sebab: "alamat-tak-cocok",
+          pesan: `Indexer mengembalikan address ${k.address} untuk alias ${kunci}, padahal alamat yang diminta pada posisi ini adalah ${alamat}. Ballot ini dilewati karena pemetaan alias->alamat tidak dapat dipercaya.`,
         });
         continue;
       }

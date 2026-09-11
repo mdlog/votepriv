@@ -276,6 +276,37 @@ describe("bacaRantai — kegagalan SEBAGIAN tetap menampilkan sisanya", () => {
     expect(h.gagal.map(g => g.sebab)).toContain("alias-hilang");
   });
 
+  /**
+   * Perbaikan [SEDANG] re-review: `address` diminta di setiap kueri tapi
+   * sebelumnya tidak pernah dibaca — pemetaan hasil->alamat murni POSISIONAL
+   * (`keping[i]` <-> `b${i}`). Uji ini menyimulasikan indexer yang menjawab
+   * alias b0/b1 dengan `address` TERTUKAR satu sama lain: tanpa perbaikan,
+   * kedua ballot lolos dekode (state-nya sendiri tetap sah, hanya alamatnya
+   * yang salah pasang) dan tertukar SENYAP di `h.ballot`. Dengan perbaikan,
+   * keduanya harus terdeteksi dan masuk `gagal[]`, bukan tampil dengan label
+   * alamat yang salah.
+   */
+  it("mendeteksi address yang tertukar antar-alias, bukan membiarkannya senyap", async () => {
+    const h = await bacaRantai({
+      jaringan: JARINGAN,
+      ambil: ambilPalsu((nama, j) => {
+        if (nama !== "Ballots") return j;
+        const tmp = j.data.b0.address;
+        j.data.b0.address = j.data.b1.address;
+        j.data.b1.address = tmp;
+        return j;
+      }),
+    });
+    // KEDUA alias tertukar secara simetris, jadi KEDUANYA harus terdeteksi —
+    // bukan hanya salah satu.
+    const tertukar = h.gagal.filter(g => g.sebab === "alamat-tak-cocok");
+    expect(tertukar).toHaveLength(2);
+    expect(tertukar.map(g => g.alamat).sort()).toEqual([...fxBallots.alamat].sort());
+    // Dan tidak ada satu pun ballot yang lolos dengan pasangan alamat yang
+    // salah: fixture ini hanya berisi dua ballot, keduanya tertukar.
+    expect(h.ballot).toHaveLength(0);
+  });
+
   it("membedakan kontrak-null dari alias-hilang", async () => {
     const h = await bacaRantai({
       jaringan: JARINGAN,

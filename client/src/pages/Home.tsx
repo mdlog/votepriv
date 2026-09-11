@@ -1,44 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
-import { checkProofServer, type ProofServerStatus } from "@/lib/proof-server";
 import {
-  Activity,
-  ArrowUpRight,
   BarChart3,
-  Check,
   ChevronRight,
   CircleHelp,
-  ClipboardCheck,
-  Clock3,
   Code2,
-  Copy,
-  FileCheck2,
-  Fingerprint,
-  Github,
-  Globe2,
-  Info,
   LayoutDashboard,
   LockKeyhole,
   Menu,
-  Plus,
-  Radio,
-  Search,
-  ShieldCheck,
-  Sparkles,
   Vote,
   Wallet,
   X,
-  Zap,
 } from "lucide-react";
+import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
+import { checkProofServer, type ProofServerStatus } from "@/lib/proof-server";
+import { CreateBallotModal } from "@/components/votepriv/CreateBallotModal";
 import { Docs } from "@/components/votepriv/Docs";
-import { Results } from "@/components/votepriv/Results";
 import { LiveBallots } from "@/components/votepriv/LiveBallots";
 import { Overview } from "@/components/votepriv/Overview";
-import { CreateBallotModal } from "@/components/votepriv/CreateBallotModal";
+import { Results } from "@/components/votepriv/Results";
 import { VoteModal } from "@/components/votepriv/VoteModal";
-import { BallotCard } from "@/components/votepriv/BallotCard";
-import { statusLabel } from "@/components/votepriv/ballot-status";
 import { initialBallots } from "@/components/votepriv/demo-data";
 import type { Ballot, Receipt, Section } from "@/components/votepriv/types";
 

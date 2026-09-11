@@ -417,9 +417,28 @@ rasa aman yang keliru — dan taruhannya suara yang tidak pernah bisa dibuka.
 
 ### 14.3 Siapa yang membuat proof: aplikasi kita, bukan Lace
 
-DApp Connector 4.0.1 menyediakan `getProvingProvider()`, tetapi jalur itu **tidak pernah tercatat
-berhasil di mesin ini**, dan ia memindahkan witness — yaitu credential pemilih **dan pilihannya** —
-ke dalam ekstensi wallet.
+DApp Connector 4.0.1 menyediakan `getProvingProvider()`. Lace di mesin ini **terbukti
+mengekspos** metode itu — jadi persoalannya bukan "wallet-nya kuno". Jalur itu tetap ditutup, dan
+alasannya struktural sehingga tidak akan berubah oleh rilis wallet mana pun:
+
+1. **Witness sudah ada di halaman sebelum wallet pernah dilibatkan.** `ProvingProvider.prove()`
+   menerima preimage yang **sudah diserialisasi**. Yang menyusunnya adalah
+   `proofDataIntoSerializedPreimage(...)`, dijalankan ledger-WASM **di dalam halaman**, dari
+   `private_transcript_outputs` — yaitu hasil pemanggilan fungsi witness kita sendiri terhadap
+   private state di IndexedDB halaman. Terhadap ancaman "halaman disajikan pihak lain", memindahkan
+   proving ke wallet karena itu **tidak memindahkan batas kepercayaan sama sekali**.
+2. **Wallet tidak memegang key material; kita yang menyediakannya.**
+   `getProvingProvider(keyMaterialProvider)` menerima provider itu dari DApp. Unggahan prover key
+   megabyte tetap terjadi, hanya berpindah ke dalam ekstensi. Repo rujukan membuktikannya dengan
+   cara termahal: seluruh circuit call di sana gagal `"'prove' returned an error: TypeError: Failed
+   to fetch"` justru ketika satu-satunya proof provider adalah jalur Lace. Untuk VotePriv angkanya
+   3,7× lebih besar — `castVote.prover` 9,99 MB per suara.
+
+Ada pula hal yang **tidak dapat diverifikasi aplikasi**, dan karena itu tidak boleh diklaim:
+`wallet-sdk-prover-client` mengirim `HttpProverClient` **dan** `WasmProver` di balik satu
+`asProvingProvider()` yang sama, dan DApp Connector 4.0.1 tidak menyediakan cara menanyakan mana
+yang dipakai. Klaim "witness tidak meninggalkan perangkat" karena itu **tidak pernah sah** di atas
+jalur wallet.
 
 **Keputusan:** aplikasi yang membuktikan, lewat proof server di balik proxy same-origin
 `/proof-server` yang sudah ada. Wallet hanya menyeimbangkan-menandatangani lewat
@@ -496,3 +515,48 @@ tanpa itu klien tidak bisa mengimpor `pkgs/shared` sama sekali.
 Memisahkan keduanya bukan soal kerapian: mencampurnya membuat klaim "tidak menyentuh tampilan" tidak
 lagi dapat diperiksa, karena §9.2 butir 3 menuntut modal create menumbuhkan field baru yang memang
 diwajibkan constructor kontrak.
+
+### 14.8 Tangga privasi: siapa melihat suara pada topologi mana
+
+Klaim "browser tidak boleh mem-fetch `127.0.0.1` langsung" — yang tertulis di
+`client/src/lib/proof-server.ts`, `client/src/lib/midnight-wallet.ts`, dan `vite.config.ts` —
+**sebagian salah**, dan dikoreksi di sini. Sembilan percobaan dijalankan terhadap Chrome 149 yang
+benar-benar terpasang:
+
+- **Mixed content bukan penghalang.** Halaman HTTPS boleh mem-fetch `http://127.0.0.1`; loopback
+  tergolong *potentially trustworthy*.
+- Yang memblokir adalah **Local Network Access checks**, dan itu **izin, bukan larangan**. Chrome
+  menampilkan prompt "*wants to — Access other apps and services on this device — Block / Allow*".
+  Tanpa izin: `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, dan permintaannya **tidak pernah keluar
+  dari browser** — jadi header apa pun di sisi server mustahil menolong.
+- **Setelah diizinkan, ia benar-benar bekerja**: halaman HTTPS publik berhasil `GET /version`
+  (200, `8.1.0`) dan `POST /check` ke proof server Midnight 8.1.0 asli di loopback pengunjung.
+- Izinnya **persisten per-origin**, bukan per-sesi. Satu klik cukup.
+- **Proof server Midnight sudah CORS-ready tanpa konfigurasi** — ia memantulkan Origin apa pun dan
+  menjawab preflight dengan benar. Ia memang dirancang dipanggil langsung dari halaman browser.
+
+Karena itu ada tiga topologi, dan produk hanya boleh mengklaim sesuai topologinya:
+
+| Topologi | Siapa melihat pilihan suara | Beban bagi pemilih |
+|---|---|---|
+| Halaman **dan** proof server di mesin pemilih | **Tidak ada** | menjalankan aplikasi sendiri |
+| Halaman dari panitia, proof server **milik pemilih** | Tidak ada infrastruktur panitia — **tetapi JS panitia memegang witness lebih dulu** | satu perintah docker + satu klik *Allow* |
+| Halaman **dan** proof server milik panitia *(desain saat ini)* | **Panitia melihat setiap suara** | tidak ada |
+
+Baris tengah itu temuan yang paling berguna: privasi per-pemilih **dapat** dicapai tanpa pemilih
+menjadi operator teknis — tanpa Node, tanpa pnpm, tanpa build. Tetapi batasnya harus dinyatakan
+jujur: **selama panitia yang menyajikan bundel JavaScript, "panitia tidak dapat melihat suara" hanya
+benar sebatas kode yang ia kirim.** Witness berada di memori JavaScript halaman sebelum proof server
+mana pun tersentuh. Klaim mutlak hanya sah pada baris pertama.
+
+Satu risiko konkret yang ditemukan di log browser operator sendiri: `getConfiguration()` milik Lace
+melaporkan `proverServerUri` yang **berubah-ubah** — dua kali `http://localhost:6300`, tiga kali
+`https://proof-server.preprod.midnight.network`. Mengikutinya secara buta akan mengirim credential
+dan pilihan suara ke proof server pihak ketiga. Nilai itu **tidak boleh** dipakai; target proof
+server ditentukan aplikasi, bukan wallet. Repo rujukan mengambil keputusan yang sama dan
+mencatatnya di kodenya.
+
+**Yang tetap tidak pasti dan tidak dikarang:** apakah service worker Lace benar-benar memotong
+seluruh fetch tingkat halaman tidak dapat diuji (Chrome 149 di mesin ini menolak memuat ekstensi
+lewat `--load-extension`). Komentar yang ada sekarang menyatakannya sebagai fakta; ia sebaiknya
+diturunkan menjadi "diamati", sampai ada yang mengujinya dengan Lace sungguhan.

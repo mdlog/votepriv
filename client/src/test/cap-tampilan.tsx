@@ -22,10 +22,16 @@
  *   teks        textContent ternormalisasi. Menangkap teks Inggris yang hilang
  *               atau kehilangan satu spasi saat baris raksasa disentuh.
  *
- * Yang TIDAK dijangkau berkas ini: prop fungsi (React tidak menaruhnya di DOM),
- * key, CSS yang sesungguhnya, dan permukaan di luar ketiga belas yang dijelajah
- * rekamPermukaan(). Lihat bagian "Apa yang keempat lapis itu TIDAK buktikan" di
- * rencana C-1.
+ * Yang TIDAK dijangkau berkas ini: prop fungsi (React tidak menaruhnya di DOM)
+ * dan key, CSS yang sesungguhnya (jsdom tidak memuat index.css), serta empat
+ * permukaan yang tidak pernah dijelajah rekamPermukaan(): chip filter
+ * Live/Finalized di LiveBallots (hanya "All" yang tercap), submit formulir
+ * CreateBallotModal, cabang txRef bukan-null di Results, dan SELURUH kanal
+ * toast — bukan cuma satu tombol. `<Toaster />` tinggal di App.tsx, di luar
+ * akar yang dioper ke capDari(), sehingga tidak satu teks toast pun pernah
+ * tercap di mana pun; isinya terbukti utuh lewat perbandingan token literal
+ * di uji komponen, bukti yang berbeda dan lebih lemah. Lihat bagian "Apa yang
+ * keempat lapis itu TIDAK buktikan" di rencana C-1.
  */
 import { act, cleanup, fireEvent, render, within } from "@testing-library/react";
 import { createElement, type ComponentType } from "react";
@@ -231,11 +237,14 @@ async function tenang(): Promise<void> {
  * Kalau satu selector gagal pada komponen hidup, itu sendiri sudah sinyal:
  * struktur yang dicarinya tidak lagi ada.
  *
- * TIGA BELAS permukaan, bukan dua belas. Nama dan urutannya dikunci sebagai
- * daftar literal di paritas-pra-pecah.test.tsx, supaya menambah permukaan kelak
- * terlihat sebagai perubahan yang disengaja — bukan sebagai angka yang perlu
- * ditambal. Kalau Anda menambah satu baris `hasil[...]` di bawah, daftar literal
- * itu HARUS ikut bertambah, dan ujinya memang akan merah sampai Anda melakukannya.
+ * TIGA BELAS permukaan, bukan dua belas. Nama dan urutannya kini dikunci oleh
+ * `expect(Object.keys(sesudah)).toEqual(Object.keys(rekaman.permukaan))` di
+ * paritas-garis-dasar.test.tsx, terhadap kunci `permukaan` yang dibekukan di
+ * garis-dasar-tampilan.json — bukan lagi daftar literal di
+ * paritas-pra-pecah.test.tsx, yang sudah dihapus bersama seluruh perancah
+ * pra-pemecahan. Kalau Anda menambah satu baris `hasil[...]` di bawah tanpa
+ * ikut menambah entrinya di berkas JSON itu, perbandingan Object.keys itu
+ * yang akan merah — bukan sebagai angka yang perlu ditambal diam-diam.
  */
 export async function rekamPermukaan(Komponen: ComponentType): Promise<Record<string, Cap>> {
   const hasil: Record<string, Cap> = {};

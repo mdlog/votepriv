@@ -73,23 +73,37 @@ describe("pesanPrivasiSuara — satu kalimat berbeda per nilai reach (Task 8 but
     );
   });
 
-  it("reach lokal TAPI target belum terverifikasi: kuat=false, menyebut hop", () => {
+  it("reach lokal TAPI target belum terverifikasi: kuat=false, menyebut hop, dan memakai kalimat 'belum dikonfirmasi' — BUKAN kalimat remote/tunnel", () => {
     const p = pesanPrivasiSuara(LOKAL_TAK_TERVERIFIKASI);
     expect(p.kuat).toBe(false);
     expect(p.kalimat).not.toMatch(/stays private/i);
     expect(p.kalimat).toContain(LOKAL_TAK_TERVERIFIKASI.hop);
+    // Frasa KHAS cabang ini, yang tidak dipakai cabang mana pun yang lain —
+    // ditemukan lewat mutation testing: menukar cabang "remote" dan
+    // "lewat-host-halaman" satu sama lain lolos HIJAU pada uji yang hanya
+    // memeriksa `toContain(hop)`, karena KETIGA cabang non-kuat menyebut hop.
+    // Memeriksa frasa yang benar-benar unik menutup celah itu.
+    expect(p.kalimat).toContain("has not been confirmed by this page");
+    expect(p.kalimat).not.toContain("proof server operator");
+    expect(p.kalimat).not.toContain("whoever operates that machine");
   });
 
-  it("reach lewat-host-halaman: kuat=false, menyebut hop APA ADANYA (bukan disusun ulang)", () => {
+  it("reach lewat-host-halaman: kuat=false, menyebut hop APA ADANYA (bukan disusun ulang), dan memakai kalimat KHAS 'whoever operates that machine'", () => {
     const p = pesanPrivasiSuara(LEWAT_HOST);
     expect(p.kuat).toBe(false);
     expect(p.kalimat).toContain(LEWAT_HOST.hop);
+    expect(p.kalimat).toContain("whoever operates that machine");
+    expect(p.kalimat).not.toContain("proof server operator");
+    expect(p.kalimat).not.toContain("has not been confirmed by this page");
   });
 
-  it("reach remote: kuat=false, menyebut hop APA ADANYA", () => {
+  it("reach remote: kuat=false, menyebut hop APA ADANYA, dan memakai kalimat KHAS 'proof server operator'", () => {
     const p = pesanPrivasiSuara(REMOTE);
     expect(p.kuat).toBe(false);
     expect(p.kalimat).toContain(REMOTE.hop);
+    expect(p.kalimat).toContain("proof server operator");
+    expect(p.kalimat).not.toContain("whoever operates that machine");
+    expect(p.kalimat).not.toContain("has not been confirmed by this page");
   });
 
   it("kelima kalimat (null + 4 kombinasi reach/verifikasi) SEMUANYA berbeda satu sama lain", () => {

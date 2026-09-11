@@ -261,6 +261,31 @@ describe("Overview — Recent activity", () => {
     expect(container.querySelector(".activity-check")).not.toBeNull();
   });
 
+  it("memilih ikon dari JENIS/entryPoint aksi — Plus untuk deploy, chart untuk tallyVote/finalize, shield untuk sisanya", () => {
+    // Ditemukan lewat mutation testing: sebelum uji ini ditambahkan, menukar
+    // kondisi `a.jenis === "ContractDeploy"` menjadi `"ContractUpdate"` di
+    // sini lolos HIJAU — tidak ada uji yang membedakan ikon SVG yang dipilih.
+    const deploy = aksiUji({ jenis: "ContractDeploy", entryPoint: null, txHash: "d1", height: 1 });
+    const tally = aksiUji({ jenis: "ContractCall", entryPoint: "tallyVote", txHash: "d2", height: 2 });
+    const lain = aksiUji({ jenis: "ContractCall", entryPoint: "castVote", txHash: "d3", height: 3 });
+    const { container } = render(
+      <Overview
+        hasil={hasilUji({ registry: { count: 1, alamat: ["a"], aksi: [deploy, tally, lain] } })}
+        ballots={[ballotUji()]}
+        onVote={() => {}}
+        onCreate={() => {}}
+        onSection={() => {}}
+      />,
+    );
+    const item = Array.from(container.querySelectorAll(".activity-item"));
+    // aktivitasTerbaru default batas=3, dan mengurutkan height MENURUN:
+    // lain(3), tally(2), deploy(1).
+    expect(item).toHaveLength(3);
+    expect(item[0].querySelector("svg")!.getAttribute("class")).toContain("lucide-shield-check");
+    expect(item[1].querySelector("svg")!.getAttribute("class")).toContain("lucide-chart-column");
+    expect(item[2].querySelector("svg")!.getAttribute("class")).toContain("lucide-plus");
+  });
+
   it("TIDAK memberi centang saat cuplikan aksi tidak terbaca", () => {
     const aksi = aksiUji({ txHash: "abc", height: 42, perubahan: [], cuplikanTerbaca: false, pendahuluTerbaca: false });
     const { container } = render(

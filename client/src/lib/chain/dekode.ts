@@ -121,8 +121,11 @@ export function dekodeBallot(stateHex: string, alamat: string): KeadaanBallot {
       // [...map] memberi pasangan yang BENAR-BENAR ADA. Kunci yang tidak pernah
       // menerima suara TIDAK muncul di sini sama sekali — lihat padatkanTallies.
       tallies: [...l.tallies].map(([k, v]) => [
-        keNomor(k, "kunci tallies", alamat),
-        keNomor(v, "nilai tallies", alamat),
+        // "kunci tallies"/"nilai tallies" sebelumnya di sini: rincian adalah
+        // TEKS UI berbahasa Inggris (lihat komentar di baris 62 dan di
+        // GalatRantai), dan dua call site ini melanggarnya. Diperbaiki.
+        keNomor(k, "tally key", alamat),
+        keNomor(v, "tally value", alamat),
       ]),
     };
   } catch (e) {
@@ -151,16 +154,27 @@ export function dekodeBallot(stateHex: string, alamat: string): KeadaanBallot {
  * Fungsi ini memadatkan ke larik sepanjang jumlahOpsi, mengisi lubangnya dengan
  * nol, dan MENGABAIKAN kunci di luar rentang opsi alih-alih membuangnya
  * diam-diam ke indeks yang salah.
+ *
+ * Konversi NILAI (bigint->number) lewat keNomor, BUKAN `Number(v)` telanjang.
+ * Alasannya: jalur bigint di sini menerima `ledger().tallies` LANGSUNG — satu-
+ * satunya jalur lain (dekodeBallot:123-127) yang membaca map yang SAMA sudah
+ * dijaga keNomor karena nilainya Uint64 tak terbatas (lihat _descriptor_0 di
+ * managed/ballot/contract/index.js). Sebelum perbaikan ini, data yang identik
+ * berperilaku dua arah: MELEMPAR lewat dekodeBallot, dibulatkan diam-diam lewat
+ * padatkanTallies. Pasangan yang sudah berupa `number` (dari KeadaanBallot.tallies,
+ * sudah lewat keNomor sekali di dekodeBallot) dipakai apa adanya — tidak perlu
+ * dijaga dua kali, dan keNomor tetap menuntut bigint.
  */
 export function padatkanTallies(
   pasangan: Iterable<readonly [bigint, bigint] | readonly [number, number]>,
   jumlahOpsi: number,
+  alamat = "(padatkanTallies)",
 ): number[] {
   const padat = new Array<number>(jumlahOpsi).fill(0);
   for (const [k, v] of pasangan) {
     const i = Number(k);
     if (!Number.isInteger(i) || i < 0 || i >= jumlahOpsi) continue;
-    padat[i] = Number(v);
+    padat[i] = typeof v === "bigint" ? keNomor(v, "tally value", alamat) : v;
   }
   return padat;
 }

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+import wasm from "vite-plugin-wasm";
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -261,6 +262,7 @@ const modePengembangan = process.env.NODE_ENV !== "production";
 const collectorDiminta = process.env.VOTEPRIV_DEBUG_COLLECTOR === "1";
 
 const plugins = [
+  wasm(),
   react(),
   tailwindcss(),
   jsxLocPlugin(),
@@ -294,7 +296,33 @@ export default defineConfig(({ mode }) => {
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      // Satu-satunya jalan klien ke ledger() kontrak dan ke endpoint jaringan
+      // tanpa memindahkan client/ ke pkgs/app (lihat "Penyimpangan sadar dari
+      // spec §14.7" di rencana C-2a). Menunjuk src/, BUKAN dist/: dist ada di
+      // .gitignore dan membangunnya berarti menyentuh pkgs/.
+      "@pkgs": path.resolve(import.meta.dirname, "pkgs"),
     },
+    // Sabuk kedua terhadap instance GANDA onchain-runtime-v3. Dua instance
+    // memberi pesan MENYESATKAN ("expected instance of ChargedState") padahal
+    // datanya benar, dan risikonya hidup di repo ini karena compact-runtime
+    // 0.15.0 (pkgs/cli lewat compact-js) dan 0.16.0 (pkgs/contract) dua-duanya
+    // ada di pohon pnpm. Gerbang mekaniknya ada di rencana C-2a Task 2 Step 2.
+    //
+    // HANYA compact-runtime yang didaftar di sini, BUKAN onchain-runtime-v3
+    // juga (menyimpang dari draf awal rencana C-2a Task 2 Step 4). Diverifikasi
+    // di Step 10: mendaftarkan onchain-runtime-v3 di sini membuat `vite build`
+    // gagal dengan "Rollup failed to resolve import
+    // '@midnight-ntwrk/onchain-runtime-v3'" — karena paket itu TIDAK di-hoist
+    // ke node_modules akar workspace di pohon pnpm repo ini (ia hanya ada
+    // sebagai symlink nested di dalam node_modules milik compact-runtime;
+    // lihat Task 2 Step 2), sementara dedupe Vite memaksa resolusi paket yang
+    // didaftar SELALU dicari mulai dari akar. Mendedupe compact-runtime saja
+    // sudah cukup: compact-runtime dedupe ke satu instance, dan onchain-runtime-v3
+    // hanya terjangkau LEWAT compact-runtime (tidak pernah langsung dari akar
+    // atau dari pkgs/contract — diverifikasi di Step 2), sehingga instance
+    // onchain-runtime-v3 ikut tunggal secara transitif tanpa perlu didedupe
+    // eksplisit.
+    dedupe: ["@midnight-ntwrk/compact-runtime"],
   },
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
@@ -319,6 +347,10 @@ export default defineConfig(({ mode }) => {
     ],
     fs: {
       strict: true,
+      // root Vite adalah client/. Modul kontrak tergenerasi dan network-config
+      // berada di pkgs/, di luar root, sehingga akar repo harus diizinkan
+      // eksplisit. deny tetap menutup seluruh berkas titik.
+      allow: [path.resolve(import.meta.dirname)],
       deny: ["**/.*"],
     },
     proxy: {

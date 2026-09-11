@@ -19,6 +19,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.64.0(react@19.2.1))
+      '@midnight-ntwrk/compact-runtime':
+        specifier: 0.16.0
+        version: 0.16.0
       '@radix-ui/react-accordion':
         specifier: ^1.2.12
         version: 1.2.12(@types/react-dom@19.2.1(@types/react@19.2.1))(@types/react@19.2.1)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
@@ -242,6 +245,9 @@ importers:
       vite-plugin-manus-runtime:
         specifier: ^0.0.58
         version: 0.0.58
+      vite-plugin-wasm:
+        specifier: ^3.6.0
+        version: 3.6.0(vite@7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(tsx@4.20.6))
       vitest:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@24.7.0)(jsdom@25.0.1)(lightningcss@1.30.1)
@@ -4401,6 +4407,11 @@ packages:
 
   vite-plugin-manus-runtime@0.0.58:
     resolution: {integrity: sha512-1dtoSyqiqpFtRhth4ODu/cgoBF25IGs1yOpq5EGDefv7LQoQvAnQ4mhTgOrpSk7POfOxL+/Olxx+vo/LMNODXA==}
+
+  vite-plugin-wasm@3.6.0:
+    resolution: {integrity: sha512-mL/QPziiIA4RAA6DkaZZzOstdwbW5jO4Vz7Zenj0wieKWBlNvIvX5L5ljum9lcUX0ShNfBgCNLKTjNkRVVqcsw==}
+    peerDependencies:
+      vite: ^2 || ^3 || ^4 || ^5 || ^6 || ^7 || ^8
 
   vite@5.4.20:
     resolution: {integrity: sha512-j3lYzGC3P+B5Yfy/pfKNgVEg4+UtcIJcVRt2cDjIOmhLourAqPqf8P7acgxeiSgUB7E3p2P8/3gNIgDLpwzs4g==}
@@ -9373,6 +9384,10 @@ snapshots:
       react: 19.2.1
       react-dom: 19.2.1(react@19.2.1)
       tailwind-merge: 3.3.1
+
+  vite-plugin-wasm@3.6.0(vite@7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(tsx@4.20.6)):
+    dependencies:
+      vite: 7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(tsx@4.20.6)
 
   vite@5.4.20(@types/node@24.7.0)(lightningcss@1.30.1):
     dependencies:

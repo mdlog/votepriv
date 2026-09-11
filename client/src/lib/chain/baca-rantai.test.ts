@@ -538,4 +538,45 @@ describe("bacaRantai — POST 3 TIDAK PERNAH menjatuhkan pembacaan", () => {
     }) as unknown as typeof fetch;
     await expect(bacaRantai({ jaringan: JARINGAN, ambil })).rejects.toBe(abortErr);
   });
+
+  /**
+   * M12: `Math.max(blok.timestampMs, Date.now())` menjadi `Date.now()` polos
+   * TIDAK terdeteksi oleh uji fallback biasa di atas, karena fixture ini
+   * BEKU di masa lalu (direkam kemarin) — jam perangkat SELALU lebih besar,
+   * jadi Math.max selalu memilih Date.now() juga, kebetulan menghasilkan
+   * angka yang sama. Uji ini memaksa kasus di mana angka RANTAI lebih besar
+   * dari jam perangkat (aksi dengan stempel waktu jauh di masa depan — tahun
+   * 5138, dipaku ke KONSTANTA, bukan bergantung Date.now() saat uji
+   * berjalan): floor Math.max WAJIB memilih angka rantai itu, bukan jam
+   * perangkat, betapa pun jauhnya angka itu.
+   */
+  it("memilih angka RANTAI di atas jam perangkat ketika angka rantai itu LEBIH BESAR — floor Math.max, bukan Date.now() polos (M12)", async () => {
+    const TS_MASA_DEPAN = 99999999999999; // tahun ~5138: jauh di depan Date.now() kapan pun uji ini berjalan
+    const HEIGHT_BESAR = 99999999;
+    const ambil = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const nama = /query\s+(\w+)/.exec(body.query)?.[1] ?? "?";
+      if (nama === "Jaringan") {
+        return new Response("upstream down", { status: 502, headers: { "content-type": "text/plain" } });
+      }
+      if (nama === "Registry") {
+        const j = structuredClone(fxRegistry);
+        const proyeksi = proyeksikanJawabanKontrak(body.query, j.data) as { r: { terbaru: { transaction: { block: { height: number; timestamp: number } } }[] } };
+        // Aksi registry TERBARU (indeks 0) dipaksa ke tinggi/stempel waktu
+        // yang jauh melebihi apa pun yang bisa dihasilkan Date.now() nyata —
+        // satu-satunya cara memaksa cabang floor Math.max benar-benar
+        // MEMILIH sisi rantai, bukan kebetulan sama dengan jam perangkat.
+        proyeksi.r.terbaru[0].transaction.block.height = HEIGHT_BESAR;
+        proyeksi.r.terbaru[0].transaction.block.timestamp = TS_MASA_DEPAN;
+        return new Response(JSON.stringify({ ...j, data: proyeksi }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const j = structuredClone(fxBallots.jawaban);
+      const proyeksi = proyeksikanJawabanKontrak(body.query, j.data);
+      return new Response(JSON.stringify({ ...j, data: proyeksi }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil });
+    expect(h.blok.height).toBe(HEIGHT_BESAR);
+    expect(h.sekarangMs).toBe(TS_MASA_DEPAN);
+  });
 });

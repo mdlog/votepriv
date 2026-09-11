@@ -5,19 +5,32 @@ import type { Ballot, Receipt } from "./types";
 
 afterEach(() => cleanup());
 
+// Field baru C-2a Task 6 diisi placeholder konsisten — Results.tsx tidak
+// membacanya, jadi tidak berpengaruh pada perilaku uji ini; hanya menutup
+// kontrak tipe Ballot.
 const dasar: Ballot = {
   id: "b1",
+  nomor: 1,
   title: "Q4 Community Treasury",
   description: "",
   community: "",
   votes: 842,
   eligible: 1200,
+  registered: 1200,
+  tallied: 0,
   quorum: 60,
+  eligibilityPolicy: "e",
   deadline: "Oct 18, 2026",
+  voteDeadlineMs: Date.UTC(2026, 9, 18, 12, 0),
+  tallyDeadlineMs: Date.UTC(2026, 9, 18, 13, 0),
+  phase: 0,
   status: "live",
   options: ["A"],
+  tallies: [0],
+  keadaanHasil: "tersegel",
   accent: "mint",
   tag: "Featured",
+  deployHeight: 1,
 };
 const BALLOTS: Ballot[] = [
   dasar,

@@ -5,19 +5,32 @@ import type { Ballot } from "./types";
 
 afterEach(() => cleanup());
 
+// Field baru C-2a Task 6 diisi placeholder konsisten — LiveBallots.tsx dan
+// BallotCard.tsx tidak membacanya, jadi tidak berpengaruh pada perilaku uji
+// ini; hanya menutup kontrak tipe Ballot.
 const dasar: Ballot = {
   id: "ballot-001",
+  nomor: 1,
   title: "",
   description: "",
   community: "",
   votes: 10,
   eligible: 20,
+  registered: 20,
+  tallied: 0,
   quorum: 50,
+  eligibilityPolicy: "e",
   deadline: "Oct 18, 2026",
+  voteDeadlineMs: Date.UTC(2026, 9, 18, 12, 0),
+  tallyDeadlineMs: Date.UTC(2026, 9, 18, 13, 0),
+  phase: 0,
   status: "live",
   options: ["A", "B"],
+  tallies: [0, 0],
+  keadaanHasil: "tersegel",
   accent: "mint",
   tag: "Featured",
+  deployHeight: 1,
 };
 
 const BALLOTS: Ballot[] = [

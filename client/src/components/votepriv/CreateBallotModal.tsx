@@ -14,7 +14,36 @@ export function CreateBallotModal({ onClose, onCreate }: { onClose: () => void; 
       toast.error("Complete the ballot details", { description: "A title and two options are required." });
       return;
     }
-    onCreate({ id: `ballot-${Math.floor(Math.random() * 90 + 10)}`, title, description: "A new community decision, ready for private voting.", community, votes: 0, eligible: 0, quorum: 50, deadline: "Oct 24, 2026", status: "live", options: [optionOne, optionTwo], accent: "mint", tag: "New ballot" });
+    // C-2a Task 6: Ballot bertambah field wajib. Ballot mock ini belum pernah
+    // menyentuh kontrak (metadata tetap lokal — lihat komentar modul), jadi
+    // nilai baru di bawah adalah placeholder yang KONSISTEN dengan field lama
+    // yang sudah ada di sini (votes/eligible/registered/tallied 0, phase
+    // voting, keadaanHasil tersegel karena status live dengan tallied 0),
+    // bukan turunan dari data rantai sungguhan.
+    onCreate({
+      id: `ballot-${Math.floor(Math.random() * 90 + 10)}`,
+      nomor: 0,
+      title,
+      description: "A new community decision, ready for private voting.",
+      community,
+      votes: 0,
+      eligible: 0,
+      registered: 0,
+      tallied: 0,
+      quorum: 50,
+      eligibilityPolicy: "",
+      deadline: "Oct 24, 2026",
+      voteDeadlineMs: Date.UTC(2026, 9, 24, 12, 0),
+      tallyDeadlineMs: Date.UTC(2026, 9, 24, 13, 0),
+      phase: 0,
+      status: "live",
+      options: [optionOne, optionTwo],
+      tallies: [0, 0],
+      keadaanHasil: "tersegel",
+      accent: "mint",
+      tag: "New ballot",
+      deployHeight: 0,
+    });
     toast.success("Ballot created", { description: "Your new ballot is ready for eligible voters." });
     onClose();
   };

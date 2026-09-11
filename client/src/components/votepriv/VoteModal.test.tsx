@@ -8,19 +8,32 @@ afterEach(() => {
   cleanup();
 });
 
+// Field baru C-2a Task 6 diisi placeholder konsisten — VoteModal.tsx tidak
+// membacanya, jadi tidak berpengaruh pada perilaku uji ini; hanya menutup
+// kontrak tipe Ballot.
 const BALLOT: Ballot = {
   id: "ballot-042",
+  nomor: 42,
   title: "Q4 Community Treasury",
   description: "Choose how the community treasury supports public goods in Q4.",
   community: "Midnight Builders",
   votes: 842,
   eligible: 1200,
+  registered: 1200,
+  tallied: 0,
   quorum: 60,
+  eligibilityPolicy: "Open to Midnight Builders credential holders",
   deadline: "Oct 18, 2026",
+  voteDeadlineMs: Date.UTC(2026, 9, 18, 12, 0),
+  tallyDeadlineMs: Date.UTC(2026, 9, 18, 13, 0),
+  phase: 0,
   status: "live",
   options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
+  tallies: [0, 0, 0],
+  keadaanHasil: "tersegel",
   accent: "mint",
   tag: "Featured",
+  deployHeight: 1,
 };
 
 describe("VoteModal", () => {

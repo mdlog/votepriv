@@ -5,9 +5,15 @@
  * Home.tsx — sebelum satu komponen pun dipecah. Ia karena itu tetap merupakan
  * nilai "sebelum" yang sah meski berkas bekunya sudah tidak ada.
  *
- * Uji ini berlaku sampai C-2 menyentuh spec §9.2. Perubahan tampilan yang
- * disengaja di sana akan membuatnya merah, dan itu benar: rekaman ini harus
- * dibuat ulang secara sadar pada saat itu, bukan diam-diam sekarang.
+ * Uji ini berlaku sampai C-2 menyentuh spec §9.2. Jalur regenerasinya
+ * (scripts/pindah-komponen.mjs) dan salinan beku sumbernya sudah dibongkar di
+ * C-1 — garis dasar ini sekarang bukti yang TIDAK BISA dibuat ulang dari
+ * pohon ini. Saat C-2 sengaja mengubah tampilan dan uji ini merah, penerus
+ * harus memilih SADAR, di AWAL C-2 dan bukan saat merah pertama, antara:
+ * (a) menghapus uji ini, atau (b) menulis ulang garis-dasar-tampilan.json
+ * dari Home hidup pasca-perubahan — sadar bahwa hasilnya bukan lagi nilai
+ * "sebelum" yang independen, melainkan turunan dari kode yang sedang
+ * diujinya sendiri.
  */
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,12 +28,12 @@ import {
 } from "./cap-tampilan";
 import Home from "@/pages/Home";
 
-// import.meta.url DIPISAH ke variabel dengan sengaja — lihat catatan yang sama
-// di paritas-pra-pecah.test.tsx. Vite mengenali pola literal persis
-// `new URL("...", import.meta.url)` sebagai sintaksis "asset URL" bawaannya dan
-// menulis ulang base-nya menjadi origin server uji (http://localhost:3000/ dari
-// vitest.config.ts), bukan file://<berkas ini>. Memisahkan import.meta.url ke
-// variabel lebih dulu membuat pola literalnya tidak lagi cocok.
+// import.meta.url DIPISAH ke variabel dengan sengaja. Vite mengenali pola
+// literal persis `new URL("...", import.meta.url)` sebagai sintaksis "asset
+// URL" bawaannya dan menulis ulang base-nya menjadi origin server uji
+// (http://localhost:3000/ dari vitest.config.ts), bukan file://<berkas ini>.
+// Memisahkan import.meta.url ke variabel lebih dulu membuat pola literalnya
+// tidak lagi cocok.
 const URL_BERKAS_INI = import.meta.url;
 
 // Dibaca lewat readFileSync, bukan `import … from "*.json"`, karena tsconfig.json

@@ -62,6 +62,14 @@ describe("postGraphQL", () => {
     });
   });
 
+  it("melempar balasan-html pada header text/html meskipun badan bukan tag — portal wifi atau pesan SPA", async () => {
+    // Badan yang TIDAK cocok regex sniffing: cabang .includes("text/html") WAJIB ditangkap
+    const ambil = jawab("Welcome to Guestnet Portal. Please log in.", { contentType: "text/html" });
+    await expect(postGraphQL({ url: URL_UJI, query: "{ x }", ambil })).rejects.toMatchObject({
+      sebab: "balasan-html",
+    });
+  });
+
   it("melempar http pada status non-2xx", async () => {
     const ambil = jawab(JSON.stringify({ data: null }), { status: 502 });
     await expect(postGraphQL({ url: URL_UJI, query: "{ x }", ambil })).rejects.toMatchObject({

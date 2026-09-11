@@ -31,6 +31,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { BallotCard } from "@/components/votepriv/BallotCard";
 import { statusLabel } from "@/components/votepriv/ballot-status";
 import { initialBallots } from "@/components/votepriv/demo-data";
 import type { Ballot, Receipt, Section } from "@/components/votepriv/types";
@@ -150,11 +151,6 @@ function CreateBallotModal({ onClose, onCreate }: { onClose: () => void; onCreat
   };
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><div className="create-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><button className="icon-button modal-close" onClick={onClose} aria-label="Close create ballot dialog"><X size={18} /></button><div className="modal-kicker"><Plus size={14} /> Create ballot</div><h2>Put a decision on-chain.</h2><p className="modal-description">Create a proposal with privacy-first defaults. This demo keeps metadata local until a backend is connected.</p><div className="form-stack"><label>Ballot title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Community treasury allocation" /></label><label>Community<input value={community} onChange={(event) => setCommunity(event.target.value)} /></label><div className="form-grid"><label>Option one<input value={optionOne} onChange={(event) => setOptionOne(event.target.value)} /></label><label>Option two<input value={optionTwo} onChange={(event) => setOptionTwo(event.target.value)} /></label></div></div><div className="modal-actions"><button className="ghost-button" onClick={onClose}>Cancel</button><button className="primary-button" onClick={create}><Plus size={16} /> Create ballot</button></div></div></div>;
-}
-
-function BallotCard({ ballot, onVote }: { ballot: Ballot; onVote: (ballot: Ballot) => void }) {
-  const percentage = Math.min(100, Math.round((ballot.votes / Math.max(ballot.eligible, 1)) * 100));
-  return <article className={`ballot-card accent-${ballot.accent}`}><div className="card-topline"><span className={`status-badge ${ballot.status}`}><span /> {statusLabel(ballot.status)}</span><span className="ballot-tag">{ballot.tag}</span></div><div className="ballot-title-row"><div><h3>{ballot.title}</h3><p>{ballot.description}</p></div><div className="ballot-symbol"><Vote size={19} /></div></div><div className="ballot-meta"><span><Globe2 size={14} /> {ballot.community}</span><span><Clock3 size={14} /> {ballot.deadline}</span></div><div className="ballot-progress-label"><span>Participation</span><strong>{percentage}%</strong></div><div className="progress-track slim"><span style={{ width: `${percentage}%` }} /></div><div className="ballot-footer"><span>{ballot.votes.toLocaleString()} of {ballot.eligible.toLocaleString()} votes <i>·</i> {ballot.quorum}% quorum</span>{ballot.status === "finalized" ? <button className="text-button" onClick={() => onVote(ballot)}>View result <ArrowUpRight size={14} /></button> : <button className="text-button" onClick={() => onVote(ballot)}>Vote privately <ChevronRight size={14} /></button>}</div></article>;
 }
 
 function Overview({ ballots, connected, onVote, onCreate, onSection }: { ballots: Ballot[]; connected: boolean; onVote: (ballot: Ballot) => void; onCreate: () => void; onSection: (section: Section) => void }) {

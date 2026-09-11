@@ -301,12 +301,17 @@ describe("A. Assert yang ditulis tangan — bukti kebenaran", () => {
     expect(container.textContent).not.toMatch(/finality/i);
   });
 
-  it("menyebut jaringan yang BENAR-BENAR dibaca, bukan kata umum testnet", async () => {
+  it("menyebut jaringan yang BENAR-BENAR dibaca, bukan kata umum testnet — di TOPBAR maupun SIDEBAR-FOOTER", async () => {
     pasangFetch("sehat");
     const { container } = render(<Home />);
     await waitFor(() => expect(container.querySelectorAll(".ballot-card:not([aria-busy='true'])").length).toBeGreaterThan(0));
     expect(container.querySelector(".network-status")!.textContent).toContain(meta.jaringan);
+    // Kata ketiga (praperiksa P5): .sidebar-footer punya kalimatnya sendiri,
+    // terpisah dari .network-status, dan tidak satu uji pun sebelumnya
+    // menyentuhnya — ditemukan lewat mutation testing.
+    expect(container.querySelector(".sidebar-footer")!.textContent).toContain(meta.jaringan);
     expect(container.textContent).not.toMatch(/Midnight testnet/);
+    expect(container.querySelector(".sidebar-footer")!.textContent).not.toMatch(/testnet/i);
   });
 
   it("TIDAK mengklaim lapis bukti yang C-2a tidak punya", async () => {

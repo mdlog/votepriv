@@ -75,6 +75,40 @@ describe("render Home di jsdom", () => {
     expect(vi.isMockFunction(globalThis.fetch)).toBe(true);
   });
 
+  it("lencana jumlah 'Live ballots' TIDAK tampil selama fase memuat — 0 bukan hal yang sama dengan belum diketahui", async () => {
+    // Ditemukan lewat mutation testing: menghapus klausa `data.fase === "siap"
+    // &&` di depan lencana ini lolos HIJAU pada setiap uji lain, karena
+    // `ballots` sendiri sudah [] pada fase memuat sehingga angkanya tetap
+    // benar (0) — yang berubah HANYA apakah <b> itu dirender sama sekali.
+    // Merender "0" selama memuat berarti mengklaim registry sudah diketahui
+    // kosong, padahal ia hanya belum pernah dibaca.
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<Home />));
+    });
+    const tombolLiveBallots = Array.from(container.querySelectorAll("nav button")).find(b =>
+      (b.textContent ?? "").includes("Live ballots"),
+    )!;
+    expect(tombolLiveBallots.querySelector("b")).toBeNull();
+  });
+
+  it("permukaan MEMUAT menyebut jaringan yang sudah diketahui, bukan 'Starting up' — konfigurasi sudah dibaca sebelum fetch pertama berangkat", async () => {
+    // jaringanAktif() dievaluasi SINKRON di useState, sebelum useEffect
+    // manapun sempat berjalan — jadi begitu render pertama selesai (act()
+    // sudah menunggu efeknya), data.jaringan SUDAH ADA meski fase masih
+    // "memuat". Cabang "Starting up" hanya berarti bagi jaringan === null,
+    // dan useDataRantai TIDAK PERNAH membiarkan fase tinggal di "memuat"
+    // ketika jaringan null — baris 65 useDataRantai.ts langsung melompat ke
+    // fase "gagal" pada siklus efek yang sama. Cabang itu karena itu tidak
+    // teramati oleh uji mana pun; separuh yang BISA diuji adalah ini.
+    let container!: HTMLElement;
+    await act(async () => {
+      ({ container } = render(<Home />));
+    });
+    expect(container.textContent).toContain("Midnight preview");
+    expect(container.textContent).not.toContain("Starting up");
+  });
+
   it("Docs tetap terjangkau meski pembacaan rantai belum selesai (fase memuat)", async () => {
     // P4: Docs bukan permukaan yang bergantung pada data rantai. Navigasi ke
     // sana harus berhasil bahkan ketika fase masih "memuat" — fetch di berkas

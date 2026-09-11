@@ -63,6 +63,19 @@ export function validasiSeedHex(masukan: string): string {
  * string — supaya pemanggil tidak perlu tahu bentuk aslinya.
  */
 export function validasiSeed(masukan: string, cara: CaraTurunan = CARA_TURUNAN_DEFAULT): Uint8Array {
+  // Masukan kosong punya pesannya sendiri. Tanpa ini ia jatuh ke validator hex
+  // dan berbunyi "Seed harus 64 karakter heksadesimal; yang diberikan 0
+  // karakter" — benar secara harfiah, tapi menyesatkan: ia terdengar seperti
+  // frasa pemulihan tidak diterima, padahal yang terjadi adalah Enter ditekan
+  // sebelum ada yang diketik. Itu mudah terjadi justru karena prompt-nya
+  // sengaja tidak menampilkan apa pun.
+  if (masukan.trim() === "") {
+    throw new Error(
+      "Tidak ada masukan yang diterima — Enter ditekan sebelum ada yang diketik. " +
+        "Prompt ini memang tidak menampilkan ketikan sama sekali; itu disengaja, bukan tanda macet. " +
+        "Jalankan lagi, lalu ketik atau tempel seed hex 64 karakter maupun frasa pemulihan 24 kata sebelum menekan Enter.",
+    );
+  }
   if (deteksiBentukSeed(masukan) === "mnemonic") {
     return seedDariMnemonic(masukan, cara);
   }
@@ -88,6 +101,15 @@ export function validasiSeed(masukan: string, cara: CaraTurunan = CARA_TURUNAN_D
  * sendiri ikut menggemakan tiap karakter. Itu sebabnya draf awal bocor dua kali.
  */
 async function tanyaTanpaGema(rl: Interface, teksPrompt: string): Promise<string> {
+  // Petunjuk SEBELUM prompt. Tanpa ini, prompt tanpa gema tidak dapat dibedakan
+  // dari proses yang menggantung: tidak ada kursor bergerak, tidak ada bintang,
+  // tidak ada apa pun. Diamati pada pemakaian nyata — operator menekan Enter
+  // untuk memastikan prosesnya hidup, lalu mendapat "0 karakter". Pengujian pty
+  // memastikan bahwa mengetik, menempel, menempel ber-bracketed-paste, dan
+  // mengetik lambat SEMUANYA tertangkap benar; satu-satunya yang menghasilkan
+  // nol karakter adalah Enter tanpa masukan. Jadi yang kurang bukan penangkapan
+  // input, melainkan kabar kepada manusia bahwa ia sedang bekerja.
+  process.stdout.write("  (ketikan sengaja tidak ditampilkan sama sekali — ketik atau tempel, lalu Enter)\n");
   process.stdout.write(teksPrompt);
 
   const target = rl as unknown as { output: NodeJS.WritableStream };
@@ -99,6 +121,21 @@ async function tanyaTanpaGema(rl: Interface, teksPrompt: string): Promise<string
   } finally {
     target.output.write = tulisAsli;
   }
+}
+
+/**
+ * Mengabarkan BENTUK masukan yang diterima, tidak pernah isinya.
+ *
+ * Ini satu-satunya umpan balik yang didapat operator setelah mengetik ke dalam
+ * kegelapan, dan ia sengaja dibatasi pada apa yang sudah tersirat dari prompt:
+ * jumlah kata, atau panjang untuk masukan satu token. Jangan pernah menambahkan
+ * potongan isi, awalan, maupun akhiran ke sini.
+ */
+function ringkasBentukMasukan(masukan: string): string {
+  const token = masukan.trim().split(/\s+/).filter(Boolean);
+  if (token.length === 0) return "kosong";
+  if (token.length === 1) return `satu token, ${token[0].length} karakter`;
+  return `${token.length} kata`;
 }
 
 /**
@@ -128,7 +165,7 @@ async function bacaInputRahasia(promptInteraktif: string, promptNonInteraktif: s
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   try {
     const jawaban = await tanyaTanpaGema(rl, promptInteraktif);
-    process.stdout.write("\n");
+    process.stdout.write(`\n  (diterima: ${ringkasBentukMasukan(jawaban)})\n`);
     return jawaban;
   } finally {
     rl.close();

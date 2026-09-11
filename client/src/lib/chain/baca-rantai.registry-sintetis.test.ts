@@ -2,6 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { Ledger as LedgerRegistry } from "@pkgs/contract/src/managed/registry/contract/index.js";
 import type { JaringanAktif } from "./endpoint";
+import {
+  galatVariabelHilang,
+  proyeksikanJawabanJaringan,
+  proyeksikanJawabanKontrak,
+  type KontrakSuperset,
+} from "../../test/proyeksi-kueri-rantai";
 
 /**
  * Uji dengan REGISTRY SINTETIS — bukan fixture rekaman.
@@ -27,10 +33,13 @@ import type { JaringanAktif } from "./endpoint";
  *
  * Indexer-nya sendiri juga tidak dikalengkan dari fixture: fungsi
  * `indexerSintetis()` di bawah membaca APA YANG SEBENARNYA DIMINTA dari teks
- * kueri yang dikirim (alias mana memakai ...Penuh vs ...Ringkas, ada berapa
- * dokumen) dan menjawab sesuai itu — cara paling jujur untuk memverifikasi
- * bahwa susunKueriBallot() dan bacaRantai() sungguh-sungguh bekerja sama,
- * bukan hanya bahwa jawaban kalengan kebetulan cocok dengan yang diharapkan.
+ * kueri yang dikirim — bukan hanya alias mana memakai ...Penuh vs ...Ringkas
+ * dan berapa dokumen, tapi juga field APA yang benar-benar diminta pada
+ * level itu (address/state/terbaru/limit), lewat proyektor bersama di
+ * proyeksi-kueri-rantai.ts (dipakai juga oleh baca-rantai.test.ts) — cara
+ * paling jujur untuk memverifikasi bahwa susunKueriBallot() dan bacaRantai()
+ * sungguh-sungguh bekerja sama, bukan hanya bahwa jawaban kalengan kebetulan
+ * cocok dengan yang diharapkan.
  */
 
 const { ledgerRegistryMock } = vi.hoisted(() => ({
@@ -83,37 +92,47 @@ function respon(obj: unknown): Response {
   return new Response(JSON.stringify(obj), { status: 200, headers: { "content-type": "application/json" } });
 }
 
-function memakaiPenuh(query: string, alias: string): boolean {
-  return new RegExp(`\\b${alias}:\\s*contract\\([^)]*\\)\\s*\\{\\s*\\.\\.\\.Penuh\\s*\\}`).test(query);
+/**
+ * fetch palsu yang membaca APA YANG SEBENARNYA DIMINTA dari teks kueri —
+ * lewat proyektor bersama di proyeksi-kueri-rantai.ts, bukan lagi hanya
+ * `memakaiPenuh()` yang cuma menjawab ya/tidak untuk seluruh field sekaligus.
+ * Superset per alias (`kontrakSuperset` di bawah) SELALU lengkap; proyektor
+ * yang memutuskan field mana yang lolos menurut fragmen (Penuh/Ringkas) dan
+ * limit `terbaru: actions(limit: N)` yang benar-benar tertulis pada kueri
+ * yang dikirim baca-rantai.ts.
+ */
+function kontrakSuperset(alamat: string): KontrakSuperset {
+  return {
+    address: alamat,
+    state: STATE_BALLOT_ASLI,
+    deploy: [{ transaction: { hash: `deploy-${alamat}`, block: { height: 800000, timestamp: 1789100000000 } } }],
+    terbaru: [
+      {
+        __typename: "ContractCall",
+        entryPoint: "castVote",
+        state: STATE_BALLOT_ASLI,
+        transaction: { hash: `aksi-${alamat}`, block: { height: 800001, timestamp: 1789100001000 } },
+      },
+    ],
+  };
 }
 
 function indexerSintetis(): typeof fetch {
   return vi.fn(async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     const nama = /query\s+(\w+)/.exec(body.query)?.[1] ?? "?";
-    if (nama === "Jaringan") return respon(fxJaringan);
-    if (nama === "Registry") return respon(fxRegistry);
-    const data: Record<string, unknown> = {};
+    // Korespondensi nama variabel: sama seperti ambilPalsu di
+    // baca-rantai.test.ts — lihat komentar di proyeksi-kueri-rantai.ts.
+    const errVar = galatVariabelHilang(body.query, body.variables);
+    if (errVar.length > 0) return respon({ data: null, errors: errVar });
+    if (nama === "Jaringan") return respon({ ...fxJaringan, data: proyeksikanJawabanJaringan(body.query, fxJaringan.data) });
+    if (nama === "Registry") return respon({ ...fxRegistry, data: proyeksikanJawabanKontrak(body.query, fxRegistry.data) });
+    const supersetPerAlias: Record<string, KontrakSuperset> = {};
     for (const [kunciVar, alamat] of Object.entries(body.variables as Record<string, string>)) {
       const alias = `b${kunciVar.slice(1)}`;
-      const kontrak: Record<string, unknown> = {
-        address: alamat,
-        state: STATE_BALLOT_ASLI,
-        deploy: [{ transaction: { hash: `deploy-${alamat}`, block: { height: 800000, timestamp: 1789100000000 } } }],
-      };
-      if (memakaiPenuh(body.query, alias)) {
-        kontrak.terbaru = [
-          {
-            __typename: "ContractCall",
-            entryPoint: "castVote",
-            state: STATE_BALLOT_ASLI,
-            transaction: { hash: `aksi-${alamat}`, block: { height: 800001, timestamp: 1789100001000 } },
-          },
-        ];
-      }
-      data[alias] = kontrak;
+      supersetPerAlias[alias] = kontrakSuperset(alamat);
     }
-    return respon({ data, errors: [] });
+    return respon({ data: proyeksikanJawabanKontrak(body.query, supersetPerAlias), errors: [] });
   }) as unknown as typeof fetch;
 }
 
@@ -203,5 +222,61 @@ describe("bacaRantai — alamat sampah di registry disaring sebelum dikirim (pra
     expect(h.gagal).toContainEqual(
       expect.objectContaining({ alamat: "+2", sebab: "alamat-tak-sah" }),
     );
+  });
+
+  /**
+   * Batas MAKS_BALLOT (48): pembanding `reg.alamat.length > MAKS_BALLOT`
+   * bebas diubah jadi `>=` tanpa uji merah sebelumnya — tidak ada kasus uji
+   * dengan TEPAT 48 alamat. Pada TEPAT 48, `>` sah bernilai false (tidak ada
+   * yang terpotong, tidak boleh ada entri "+0" palsu di gagal[]); `>=` akan
+   * salah bernilai true di titik ini dan menghasilkan entri "+0" fantasi
+   * padahal registry TIDAK memiliki alamat yang terpotong.
+   */
+  it("pada TEPAT 48 alamat (batas MAKS_BALLOT), tidak satu pun terpotong dan TIDAK ADA entri '+N' fantasi di gagal[]", async () => {
+    const ALAMAT = alamatSintetis(48, 900);
+    ledgerRegistryMock.mockReturnValue(ledgerRegistryDasar({ count: BigInt(ALAMAT.length), ballots: bungkusBallots(ALAMAT) }));
+
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil: indexerSintetis() });
+
+    expect(h.ballot).toHaveLength(48);
+    expect(h.ballot.map(b => b.alamat)).toEqual(ALAMAT);
+    expect(h.gagal.filter(g => g.alamat.startsWith("+"))).toEqual([]);
+  });
+});
+
+/**
+ * Batas MAKS_ALAMAT_PER_DOKUMEN (24): sebelumnya bebas diubah ke rentang
+ * 13..25 tanpa uji merah, karena satu-satunya uji sebelumnya (26 alamat →
+ * [24, 2]) hanya mengunci "ada dua dokumen", bukan nilai batasnya sendiri.
+ * Dua uji di bawah mematok nilainya PERSIS: TEPAT 24 alamat harus tetap SATU
+ * dokumen (nilai batas < 24 memecahnya jadi dua); 25 alamat harus PERSIS
+ * menjadi [24, 1] (nilai batas > 24 menjaganya tetap satu, atau memecah
+ * dengan proporsi lain).
+ */
+describe("bacaRantai — batas MAKS_ALAMAT_PER_DOKUMEN (24), dipaku persis", () => {
+  it("TEPAT 24 alamat tetap SATU dokumen Ballots", async () => {
+    const ALAMAT = alamatSintetis(24, 200);
+    ledgerRegistryMock.mockReturnValue(ledgerRegistryDasar({ count: BigInt(ALAMAT.length), ballots: bungkusBallots(ALAMAT) }));
+
+    const ambil = indexerSintetis();
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil });
+
+    expect(h.ballot).toHaveLength(24);
+    const dok = await panggilanBallots(ambil);
+    expect(dok).toHaveLength(1);
+    expect(Object.keys(dok[0].variables)).toHaveLength(24);
+  });
+
+  it("25 alamat (satu lebih dari batas) menjadi PERSIS dua dokumen berukuran [24, 1]", async () => {
+    const ALAMAT = alamatSintetis(25, 300);
+    ledgerRegistryMock.mockReturnValue(ledgerRegistryDasar({ count: BigInt(ALAMAT.length), ballots: bungkusBallots(ALAMAT) }));
+
+    const ambil = indexerSintetis();
+    const h = await bacaRantai({ jaringan: JARINGAN, ambil });
+
+    expect(h.ballot).toHaveLength(25);
+    const dok = await panggilanBallots(ambil);
+    expect(dok).toHaveLength(2);
+    expect(dok.map(d => Object.keys(d.variables).length)).toEqual([24, 1]);
   });
 });

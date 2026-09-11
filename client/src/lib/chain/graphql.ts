@@ -29,6 +29,15 @@
  *     indexer berubah. Melaporkan itu sebagai "Registry not found on this
  *     network" mengirim pembaca memeriksa VITE_MIDNIGHT_NETWORK padahal yang
  *     berubah adalah skema indexer.
+ *   - `registry-skema` dipisah dari `registry-hilang`. Keduanya lahir dari
+ *     kueri Registry (baca-rantai.ts), tapi bentuk kegagalannya BEDA: `r`
+ *     bernilai `null` berarti kueri berhasil dan indexer memang menjawab
+ *     "tidak ada kontrak di alamat ini" — itulah `registry-hilang`. Kunci `r`
+ *     HILANG SELURUHNYA dari `data` berarti kueri itu sendiri gagal divalidasi
+ *     (alias tidak cocok, skema berubah) — indexer tidak pernah sampai
+ *     menjawab pertanyaan "ada kontrak atau tidak". Melaporkan keduanya
+ *     dengan sebab yang sama pernah terjadi di Task 5 dan mengirim pembaca
+ *     memeriksa jaringan padahal yang salah adalah bentuk kuerinya.
  *   - `konfigurasi` dipisah dari semuanya. Salah ketik VITE_MIDNIGHT_NETWORK
  *     terjadi SEBELUM ada jaringan yang dituju sama sekali; melaporkannya
  *     sebagai kegagalan jaringan menuntut UI mengarang objek JaringanAktif
@@ -48,6 +57,8 @@ export type SebabGalatRantai =
   | "graphql-fatal"
   /** Kueri berhasil, tetapi tidak ada kontrak pada alamat registry. Dilempar baca-rantai.ts. */
   | "registry-hilang"
+  /** Kunci `r` HILANG SELURUHNYA dari jawaban Registry — galat skema/alias, BUKAN registry kosong. Dilempar baca-rantai.ts. */
+  | "registry-skema"
   /** ContractState/ledger melempar; dilempar oleh dekode.ts, bukan berkas ini */
   | "dekode"
   /** env salah ketik atau alamat registry tidak sah. Terjadi SEBELUM ada jaringan yang dituju. */

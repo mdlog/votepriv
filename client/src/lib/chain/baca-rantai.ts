@@ -88,8 +88,9 @@ export type HasilRantai = {
    *
    * Bila POST 3 gagal, lihat komentar di atas perhitungan `sekarangMs` di bawah
    * fungsi ini — jatuhnya TIDAK BOLEH begitu saja ke stempel waktu aksi kontrak
-   * tertua yang kebetulan terlihat, karena itu bisa MUNDUR berjam-jam dan
-   * membuka kembali celah "Live now" palsu yang komentar ini coba tutup.
+   * TERBARU (tinggi tertinggi) yang kebetulan terlihat, karena itu bisa MUNDUR
+   * berjam-jam dan membuka kembali celah "Live now" palsu yang komentar ini
+   * coba tutup.
    */
   sekarangMs: number;
 };
@@ -231,16 +232,28 @@ export async function bacaRantai(opsi: {
   // non-null tanpa dasar runtime, dan `registryTerbaca.state` sebaris di bawah
   // melempar TypeError MENTAH, melewati seluruh taksonomi GalatRantai. Lihat
   // praperiksa P3.
-  if (!("r" in j1.data) || j1.data.r === null) {
+  //
+  // KEDUANYA juga dipisah SATU SAMA LAIN, bukan cuma dari "graphql-fatal":
+  // kunci hilang berarti kueri gagal DIVALIDASI (alias tak cocok, skema
+  // berubah) dan indexer tidak pernah sampai menjawab "ada kontrak atau
+  // tidak" — itu galat SKEMA. `r === null` berarti kuerinya SAH dan indexer
+  // benar-benar menjawab "tidak ada kontrak di alamat ini" — itu baru
+  // "registry-hilang", dan satu-satunya kasus di mana saran "periksa
+  // VITE_MIDNIGHT_NETWORK" (lihat komentar GalatRantai di graphql.ts) relevan.
+  // Melaporkan keduanya dengan sebab yang sama mengirim pembaca memeriksa
+  // jaringan padahal yang salah adalah bentuk kuerinya.
+  if (!("r" in j1.data)) {
+    throw new GalatRantai(
+      "registry-skema",
+      // rincian adalah TEKS UI — ditulis Inggris; lihat komentar di GalatRantai.
+      `Indexer query for the registry contract at ${jaringan.alamatRegistry} did not return a \`r\` field. This usually means a GraphQL schema or alias mismatch, not a missing contract: ${j1.errors.map(e => e.message).join("; ") || "no error message returned."}`,
+      new URL(url).host,
+    );
+  }
+  if (j1.data.r === null) {
     // BUKAN "tidak ada ballot". Hampir selalu berarti alamat benar tetapi
     // jaringannya salah — diverifikasi: alamat registry mengembalikan null di
     // preprod dan objek terisi di preview.
-    //
-    // Sebabnya "registry-hilang", BUKAN "graphql-fatal". Keduanya sempat sama,
-    // dan akibatnya setiap kegagalan GraphQL apa pun — termasuk galat skema
-    // seperti `Unknown field` — dilaporkan ke pengguna sebagai "Registry not
-    // found on this network", mengirimnya memeriksa variabel lingkungan yang
-    // sebenarnya benar.
     throw new GalatRantai(
       "registry-hilang",
       // rincian adalah TEKS UI — ditulis Inggris; lihat komentar di GalatRantai.
@@ -253,12 +266,24 @@ export async function bacaRantai(opsi: {
   // Registry SELALU memakai fragmen penuh, jadi `terbaru` pasti ada. `?? []`
   // hanya menjaga tipe; kalau ia pernah benar-benar kosong, panel Recent
   // activity kehilangan baris registry dan tidak ada yang lain yang rusak.
-  const aksiRegistry = keAksiTerbaca(
-    registryTerbaca.terbaru ?? [],
-    jaringan.alamatRegistry,
-    "Registry",
-    cuplikanRegistry,
-  );
+  let aksiRegistry: AksiTerbaca[];
+  try {
+    aksiRegistry = keAksiTerbaca(
+      registryTerbaca.terbaru ?? [],
+      jaringan.alamatRegistry,
+      "Registry",
+      cuplikanRegistry,
+    );
+  } catch {
+    // Pertahanan KEDUA, bukan yang utama: cuplikanRegistry() sudah menjaga
+    // per-aksi (try/catch di dalamnya, return null pada state yang gagal
+    // dibaca), jadi baris ini seharusnya tidak pernah tereksekusi lewat jalur
+    // itu. Ia ada untuk kasus di luar itu — mis. keAksiTerbaca sendiri
+    // melempar karena bentuk `mentah` tak terduga — supaya SATU aksi registry
+    // yang rusak tidak pernah menjatuhkan seluruh bacaRantai(): ballot tetap
+    // harus tampil walau baris registry di Recent activity hilang.
+    aksiRegistry = [];
+  }
 
   // ── Saring alamat sebelum dikirim ───────────────────────────────────────
   const gagal: BallotGagal[] = [];
@@ -361,6 +386,23 @@ export async function bacaRantai(opsi: {
   let post3Berhasil = false;
   try {
     const j3 = await postGraphQL<JawabanJaringan>({ url, query: KUERI_JARINGAN, signal, ambil });
+    // Kunci `block.height`/`block.timestamp` yang HILANG (galat skema/alias,
+    // atau errors[] parsial pada jawaban yang tetap punya data terisi
+    // sebagian) harus ditangkap DI SINI sebelum dipakai — persis alasan yang
+    // sama yang sudah memaksa perbaikan di POST 1 (lihat komentar "r" di
+    // atas). POST 3 SENGAJA tidak punya pemeriksaan seperti ini sebelumnya:
+    // tanpa itu, `j3.data.block.timestamp` yang hilang membuat `sekarangMs`
+    // menjadi `undefined` secara DIAM-DIAM (Number.isFinite(undefined) ===
+    // false) — tanpa entri gagal[], tanpa GalatRantai, padahal tipenya
+    // `number`. Melempar di sini membuat POST 3 jatuh ke jalur "gagal" yang
+    // SUDAH ADA di bawah (fallback ke tinggi aksi kontrak / jam perangkat),
+    // bukan mengalir sebagai nilai rusak yang diam-diam terpakai.
+    if (typeof j3.data.block?.height !== "number" || typeof j3.data.block?.timestamp !== "number") {
+      throw new Error(
+        j3.errors.map(e => e.message).join("; ") ||
+          "Indexer tidak mengembalikan block.height atau block.timestamp yang bertipe number.",
+      );
+    }
     blok = { height: j3.data.block.height, timestampMs: j3.data.block.timestamp };
     epoch = j3.data.currentEpochInfo;
     post3Berhasil = true;
@@ -377,34 +419,45 @@ export async function bacaRantai(opsi: {
   }
 
   /**
-   * sekarangMs — tiga jalur, terurut dari yang paling dipercaya:
+   * sekarangMs — DUA jalur, terurut dari yang paling dipercaya.
+   *
+   * (Sebelumnya ditulis sebagai TIGA jalur, dengan cabang ketiga terpisah
+   * untuk "tidak ada aksi kontrak terlihat sama sekali". Itu cabang MATI:
+   * `blok.timestampMs` di jalur gagal tidak pernah negatif — ia diam di 0
+   * (nilai awal) atau naik dari tinggi aksi kontrak di atas — sehingga
+   * `Math.max(blok.timestampMs, Date.now())` dan `Date.now()` polos
+   * menghasilkan angka yang SAMA PERSIS setiap kali cabang "tidak ada aksi
+   * terlihat" itu dipilih: `Math.max(0, Date.now()) === Date.now()`. Dua
+   * ekspresi kode yang secara matematis tidak bisa dibedakan bukan dua jalur;
+   * disatukan di sini alih-alih dipertahankan sebagai cabang yang komentar
+   * lama sebut "keadaan terburuk yang tercatat sebagai demikian" padahal
+   * tidak ada penanda apa pun yang membuatnya terlihat berbeda dari cabang
+   * biasa — klaim itu tidak terpenuhi kode, jadi dihapus alih-alih
+   * dipertahankan sebagai prosa yang bercerita beda dari kodenya.)
    *
    * 1. POST 3 berhasil: `blok.timestampMs` APA ADANYA. Ini bacaan LANGSUNG
    *    dari tinggi blok terbaru rantai, sumber paling akurat yang ada.
    *
-   * 2. POST 3 gagal TAPI ada tinggi aksi kontrak yang terlihat (praperiksa
-   *    P4): stempel waktu aksi TERTUA yang terlihat sekalipun bisa mundur
-   *    berjam-jam dari waktu nyata — diukur pada fixture terekam: 5.309 blok
-   *    / 8,875 jam di belakang POST 3 yang sesungguhnya. Memakainya APA
-   *    ADANYA sebagai "sekarang" membuka kembali celah yang tipe ini ditulis
-   *    untuk menutup: ballot yang voteDeadline-nya sudah lewat di jendela
-   *    mundur itu akan tampil "Live now", dan VoteModal menawarkan castVote
-   *    yang kontraknya PASTI tolak. Karena itu jam PERANGKAT dipakai sebagai
-   *    BATAS BAWAH (floor) lewat Math.max — bukan sebagai sumber utama:
-   *    sekarangMs TIDAK PERNAH lebih kecil dari waktu nyata pembaca, dan tetap
-   *    memakai angka rantai ketika angka itu (jarang, karena jam klien
-   *    melenceng ke belakang) justru lebih besar.
-   *
-   * 3. POST 3 gagal DAN tidak ada aksi kontrak sama sekali (registry kosong
-   *    baru, atau kedua ballot yang dibaca juga gagal): tidak ada satu pun
-   *    angka rantai untuk dipakai. Jam perangkat dipakai APA ADANYA, dan ini
-   *    keadaan TERBURUK yang tercatat sebagai demikian — bukan jalur normal.
+   * 2. POST 3 gagal: `Math.max(blok.timestampMs, Date.now())`. Bila ada
+   *    tinggi aksi kontrak yang terlihat (praperiksa P4), `blok.timestampMs`
+   *    di sini adalah stempel waktu aksi TERBARU (tinggi tertinggi) yang
+   *    terlihat — dan itu sendiri sekalipun bisa mundur berjam-jam dari waktu
+   *    nyata, diukur pada fixture terekam: 5.309 blok / 8,875 jam di belakang
+   *    POST 3 yang sesungguhnya. Memakainya APA ADANYA sebagai "sekarang"
+   *    membuka kembali celah yang tipe ini ditulis untuk menutup: ballot yang
+   *    voteDeadline-nya sudah lewat di jendela mundur itu akan tampil
+   *    "Live now", dan VoteModal menawarkan castVote yang kontraknya PASTI
+   *    tolak. Karena itu jam PERANGKAT dipakai sebagai BATAS BAWAH (floor)
+   *    lewat Math.max — bukan sebagai sumber utama: sekarangMs TIDAK PERNAH
+   *    lebih kecil dari waktu nyata pembaca, dan tetap memakai angka rantai
+   *    ketika angka itu (jarang, karena jam klien melenceng ke belakang)
+   *    justru lebih besar. Bila TIDAK ADA aksi kontrak yang terlihat sama
+   *    sekali (registry kosong baru, atau seluruh ballot yang dibaca juga
+   *    gagal), `blok.timestampMs` diam di 0 dan Math.max menghasilkan
+   *    `Date.now()` apa adanya — keadaan TERBURUK, tapi secara aritmetika
+   *    sama dengan floor di atas, bukan cabang terpisah.
    */
-  const sekarangMs = post3Berhasil
-    ? blok.timestampMs
-    : blok.timestampMs > 0
-      ? Math.max(blok.timestampMs, Date.now())
-      : Date.now();
+  const sekarangMs = post3Berhasil ? blok.timestampMs : Math.max(blok.timestampMs, Date.now());
 
   return {
     jaringan,

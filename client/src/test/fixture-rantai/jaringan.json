@@ -1,0 +1,14 @@
+{
+ "data": {
+  "block": {
+   "height": 819599,
+   "timestamp": 1789135248000,
+   "hash": "48e2d219fa7142cdbb24889089c0d09edbacb5f5ee874bbf2d018b87e39e684d"
+  },
+  "currentEpochInfo": {
+   "epochNo": 993965,
+   "durationSeconds": 1800,
+   "elapsedSeconds": 65
+  }
+ }
+}

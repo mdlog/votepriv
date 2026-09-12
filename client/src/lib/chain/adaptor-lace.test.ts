@@ -55,6 +55,27 @@ function bufferFromPersis<T>(x: unknown, hasilBila: () => T): T {
   return hasilBila();
 }
 
+/**
+ * Meniru PERSIS bagaimana ledger-v8 wasm menolak marker binding yang salah:
+ * `expected header tag '<X>', got '<Y>'` — bentuk pesan ini dikutip dari
+ * `strings` atas `midnight_ledger_wasm_bg.wasm` yang TERPASANG di pohon ini,
+ * dan wasm itu BYTE-IDENTIK (sha256 88ff7c7c...ea7638, diverifikasi lewat
+ * sha256sum) dengan yang dibundel ekstensi Lace 2.3.2 sungguhan — jadi bukan
+ * pesan rekaan, meski teks INI TIDAK diklaim persis sama dengan tag internal
+ * sungguhan (yang tidak diekstrak). `deserializeMock` hanya "berhasil" bila
+ * marker binding yang dioper cocok dengan status binding SEBENARNYA dari
+ * bytes — sama seperti wasm sungguhan menolak marker yang tidak cocok dengan
+ * data.
+ */
+function deserializeSepertiWasm(bindingSebenarnya: "binding" | "pre-binding") {
+  return (_sig: string, _proof: string, binding: string, bytes: Uint8Array) => {
+    if (binding !== bindingSebenarnya) {
+      throw new Error(`expected header tag '${bindingSebenarnya}', got '${binding}'`);
+    }
+    return { __sentinel: `deserialize-ok:${binding}`, panjangBytes: bytes.length };
+  };
+}
+
 describe("buatAdaptorLace", () => {
   it("melempar bila wallet tidak melaporkan coinPublicKey/encryptionPublicKey", () => {
     expect(() => buatAdaptorLace(walletContoh({}, { coinPublicKey: undefined }))).toThrow(/coinPublicKey/);
@@ -78,22 +99,22 @@ describe("buatAdaptorLace", () => {
       expect(balanceSealedTransaction).toHaveBeenCalledWith(bytesTx, undefined);
     });
 
-    it("mencoba balanceSealedTransaction LEBIH DULU", async () => {
+    it("mencoba balanceUnsealedTransaction LEBIH DULU — tx kita adalah UnboundTransaction (pre-binding), markernya cocok dengan 'unsealed' bukan 'sealed' (lihat komentar kepala berkas)", async () => {
       const hasilSeimbang = { __sentinel: "tx-seimbang" };
-      const balanceSealedTransaction = vi.fn(async () => hasilSeimbang);
-      const balanceUnsealedTransaction = vi.fn(async () => ({ __sentinel: "tidak-dipakai" }));
+      const balanceUnsealedTransaction = vi.fn(async () => hasilSeimbang);
+      const balanceSealedTransaction = vi.fn(async () => ({ __sentinel: "tidak-dipakai" }));
       const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction, balanceUnsealedTransaction }));
       const tx = { serialize: () => new Uint8Array([1]), identifiers: () => [] };
 
       await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilSeimbang);
-      expect(balanceSealedTransaction).toHaveBeenCalledTimes(1);
-      expect(balanceUnsealedTransaction).not.toHaveBeenCalled();
+      expect(balanceUnsealedTransaction).toHaveBeenCalledTimes(1);
+      expect(balanceSealedTransaction).not.toHaveBeenCalled();
     });
 
-    it("jatuh ke balanceUnsealedTransaction bila balanceSealedTransaction tidak ada", async () => {
+    it("jatuh ke balanceSealedTransaction bila balanceUnsealedTransaction tidak ada (fallback nama metode, bukan jalur nyata di Lace — Lace selalu mendaftarkan keduanya)", async () => {
       const hasilSeimbang = { __sentinel: "tx-seimbang-2" };
-      const balanceUnsealedTransaction = vi.fn(async () => hasilSeimbang);
-      const dompet = buatAdaptorLace(walletContoh({ balanceUnsealedTransaction }));
+      const balanceSealedTransaction = vi.fn(async () => hasilSeimbang);
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
       const tx = { serialize: () => new Uint8Array([2]), identifiers: () => [] };
 
       await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilSeimbang);
@@ -147,6 +168,25 @@ describe("buatAdaptorLace", () => {
       const tx = { serialize: () => new Uint8Array([6]), identifiers: () => [] };
 
       await expect(dompet.balanceTx(tx as never)).rejects.toThrow(/bentuk yang tidak dikenali/);
+    });
+
+    it("bentuk '{ tx: hex }' (bentuk NYATA Lace 2.3.2 — kedua jalur balance di js/119.js berakhir identik, lihat komentar kepala berkas): unwrap .tx lalu deserialisasi dengan marker 'binding' (hasil SUDAH bound — signRecipe+finalizeRecipe sudah jalan), BUKAN 'pre-binding', dan BUKAN dikembalikan apa adanya sebagai objek pembungkus", async () => {
+      deserializeMock.mockReset();
+      deserializeMock.mockImplementation(deserializeSepertiWasm("binding"));
+      const balanceUnsealedTransaction = vi.fn(async () => ({ tx: "0a0b0c" }));
+      const dompet = buatAdaptorLace(walletContoh({ balanceUnsealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([1]), identifiers: () => [] };
+
+      const hasil = await dompet.balanceTx(tx as never);
+      // Bila kode memperlakukan { tx: "0a0b0c" } apa adanya (passthrough objek
+      // generik, tanpa unwrap+deserialize), hasilnya adalah objek pembungkus
+      // itu sendiri — bukan sentinel dari deserializeMock. Kedua assert di
+      // bawah MERAH bila cabang unwrap { tx } dihapus (Mutasi wajib b).
+      expect(hasil).not.toEqual({ tx: "0a0b0c" });
+      expect((hasil as { __sentinel?: string }).__sentinel).toBe("deserialize-ok:binding");
+      expect(deserializeMock).toHaveBeenCalledWith("signature", "proof", "binding", expect.any(Uint8Array));
+      const bytesDikirim = deserializeMock.mock.calls[0][3] as Uint8Array;
+      expect(Array.from(bytesDikirim)).toEqual([0x0a, 0x0b, 0x0c]);
     });
   });
 

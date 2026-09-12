@@ -488,6 +488,56 @@ export default defineConfig(({ mode }) => {
     .filter(Boolean);
 
   return {
+  // Jalur tulis (tulis.ts -> providers-tulis/kontrak-tulis -> paket di bawah)
+  // hanya pernah dicapai lewat dynamic import() saat pengguna menekan
+  // "generate proof" — tidak pernah lewat impor statis dari entry point mana
+  // pun. Scanner esbuild bawaan Vite (yang membangun daftar optimizeDeps awal
+  // dari index.html + impor statis) tidak pernah melihatnya, jadi kesembilan
+  // paket ini TIDAK ikut ter-pra-bundel saat server start — hanya react/
+  // react-dom/jsx-runtime yang ada di _metadata.json awal (diverifikasi
+  // sebelum perbaikan ini). Vite baru menemukannya secara MALAS pada request
+  // dynamic-import PERTAMA, memicu re-optimize di tengah permintaan itu
+  // sendiri — race yang membuat permintaan itu mati dengan 504 "Outdated
+  // Optimize Dep" (persis gejala yang dilaporkan: /@fs/.../node_modules/.vite/
+  // deps/@midnight-ntwrk_midnight-js-contracts.js mengembalikan 504 karena
+  // berkasnya belum ada di disk sama sekali).
+  //
+  // Perbaikan: daftarkan eksplisit di `include` supaya dipra-bundel SAAT
+  // SERVER START, bukan ditemukan belakangan. Diuji EMPIRIS dua arah dengan
+  // dev server sungguhan (port percobaan, cache terisolasi) lalu meng-crawl
+  // seluruh graf impor tulis.ts (bukan cuma tulis.ts sendiri) dan memastikan
+  // nihil 404/504 di setiap URL:
+  //
+  //   - include (pilihan ini): graf bersih, 27 modul dikunjungi, crawl dingin
+  //     0,91 detik. WASM ledger-v8 (dipakai transitif lewat compact-js) ikut
+  //     ter-bundel esbuild TANPA masalah: vite-plugin-wasm menyisipkannya
+  //     sebagai `data:application/wasm;base64,...` langsung di dalam chunk
+  //     pra-bundel dan memanggil WebAssembly.instantiate atasnya — tidak ada
+  //     permintaan aset .wasm terpisah yang bisa 404, jadi kekhawatiran teori
+  //     "pra-bundel merusak WASM" TIDAK terbukti untuk vite-plugin-wasm +
+  //     Vite 7.1.9 di sini.
+  //   - exclude: juga bersih (0 404/504), tapi jauh lebih lambat: 1.059 modul
+  //     dikunjungi (setiap berkas ESM tiap paket disajikan satu-satu lewat
+  //     /@fs/, termasuk yang tidak relevan sama sekali seperti fast-check/
+  //     pure-rand yang ikut terseret lewat `effect`), crawl dingin 3,48 detik
+  //     — 3,8x lebih lambat dan 39x lebih banyak request daripada include.
+  //
+  // include menang di kedua kriteria (berhasil DAN lebih cepat), jadi dipilih
+  // exclude tidak dipakai sama sekali. Lihat .superpowers/dev-optimizedeps-jalur-tulis.md
+  // untuk bukti lengkap kedua percobaan.
+  optimizeDeps: {
+    include: [
+      "@midnight-ntwrk/midnight-js-contracts",
+      "@midnight-ntwrk/midnight-js-network-id",
+      "@midnight-ntwrk/midnight-js-types",
+      "@midnight-ntwrk/midnight-js-http-client-proof-provider",
+      "@midnight-ntwrk/midnight-js-indexer-public-data-provider",
+      "@midnight-ntwrk/midnight-js-utils",
+      "@midnight-ntwrk/compact-js",
+      "@midnight-ntwrk/compact-runtime",
+      "@midnight-ntwrk/ledger-v8",
+    ],
+  },
   plugins: [
     ...plugins,
     vitePluginRuntimeConfig(proofServerTarget),

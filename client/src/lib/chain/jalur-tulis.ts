@@ -36,27 +36,19 @@
  * gerbang mesin yang PERTAMA KALI benar-benar berdiri. C-2b karena itu
  * mewarisi NIAT yang sudah benar, bukan struktur yang sudah lama teruji.
  *
- * Berkas ini BELUM memanggil apa pun yang nyata: tidak ada pemakai di pohon
- * C-2a. `muatJalurTulis()` sengaja melempar (lihat di bawah), dan
- * `JALUR_TULIS_SIAP` sengaja `false`. Mengisinya adalah pekerjaan C-2b.
+ * STATUS (Task 6, C-2b): `./tulis.ts` kini ADA dan mengisi `kirimSuara`
+ * (castVote ujung ke ujung). Keempat aturan di atas berlaku SELAMANYA untuk
+ * pintu ini — bukan hanya sampai C-2b selesai: tugas berkas ini adalah
+ * menjaga batas bundel baca/tulis, dan itu tetap relevan sepanjang tallyVote,
+ * createBallot, dan finalize (Task 7 dst.) menyusul masuk ke ./tulis.ts lewat
+ * pintu yang sama. Menghapus dynamic import ini demi kenyamanan "toh sudah
+ * ada pemakainya sekarang" akan mengembalikan belasan megabyte ledger-v8 ke
+ * setiap pembaca yang hanya ingin melihat hasil ballot.
  */
 
-/** false sampai C-2b menaruh ./tulis.ts di sebelah berkas ini dan mengisi fungsi di bawah. */
-export const JALUR_TULIS_SIAP = false;
+/** true — C-2b sudah mengisi ./tulis.ts. */
+export const JALUR_TULIS_SIAP = true;
 
-/**
- * Tipe kembaliannya `Promise<never>` dan BUKAN `Promise<typeof import("./tulis")>`:
- * modul `./tulis` belum ada, dan menuliskan tipe yang menunjuk berkas yang
- * tidak ada membuat `pnpm check` merah. C-2b yang mengganti tanda tangannya
- * ketika modulnya lahir — pada saat itulah `await import("./tulis")`
- * sungguhan masuk ke sini, bukan sebelumnya.
- */
-export async function muatJalurTulis(): Promise<never> {
-  // Sengaja melempar, bukan mengembalikan modul palsu: modul palsu yang
-  // "berhasil" akan membuat UI menampilkan tanda terima untuk transaksi yang
-  // tidak pernah ada — tepat kesalahan yang C-1 buang dari VoteModal.
-  throw new Error(
-    "Jalur tulis belum ada. Ia dibangun di Rencana C-2b (castVote, tallyVote, createBallot, finalize) " +
-      "dan masuk lewat dynamic import di berkas ini, bukan lewat impor statis.",
-  );
+export async function muatJalurTulis(): Promise<typeof import("./tulis")> {
+  return import("./tulis");
 }

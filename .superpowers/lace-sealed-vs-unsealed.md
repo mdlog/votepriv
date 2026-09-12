@@ -109,7 +109,7 @@ sebelum perbaikan ini dan tidak terkait.
 
 ## SHA commit
 
-Lihat `git log -1` setelah commit perbaikan ini dibuat di branch `feat/fondasi-kontrak`.
+`c09faed48915c6336ff92b9d693840e60a98d983` (branch `feat/fondasi-kontrak`).
 
 ## Belum terverifikasi
 

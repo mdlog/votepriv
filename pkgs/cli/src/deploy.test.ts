@@ -1,13 +1,16 @@
 import type { FoundContract } from "@midnight-ntwrk/midnight-js-contracts";
+import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
 import {
+  ballotSudahTercatat,
   batchDaun,
   catatKeRegistry,
   daftarkanVoter,
   deployBallot,
   deployRegistry,
   kunciAdmin,
+  registerVotersMendarat,
   validasiMetadata,
 } from "./deploy.ts";
 import type { BallotC, RegistryC } from "./kontrak.ts";
@@ -38,7 +41,94 @@ describe("deployRegistry", () => {
       vi.useRealTimers();
     }
   });
+
+  // Retri (lihat OpsiRetriDeploy/sudahMendaratDeploy): deployFn dipanggil
+  // KEDUA kalinya (bukan objek DeployedContract sungguhan yang dikonstruksi —
+  // percobaan kedua sengaja gagal juga, dengan galat LAIN yang khas, supaya
+  // uji ini membuktikan "diulang" murni dari JUMLAH pemanggilan dan identitas
+  // galat akhir, tanpa perlu memalsukan bentuk DeployedContract<RegistryC>
+  // yang sesungguhnya).
+  it("putus koneksi + DUST tidak turun: mengulang (deployFn terpanggil dua kali)", async () => {
+    let panggilan = 0;
+    const dustPerPanggilan = [500n, 500n]; // tidak turun sama sekali
+    let bacaDustKe = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      if (panggilan === 1) throw galatPutusKoneksi();
+      throw new Error("percobaan-2 sengaja gagal (uji retri)");
+    };
+    const bacaDust = async () => {
+      const v = dustPerPanggilan[bacaDustKe] ?? 500n;
+      bacaDustKe += 1;
+      return v;
+    };
+
+    await expect(
+      deployRegistry({} as unknown as ProvidersRegistry, logPalsu, deployFnPalsu, { bacaDust, jedaMs: 1 }),
+    ).rejects.toThrow(/percobaan-2 sengaja gagal/);
+    expect(panggilan).toBe(2);
+  });
+
+  it("putus koneksi + DUST TURUN: berhenti (tidakPasti), TIDAK mengulang — mencegah deploy KEDUA", async () => {
+    let panggilan = 0;
+    const dustPerPanggilan = [500n, 300n]; // turun — kemungkinan biaya terpakai
+    let bacaDustKe = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      throw galatPutusKoneksi();
+    };
+    const bacaDust = async () => {
+      const v = dustPerPanggilan[bacaDustKe] ?? 300n;
+      bacaDustKe += 1;
+      return v;
+    };
+
+    await expect(
+      deployRegistry({} as unknown as ProvidersRegistry, logPalsu, deployFnPalsu, { bacaDust, jedaMs: 1 }),
+    ).rejects.toThrow(/tidak bisa dipastikan/);
+    expect(panggilan).toBe(1);
+  });
+
+  it("putus koneksi TANPA bacaDust: berhenti (tidakPasti) pada percobaan pertama", async () => {
+    let panggilan = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      throw galatPutusKoneksi();
+    };
+
+    await expect(
+      deployRegistry({} as unknown as ProvidersRegistry, logPalsu, deployFnPalsu, { jedaMs: 1 }),
+    ).rejects.toThrow(/tidak bisa dipastikan/);
+    expect(panggilan).toBe(1);
+  });
+
+  it("penolakan rantai TIDAK diulang walau bacaDust diberikan", async () => {
+    let panggilan = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      throw new Error('failed assert: "Jumlah opsi harus 2 sampai 4"');
+    };
+
+    await expect(
+      deployRegistry({} as unknown as ProvidersRegistry, logPalsu, deployFnPalsu, {
+        bacaDust: async () => 500n,
+        jedaMs: 1,
+      }),
+    ).rejects.toThrow(/Jumlah opsi harus 2 sampai 4/);
+    expect(panggilan).toBe(1);
+  });
 });
+
+/**
+ * Bentuk galat putus koneksi persis yang dilaporkan di lapangan — lihat
+ * .superpowers/retry-submit-cli.md.
+ */
+function galatPutusKoneksi(): Error {
+  const penyebab = new Error("disconnected from wss://rpc.preview.midnight.network/: 1000:: Normal Closure");
+  const e = new Error("Transaction submission failed", { cause: penyebab });
+  e.name = "SubmissionError";
+  return e;
+}
 
 const daun = (isi: number) => new Uint8Array(32).fill(isi);
 
@@ -186,7 +276,117 @@ describe("deployBallot", () => {
       vi.useRealTimers();
     }
   });
+
+  // Retri lewat opsiRetri (argumen KEDELAPAN — deployFn di argumen ketujuh
+  // tetap seam terpisah, lihat catatan di atasnya). Pola uji sama seperti
+  // deployRegistry di atas: percobaan kedua sengaja gagal dengan galat LAIN,
+  // supaya "diulang" dibuktikan dari jumlah pemanggilan + identitas galat
+  // akhir, tanpa memalsukan bentuk DeployedContract<BallotC> sungguhan.
+  it("putus koneksi + DUST tidak turun: mengulang (deployFn terpanggil dua kali)", async () => {
+    let panggilan = 0;
+    const dustPerPanggilan = [500n, 500n];
+    let bacaDustKe = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      if (panggilan === 1) throw galatPutusKoneksi();
+      throw new Error("percobaan-2 sengaja gagal (uji retri)");
+    };
+    const bacaDust = async () => {
+      const v = dustPerPanggilan[bacaDustKe] ?? 500n;
+      bacaDustKe += 1;
+      return v;
+    };
+
+    await expect(
+      deployBallot(
+        {} as unknown as ProvidersBallot,
+        metaSah(),
+        new Uint8Array(32),
+        new Uint8Array(32),
+        logPalsu,
+        undefined,
+        deployFnPalsu,
+        { bacaDust, jedaMs: 1 },
+      ),
+    ).rejects.toThrow(/percobaan-2 sengaja gagal/);
+    expect(panggilan).toBe(2);
+  });
+
+  it("putus koneksi + DUST TURUN: berhenti (tidakPasti), TIDAK mengulang — mencegah ballot KEDUA", async () => {
+    let panggilan = 0;
+    const dustPerPanggilan = [500n, 300n];
+    let bacaDustKe = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      throw galatPutusKoneksi();
+    };
+    const bacaDust = async () => {
+      const v = dustPerPanggilan[bacaDustKe] ?? 300n;
+      bacaDustKe += 1;
+      return v;
+    };
+
+    await expect(
+      deployBallot(
+        {} as unknown as ProvidersBallot,
+        metaSah(),
+        new Uint8Array(32),
+        new Uint8Array(32),
+        logPalsu,
+        undefined,
+        deployFnPalsu,
+        { bacaDust, jedaMs: 1 },
+      ),
+    ).rejects.toThrow(/tidak bisa dipastikan/);
+    expect(panggilan).toBe(1);
+  });
+
+  it("putus koneksi TANPA bacaDust: berhenti (tidakPasti) pada percobaan pertama", async () => {
+    let panggilan = 0;
+    const deployFnPalsu = async () => {
+      panggilan += 1;
+      throw galatPutusKoneksi();
+    };
+
+    await expect(
+      deployBallot(
+        {} as unknown as ProvidersBallot,
+        metaSah(),
+        new Uint8Array(32),
+        new Uint8Array(32),
+        logPalsu,
+        undefined,
+        deployFnPalsu,
+        { jedaMs: 1 },
+      ),
+    ).rejects.toThrow(/tidak bisa dipastikan/);
+    expect(panggilan).toBe(1);
+  });
 });
+
+/**
+ * Stub `PublicDataProvider` lengkap (bukan `as any`/`as unknown`): SETIAP
+ * anggota interface diimplementasikan supaya tsc memeriksa penuh, tapi hanya
+ * `queryContractState` yang benar-benar dipakai uji-uji di berkas ini — sisanya
+ * melempar bila TERPANGGIL, supaya pemakaian tak sengaja gagal nyaring.
+ */
+function publicDataProviderPalsu(queryContractState: PublicDataProvider["queryContractState"]): PublicDataProvider {
+  const takTerpakai = (nama: string) => (): never => {
+    throw new Error(`${nama} tidak dipakai di uji ini`);
+  };
+  return {
+    queryContractState,
+    queryZSwapAndContractState: takTerpakai("queryZSwapAndContractState"),
+    queryDeployContractState: takTerpakai("queryDeployContractState"),
+    queryUnshieldedBalances: takTerpakai("queryUnshieldedBalances"),
+    watchForContractState: takTerpakai("watchForContractState"),
+    watchForUnshieldedBalances: takTerpakai("watchForUnshieldedBalances"),
+    watchForDeployTxData: takTerpakai("watchForDeployTxData"),
+    watchForTxData: takTerpakai("watchForTxData"),
+    contractStateObservable: takTerpakai("contractStateObservable"),
+    unshieldedBalancesObservable: takTerpakai("unshieldedBalancesObservable"),
+  };
+}
 
 describe("daftarkanVoter", () => {
   // Sama seperti deployBallot di atas: menghapus denganBatasWaktu di sekeliling
@@ -207,6 +407,68 @@ describe("daftarkanVoter", () => {
       vi.useRealTimers();
     }
   });
+
+  // Retri: TANPA publicDataProvider/alamatBallot tidak ada cara memastikan
+  // status mendarat (lihat OpsiRetriDaftarkanVoter), jadi putus koneksi harus
+  // BERHENTI dengan galat baru — bukan mengulang membabi buta, dan bukan pula
+  // menelan galat asli secara diam-diam.
+  it("putus koneksi TANPA opsi retri: berhenti (tidakPasti), registerVoters dipanggil tepat sekali", async () => {
+    let panggilan = 0;
+    const ballotPalsu = {
+      callTx: {
+        registerVoters: async () => {
+          panggilan += 1;
+          throw galatPutusKoneksi();
+        },
+      },
+    } as unknown as FoundContract<BallotC>;
+
+    await expect(daftarkanVoter(ballotPalsu, [daun(1)], logPalsu, { jedaMs: 1 })).rejects.toThrow(
+      /tidak bisa dipastikan/,
+    );
+    expect(panggilan).toBe(1);
+  });
+
+  // Penolakan rantai (bukan putus koneksi) TIDAK BOLEH diulang. TANPA opsi
+  // retri dengan sengaja di sini: registeredSebelum (dibaca SEBELUM percobaan
+  // pertama bila publicDataProvider/alamatBallot diberikan) tidak relevan
+  // untuk uji ini — klasifikasi bolehDiulang diperiksa SEBELUM sudahMendarat
+  // pernah dipanggil sama sekali (lihat kirimDenganRetri), jadi perilakunya
+  // sama persis dengan atau tanpa opsi.
+  it("penolakan rantai TIDAK diulang — pesan galat kontrak diteruskan apa adanya", async () => {
+    let panggilan = 0;
+    const ballotPalsu = {
+      callTx: {
+        registerVoters: async () => {
+          panggilan += 1;
+          throw new Error('failed assert: "Hanya admin yang boleh mendaftarkan pemilih"');
+        },
+      },
+    } as unknown as FoundContract<BallotC>;
+
+    await expect(daftarkanVoter(ballotPalsu, [daun(1)], logPalsu, { jedaMs: 1 })).rejects.toThrow(
+      /Hanya admin yang boleh mendaftarkan pemilih/,
+    );
+    expect(panggilan).toBe(1);
+  });
+});
+
+describe("registerVotersMendarat (aritmetika retri daftarkanVoter)", () => {
+  it("belum mendarat bila registeredCount belum naik sama sekali", () => {
+    expect(registerVotersMendarat(3n, 2n, 3n)).toBe(false);
+  });
+
+  it("belum mendarat bila naik tapi kurang dari batchN", () => {
+    expect(registerVotersMendarat(3n, 2n, 4n)).toBe(false);
+  });
+
+  it("mendarat tepat saat naik persis sebesar batchN", () => {
+    expect(registerVotersMendarat(3n, 2n, 5n)).toBe(true);
+  });
+
+  it("mendarat (>=) bila naik LEBIH dari batchN", () => {
+    expect(registerVotersMendarat(3n, 2n, 6n)).toBe(true);
+  });
 });
 
 describe("catatKeRegistry", () => {
@@ -223,6 +485,71 @@ describe("catatKeRegistry", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("putus koneksi TANPA opsi retri: berhenti (tidakPasti), register dipanggil tepat sekali", async () => {
+    let panggilan = 0;
+    const registryPalsu = {
+      callTx: {
+        register: async () => {
+          panggilan += 1;
+          throw galatPutusKoneksi();
+        },
+      },
+    } as unknown as FoundContract<RegistryC>;
+
+    await expect(catatKeRegistry(registryPalsu, "a".repeat(64), logPalsu, { jedaMs: 1 })).rejects.toThrow(
+      /tidak bisa dipastikan/,
+    );
+    expect(panggilan).toBe(1);
+  });
+
+  // Sama seperti daftarkanVoter: penolakan rantai (mis. "sengaja" ditolak
+  // kontrak untuk alasan lain) tidak pernah diulang.
+  it("penolakan rantai TIDAK diulang walau publicDataProvider diberikan", async () => {
+    let panggilan = 0;
+    const registryPalsu = {
+      callTx: {
+        register: async () => {
+          panggilan += 1;
+          throw new Error('failed assert: "alamat tidak sah"');
+        },
+      },
+    } as unknown as FoundContract<RegistryC>;
+    const providerPalsu = publicDataProviderPalsu(async () => {
+      throw new Error("queryContractState seharusnya tidak pernah terpanggil di uji ini");
+    });
+
+    await expect(
+      catatKeRegistry(registryPalsu, "a".repeat(64), logPalsu, {
+        publicDataProvider: providerPalsu,
+        alamatRegistry: "b".repeat(64),
+        jedaMs: 1,
+      }),
+    ).rejects.toThrow(/alamat tidak sah/);
+    expect(panggilan).toBe(1);
+  });
+});
+
+describe("ballotSudahTercatat (keanggotaan retri catatKeRegistry)", () => {
+  it("false untuk daftar kosong", () => {
+    expect(ballotSudahTercatat([], "0200abc")).toBe(false);
+  });
+
+  it("false bila alamat tidak ada di daftar", () => {
+    expect(ballotSudahTercatat(["0200aaa", "0200bbb"], "0200ccc")).toBe(false);
+  });
+
+  it("true bila alamat ADA di daftar — TIDAK peduli posisi (pushFront menaruh terbaru di depan)", () => {
+    expect(ballotSudahTercatat(["0200bbb", "0200aaa"], "0200aaa")).toBe(true);
+  });
+
+  // Ini justru alasan keanggotaan dipilih, bukan count: count yang naik bisa
+  // berasal dari entri SIAPA PUN (registry permissionless), bukan bukti
+  // entri KITA yang mendarat. Uji ini mendokumentasikan itu lewat contoh:
+  // daftar berisi ballot LAIN (count > 0) tapi alamat kita sendiri tidak ada.
+  it("false walau daftar tidak kosong, ketika isinya bukan alamat kita", () => {
+    expect(ballotSudahTercatat(["0200milikOrangLain"], "0200milikKita")).toBe(false);
   });
 });
 

@@ -35,6 +35,7 @@ import {
 import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
 import { rakitProvidersBallot, rakitProvidersRegistry } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
+import { bacaDustSaatIni } from "./wallet.ts";
 
 const JUMLAH_PEMILIH = 3;
 
@@ -102,6 +103,8 @@ const { alamat: alamatBallot, kontrak: ballot } = await deployBallot(
   nonce,
   log,
   JUMLAH_PEMILIH,
+  undefined, // deployFn bawaan (deployContract asli) — lihat deploy.test.ts untuk seam ini
+  { bacaDust: () => bacaDustSaatIni(ctx.wallet) },
 );
 
 // Simpan SEGERA setelah deploy sukses — pola sama seperti
@@ -130,13 +133,17 @@ log.info(
 // `ballot` datang langsung dari deployContract — private state awal (kunci
 // admin) sudah tertulis olehnya. Tidak ada temukanBallot di sini: itu akan
 // mengulang lima perjalanan indexer dan menimpa private state yang sudah benar.
-await daftarkanVoter(ballot, daun, log);
+//
+// publicDataProvider + alamatBallot diwariskan supaya retri putus koneksi
+// bisa memeriksa registeredCount (pemeriksaan PASTI, bukan sinyal DUST —
+// alamat ballot di sini SUDAH diketahui, beda dari deployBallot di atas).
+await daftarkanVoter(ballot, daun, log, { publicDataProvider: kp.publicDataProvider, alamatBallot });
 
 // Sama seperti di atas: berurutan dengan rakitProvidersBallot, tidak boleh
 // tumpang tindih dengannya (LEVEL_LOCKED pada direktori "admin" yang sama).
 const providersRegistry = await rakitProvidersRegistry(kp, "admin");
 const registry = await temukanRegistry(providersRegistry, alamatRegistry);
-await catatKeRegistry(registry, alamatBallot, log);
+await catatKeRegistry(registry, alamatBallot, log, { publicDataProvider: kp.publicDataProvider, alamatRegistry });
 
 // Indexer tertinggal node beberapa detik. Membaca registeredCount tepat setelah
 // registerVoters sukses bisa mengembalikan 0 — itu keterlambatan, bukan

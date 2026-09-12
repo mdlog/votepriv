@@ -276,6 +276,22 @@ export async function bangunWallet(config: Config, seed: Uint8Array, log: Logger
 // ─── Saldo ──────────────────────────────────────────────────────────────────
 
 /**
+ * Membaca saldo DUST SAAT INI, TANPA menunggu sinkronisasi (beda dari
+ * `ringkasSaldo`, yang menunggu `isSynced` sebelum melapor). Dipakai sebagai
+ * sinyal "sudah mendarat" pada retri deploy (lihat `OpsiRetriDeploy` di
+ * deploy.ts): perbandingan dilakukan atas DUA pembacaan bergaya sama, dalam
+ * jendela pendek (detik, sepanjang jeda retri), jadi bias sinkronisasi apa
+ * pun pada pembacaan pertama berlaku sama pada pembacaan kedua dan tidak
+ * memengaruhi SELISIHNYA — yang justru dipakai, bukan nilai mutlaknya.
+ * Menunggu sinkronisasi penuh di sini hanya akan menambah latensi pada jalur
+ * yang sudah berpacu dengan waktu.
+ */
+export const bacaDustSaatIni = async (wallet: WalletFacade): Promise<bigint> => {
+  const s = await Rx.firstValueFrom(wallet.state());
+  return s.dust.balance(new Date());
+};
+
+/**
  * Menunggu sinkronisasi selesai lalu melaporkan saldo NIGHT dan DUST beserta
  * alamat unshielded. Pola sinkronisasi persis brief:
  * `Rx.firstValueFrom(wallet.state().pipe(Rx.filter((s) => s.isSynced)))`.

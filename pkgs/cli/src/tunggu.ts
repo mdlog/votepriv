@@ -239,3 +239,214 @@ export async function cobaSampaiWaktuBlokCocok<T>(
   }
   throw terakhir;
 }
+
+// ─── Retry berbatas untuk pengiriman transaksi (jalur deploy) ──────────────
+//
+// Lihat .superpowers/retry-submit-cli.md untuk investigasi lengkap (gejala,
+// bukti, dan kutipan kode SDK). Ringkasnya: `@midnight-ntwrk/wallet-sdk-node-
+// client@1.1.2` (dist/effect/PolkadotNodeClient.js) memegang SATU objek `api`
+// (koneksi WS ke node) per sesi wallet, dipakai bersama oleh SETIAP panggilan
+// `submitTransaction`. `sendMidnightTransaction` (baris 78-96) dan `getGenesis`
+// (baris 97-109) SAMA-SAMA memutus `this.api` yang sama itu lewat
+// `Stream.ensuring`/`Effect.ensuring` setelah tiap pemakaian, dan
+// `ensureConnection()` (baris 56-77) menyambungnya kembali TANPA kunci apa
+// pun. Galat yang teramati di lapangan (`SubmissionError: Transaction
+// submission failed`, cause `disconnected from ...: 1000:: Normal Closure`)
+// persis bentuk yang dilempar ketika `.send()` pada koneksi itu gagal SEBELUM
+// node sempat menjawab (PolkadotNodeClient.js baris 84-92) — bukan penolakan
+// konsensus.
+//
+// Prinsipnya SAMA dengan jalur-tulis.ts di C-2b: pengiriman yang berhasil
+// tapi jawabannya hilang TIDAK BOLEH dibedakan dari pengiriman yang gagal,
+// kecuali dengan memeriksa rantai. `kirimDenganRetri` di bawah menegakkan itu
+// sebagai KODE: sebelum SETIAP percobaan ulang, ia memanggil `sudahMendarat()`
+// milik pemanggil — bukan menebak dari bentuk galat lokal.
+
+/**
+ * Pola galat yang berarti "koneksi putus sebelum sempat dijawab node",
+ * diambil verbatim dari sumbernya:
+ *  - `PolkadotNodeClient.js` baris 84-92: `.send(...).catch(...)` membungkus
+ *    galat apa pun (termasuk WS putus) jadi `SubmissionError` bertuliskan
+ *    persis "Transaction submission failed"; `submissionService.js` di
+ *    wallet-sdk-capabilities membungkusnya SEKALI LAGI dengan pesan
+ *    "Transaction submission error" (tag `_tag`/`name` yang sama:
+ *    `SubmissionError`, kelas berbeda) — keduanya dicek di sini.
+ *  - `ws/index.js` (@polkadot/rpc-provider) baris 371: pesan penutupan
+ *    socket berbentuk persis "disconnected from <endpoint>: <kode>::
+ *    <alasan>".
+ *  - `PolkadotNodeClient.js` baris 73-76: `ensureConnection()` sendiri gagal
+ *    dengan `ConnectionError` bertuliskan "Could not connect within
+ *    specified time range (5s)".
+ *
+ * SENGAJA berbentuk allowlist (pola yang harus COCOK), bukan blocklist (pola
+ * yang harus TIDAK ada): penolakan kontrak (assert gagal, mis. "Hanya admin
+ * yang boleh mendaftarkan pemilih") punya pesannya sendiri yang tidak
+ * menyerupai salah satu di atas, sehingga allowlist otomatis mengeluarkannya
+ * tanpa perlu didaftar satu per satu — dan galat BARU yang belum pernah
+ * dilihat (kelas kegagalan lain, dari versi SDK mana pun) juga otomatis
+ * TIDAK diulang, bukan diulang secara default. Itu arah yang lebih aman untuk
+ * kelas kegagalan yang taruhannya membakar biaya nyata.
+ */
+export const POLA_PUTUS_KONEKSI =
+  /disconnected from |WebSocket is not connected|Could not connect within specified time range|SubmissionError.*Transaction submission (failed|error)|(^|[^a-zA-Z])ConnectionError($|[^a-zA-Z])/;
+
+/** Menyusun `name`/`message` di sepanjang rantai `cause`, sedalam `maksKedalaman`. */
+function rantaiGalat(e: unknown, maksKedalaman = 6): string {
+  const bagian: string[] = [];
+  let saatIni: unknown = e;
+  for (let i = 0; i < maksKedalaman && saatIni !== undefined && saatIni !== null; i++) {
+    if (saatIni instanceof Error) {
+      bagian.push(saatIni.name, saatIni.message);
+      saatIni = (saatIni as { cause?: unknown }).cause;
+    } else {
+      bagian.push(String(saatIni));
+      break;
+    }
+  }
+  return bagian.join(" | ");
+}
+
+/**
+ * Klasifikasi bawaan `kirimDenganRetri`: aman diulang HANYA bila galat (atau
+ * salah satu `cause`-nya) menyerupai putus koneksi — lihat `POLA_PUTUS_KONEKSI`.
+ */
+export function putusKoneksiAmanDiulang(e: unknown): boolean {
+  return POLA_PUTUS_KONEKSI.test(rantaiGalat(e));
+}
+
+/**
+ * Hasil pemeriksaan "sudahkah percobaan sebelumnya mendarat", dibaca dari
+ * rantai — BUKAN ditebak dari bentuk galat lokal.
+ *
+ *  - `"mendarat"`: sudah dikonfirmasi di chain; `nilai` dipakai apa adanya
+ *    sebagai hasil akhir. TIDAK boleh mengirim ulang.
+ *  - `"belum"`: dikonfirmasi BELUM mendarat (mis. registeredCount masih sama
+ *    seperti sebelum percobaan). Aman mengirim ulang.
+ *  - `"tidakPasti"`: tidak bisa dipastikan (pembacaan chain sendiri gagal,
+ *    atau hanya sinyal lemah yang tersedia — lihat pemakaiannya di
+ *    `deployBallot`/`deployRegistry`, yang tidak punya alamat kontrak untuk
+ *    diperiksa sebelum percobaan pertama berhasil). Untuk keputusan retry,
+ *    `"tidakPasti"` DIPERLAKUKAN SAMA seperti "jangan mengulang": berhenti,
+ *    jangan mengirim ulang membabi buta.
+ */
+export type StatusMendarat<T> =
+  | { readonly status: "mendarat"; readonly nilai: T }
+  | { readonly status: "belum" }
+  | { readonly status: "tidakPasti"; readonly alasan: string };
+
+export interface OpsiKirimDenganRetri<T> {
+  /** Satu kali percobaan pengiriman (proof + balance + submit, sesuai kasus). */
+  readonly kirim: () => Promise<T>;
+  /** WAJIB membaca chain, dipanggil sebelum SETIAP percobaan ulang — lihat `StatusMendarat`. */
+  readonly sudahMendarat: () => Promise<StatusMendarat<T>>;
+  /** Klasifikasi galat "aman diulang". Bawaan: `putusKoneksiAmanDiulang`. */
+  readonly bolehDiulang?: (e: unknown) => boolean;
+  readonly log: Logger;
+  /** Label untuk log, mis. `"deployContract(ballot)"` atau `"registerVoters batch 1/2"`. */
+  readonly label: string;
+  /**
+   * Total percobaan (1 percobaan awal + N ulang). Bawaan 3: satu percobaan
+   * awal, dua kesempatan mengulang. Angka ini SENGAJA kecil — setiap
+   * percobaan pada panggilan berat (registerVoters/deploy) menghidupkan
+   * ulang proof ZK 5-20 detik (lihat komentar `BATAS_MS.panggilBerat` di
+   * atas), jadi mengulang tanpa batas membakar waktu (dan berpotensi biaya,
+   * bila ternyata mendarat tanpa terdeteksi) jauh lebih cepat daripada
+   * menunggu. Dua kali cukup untuk race koneksi yang BERGANTUNG WAKTU (lihat
+   * laporan): jeda di antara percobaan mengubah offset waktu percobaan
+   * berikutnya relatif terhadap siklus connect/disconnect yang
+   * menyebabkannya, sehingga TIDAK dijamin mengulang race yang sama persis.
+   * Bila galat penyebabnya SISTEMIK (bukan bergantung waktu), seluruh
+   * percobaan akan gagal identik dan pemanggil melihat pesan "jatah
+   * percobaan habis" yang jelas — bukan diam selamanya.
+   */
+  readonly maksPercobaan?: number;
+  /**
+   * Jeda antar percobaan, ms. Bawaan 5000 — sama dengan bawaan `ulangiSampai`
+   * di atas, dan untuk alasan yang mirip: cukup lama untuk siklus reconnect
+   * internal `PolkadotNodeClient` (reconnectionDelay 1 detik + timeout 5
+   * detik, lihat `DEFAULT_CONFIG` di `PolkadotNodeClient.js`) selesai dengan
+   * sendirinya sebelum kita menumpuk satu siklus connect/disconnect lagi di
+   * atasnya.
+   */
+  readonly jedaMs?: number;
+}
+
+/**
+ * Mengirim dengan retri berbatas, dan TIDAK PERNAH mengulang membabi buta:
+ * sebelum SETIAP percobaan ulang, `sudahMendarat()` milik pemanggil WAJIB
+ * dipanggil dan hasilnya WAJIB menentukan langkah berikutnya (lihat
+ * `StatusMendarat`). Menghapus pemeriksaan ini — mis. langsung menunggu lalu
+ * mengulang tanpa membaca `sudahMendarat()` dulu — adalah TEPAT mutasi yang
+ * harus MERAH pada uji unit berkas ini.
+ *
+ * Urutan pemeriksaan pada tiap kegagalan, dan kenapa urutan itu penting:
+ *   1. `bolehDiulang(e)` — bila false (penolakan rantai/assert), lempar
+ *      SEKARANG. Tidak ada gunanya memeriksa "sudah mendarat" untuk galat
+ *      yang MEMANG berarti "ditolak", dan mengulang assert yang gagal hanya
+ *      membakar proof sampai jatah habis.
+ *   2. Jatah percobaan habis — lempar galat asli, bukan galat generik, supaya
+ *      pesan galat SDK (yang sering menyebut sebab spesifik) tidak hilang.
+ *   3. `sudahMendarat()` — SATU-SATUNYA sumber kebenaran soal status chain.
+ *      "mendarat" memakai hasilnya; "tidakPasti" berhenti dengan galat baru
+ *      yang jelas; hanya "belum" yang lanjut ke langkah 4.
+ *   4. Jeda, lalu ulangi dari langkah 1 pada percobaan berikutnya.
+ */
+export async function kirimDenganRetri<T>(opsi: OpsiKirimDenganRetri<T>): Promise<T> {
+  const bolehDiulang = opsi.bolehDiulang ?? putusKoneksiAmanDiulang;
+  const maks = opsi.maksPercobaan ?? 3;
+  const jeda = opsi.jedaMs ?? 5_000;
+  pastikan(maks >= 1, `maksPercobaan harus >= 1 (label: ${opsi.label})`);
+
+  for (let percobaan = 1; ; percobaan++) {
+    try {
+      return await opsi.kirim();
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+
+      if (!bolehDiulang(e)) {
+        opsi.log.error(
+          { percobaan, label: opsi.label, pesan },
+          "Galat BUKAN putus koneksi (kemungkinan ditolak rantai) — TIDAK diulang",
+        );
+        throw e;
+      }
+      if (percobaan >= maks) {
+        opsi.log.error(
+          { percobaan, dari: maks, label: opsi.label, pesan },
+          "Putus koneksi berulang; jatah percobaan habis",
+        );
+        throw e;
+      }
+
+      opsi.log.warn(
+        { percobaan, dari: maks, label: opsi.label, pesan },
+        "Putus koneksi saat mengirim; memeriksa rantai sebelum mengulang (TIDAK menebak dari bentuk galat)",
+      );
+      const status = await opsi.sudahMendarat();
+
+      if (status.status === "mendarat") {
+        opsi.log.info(
+          { percobaan, label: opsi.label },
+          "Percobaan sebelumnya SUDAH mendarat di chain — memakai hasil itu, TIDAK mengirim ulang",
+        );
+        return status.nilai;
+      }
+      if (status.status === "tidakPasti") {
+        opsi.log.error(
+          { percobaan, label: opsi.label, alasan: status.alasan },
+          "Tidak bisa dipastikan sudah mendarat atau belum — BERHENTI, tidak aman mengulang secara buta",
+        );
+        throw new Error(
+          `${opsi.label}: putus koneksi, dan status mendarat tidak bisa dipastikan (${status.alasan}). ` +
+            `JANGAN menjalankan ulang otomatis — periksa keadaan chain secara manual dulu.`,
+        );
+      }
+
+      opsi.log.info(
+        { percobaan, dari: maks, label: opsi.label, jedaMs: jeda },
+        "Dikonfirmasi BELUM mendarat; menunggu lalu mengirim ulang",
+      );
+      await new Promise((r) => setTimeout(r, jeda));
+    }
+  }
+}

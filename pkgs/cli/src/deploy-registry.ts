@@ -12,9 +12,10 @@ import { hentikanWallet, siapkanSesi, tutupSesi } from "./bootstrap.ts";
 import { bacaLedgerRegistry, deployRegistry } from "./deploy.ts";
 import { rakitProvidersRegistry } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
+import { bacaDustSaatIni } from "./wallet.ts";
 
 const sesi = await siapkanSesi();
-const { config, log, kp } = sesi;
+const { config, ctx, log, kp } = sesi;
 
 const sudahAda = bacaArtefak(config.networkId)?.registry;
 if (sudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
@@ -26,7 +27,9 @@ if (sudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
 }
 
 const providers = await rakitProvidersRegistry(kp, "admin");
-const { alamat: alamatRegistry } = await deployRegistry(providers, log);
+const { alamat: alamatRegistry } = await deployRegistry(providers, log, undefined, {
+  bacaDust: () => bacaDustSaatIni(ctx.wallet),
+});
 
 // Simpan alamat SEGERA setelah deploy sukses — sebelum membaca ledger dari
 // indexer. Berkas artefak adalah saluran catatan resmi untuk alamat ini

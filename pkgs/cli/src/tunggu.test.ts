@@ -3,9 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cobaSampaiWaktuBlokCocok,
   denganBatasWaktu,
+  kirimDenganRetri,
   pastikan,
   POLA_BELUM_WAKTUNYA,
+  POLA_PUTUS_KONEKSI,
+  putusKoneksiAmanDiulang,
   ringkasTallies,
+  type StatusMendarat,
   ulangiSampai,
 } from "./tunggu.ts";
 
@@ -146,6 +150,210 @@ describe("POLA_BELUM_WAKTUNYA", () => {
     // membakar proof. Perhatikan "sudah" versus "belum".
     expect(POLA_BELUM_WAKTUNYA.test("failed assert: Batas waktu pembukaan suara sudah lewat")).toBe(false);
     expect(POLA_BELUM_WAKTUNYA.test("failed assert: Credential ini sudah dipakai memilih")).toBe(false);
+  });
+});
+
+/**
+ * Bentuk galat putus koneksi persis yang dilaporkan di lapangan (lihat
+ * .superpowers/retry-submit-cli.md): `SubmissionError` dari NodeClientError
+ * (PolkadotNodeClient.js baris 84-92) membungkus galat penutupan socket dari
+ * @polkadot/rpc-provider (ws/index.js baris 371).
+ */
+function galatPutusKoneksi(): Error {
+  const penyebab = new Error("disconnected from wss://rpc.preview.midnight.network/: 1000:: Normal Closure");
+  const submissionError = new Error("Transaction submission failed", { cause: penyebab });
+  submissionError.name = "SubmissionError";
+  return submissionError;
+}
+
+/** Bentuk galat penolakan rantai (assert kontrak gagal) — TIDAK boleh diulang. */
+function galatDitolakRantai(): Error {
+  return new Error('failed assert: "Hanya admin yang boleh mendaftarkan pemilih"');
+}
+
+describe("POLA_PUTUS_KONEKSI / putusKoneksiAmanDiulang", () => {
+  it("cocok pesan putus koneksi persis yang dilaporkan (SubmissionError + disconnected from)", () => {
+    expect(putusKoneksiAmanDiulang(galatPutusKoneksi())).toBe(true);
+  });
+
+  it("cocok ConnectionError dari ensureConnection()", () => {
+    const e = new Error("Could not connect within specified time range (5s)");
+    e.name = "ConnectionError";
+    expect(putusKoneksiAmanDiulang(e)).toBe(true);
+  });
+
+  it("TIDAK cocok penolakan rantai (assert kontrak gagal)", () => {
+    expect(putusKoneksiAmanDiulang(galatDitolakRantai())).toBe(false);
+  });
+
+  it("TIDAK cocok galat generik yang tidak menyerupai keduanya", () => {
+    expect(putusKoneksiAmanDiulang(new Error("ENOTFOUND indexer.example"))).toBe(false);
+    expect(putusKoneksiAmanDiulang("bukan Error sama sekali")).toBe(false);
+  });
+
+  it("POLA_PUTUS_KONEKSI diekspor dan dipakai sebagai bawaan bolehDiulang", () => {
+    expect(POLA_PUTUS_KONEKSI.test("disconnected from wss://x/: 1000:: Normal Closure")).toBe(true);
+  });
+});
+
+describe("kirimDenganRetri", () => {
+  it("meneruskan hasil pada percobaan pertama tanpa pernah memanggil sudahMendarat", async () => {
+    let panggilanKirim = 0;
+    let panggilanCek = 0;
+    const hasil = await kirimDenganRetri<string>({
+      kirim: async () => {
+        panggilanKirim += 1;
+        return "sukses";
+      },
+      sudahMendarat: async () => {
+        panggilanCek += 1;
+        return { status: "belum" };
+      },
+      log: logPalsu,
+      label: "uji",
+      jedaMs: 1,
+    });
+    expect(hasil).toBe("sukses");
+    expect(panggilanKirim).toBe(1);
+    expect(panggilanCek).toBe(0);
+  });
+
+  it("mengulang pada putus koneksi lalu sukses, setelah memeriksa sudahMendarat (belum mendarat)", async () => {
+    let panggilanKirim = 0;
+    let panggilanCek = 0;
+    const hasil = await kirimDenganRetri<string>({
+      kirim: async () => {
+        panggilanKirim += 1;
+        if (panggilanKirim === 1) throw galatPutusKoneksi();
+        return "sukses-percobaan-2";
+      },
+      sudahMendarat: async () => {
+        panggilanCek += 1;
+        return { status: "belum" };
+      },
+      log: logPalsu,
+      label: "uji",
+      jedaMs: 1,
+    });
+    expect(hasil).toBe("sukses-percobaan-2");
+    expect(panggilanKirim).toBe(2);
+    expect(panggilanCek).toBe(1);
+  });
+
+  it("penolakan rantai TIDAK diulang — kirim dipanggil tepat sekali, galat asli diteruskan", async () => {
+    let panggilanKirim = 0;
+    let panggilanCek = 0;
+    await expect(
+      kirimDenganRetri<string>({
+        kirim: async () => {
+          panggilanKirim += 1;
+          throw galatDitolakRantai();
+        },
+        sudahMendarat: async () => {
+          panggilanCek += 1;
+          return { status: "belum" };
+        },
+        log: logPalsu,
+        label: "uji",
+        jedaMs: 1,
+      }),
+    ).rejects.toThrow(/Hanya admin yang boleh mendaftarkan pemilih/);
+    expect(panggilanKirim).toBe(1);
+    expect(panggilanCek).toBe(0);
+  });
+
+  // MUTASI WAJIB: menghapus blok "periksa sudahMendarat sebelum mengulang"
+  // (mis. langsung menunggu lalu mengulang tanpa membaca hasilnya) membuat
+  // uji ini MERAH — kirim akan terpanggil KEDUA kalinya dan hasil "sukses
+  // lama" yang seharusnya dipakai apa adanya akan tertimpa nilai baru.
+  it("sudah mendarat sebelum retry — memakai hasil itu, TIDAK PERNAH mengirim ulang", async () => {
+    let panggilanKirim = 0;
+    const hasil = await kirimDenganRetri<string>({
+      kirim: async () => {
+        panggilanKirim += 1;
+        if (panggilanKirim === 1) throw galatPutusKoneksi();
+        return "seharusnya-tidak-pernah-dipakai";
+      },
+      sudahMendarat: async (): Promise<StatusMendarat<string>> => ({ status: "mendarat", nilai: "sukses-lama" }),
+      log: logPalsu,
+      label: "uji",
+      jedaMs: 1,
+    });
+    expect(hasil).toBe("sukses-lama");
+    expect(panggilanKirim).toBe(1);
+  });
+
+  it("status tidakPasti — BERHENTI dengan galat baru, TIDAK mengulang dan TIDAK dianggap sukses", async () => {
+    let panggilanKirim = 0;
+    await expect(
+      kirimDenganRetri<string>({
+        kirim: async () => {
+          panggilanKirim += 1;
+          throw galatPutusKoneksi();
+        },
+        sudahMendarat: async (): Promise<StatusMendarat<string>> => ({
+          status: "tidakPasti",
+          alasan: "pembacaan chain gagal (uji)",
+        }),
+        log: logPalsu,
+        label: "uji",
+        jedaMs: 1,
+      }),
+    ).rejects.toThrow(/tidak bisa dipastikan/);
+    expect(panggilanKirim).toBe(1);
+  });
+
+  it("jatah percobaan habis pada putus koneksi berulang — melempar galat ASLI, bukan galat generik", async () => {
+    let panggilanKirim = 0;
+    let panggilanCek = 0;
+    await expect(
+      kirimDenganRetri<string>({
+        kirim: async () => {
+          panggilanKirim += 1;
+          throw galatPutusKoneksi();
+        },
+        sudahMendarat: async () => {
+          panggilanCek += 1;
+          return { status: "belum" };
+        },
+        log: logPalsu,
+        label: "uji",
+        maksPercobaan: 3,
+        jedaMs: 1,
+      }),
+    ).rejects.toThrow(/Transaction submission failed/);
+    expect(panggilanKirim).toBe(3); // 1 percobaan awal + 2 ulang, sesuai maksPercobaan
+    expect(panggilanCek).toBe(2); // dipanggil sebelum SETIAP ulang (percobaan 1 dan 2), bukan sebelum yang ke-3
+  });
+
+  it("bolehDiulang kustom menggantikan klasifikasi bawaan", async () => {
+    let panggilanKirim = 0;
+    const hasil = await kirimDenganRetri<string>({
+      kirim: async () => {
+        panggilanKirim += 1;
+        if (panggilanKirim === 1) throw new Error("galat kustom apa pun");
+        return "sukses";
+      },
+      sudahMendarat: async () => ({ status: "belum" }) as const,
+      bolehDiulang: () => true, // menerima SEMUA galat sebagai aman diulang
+      log: logPalsu,
+      label: "uji",
+      jedaMs: 1,
+    });
+    expect(hasil).toBe("sukses");
+    expect(panggilanKirim).toBe(2);
+  });
+
+  it("menolak maksPercobaan < 1", async () => {
+    await expect(
+      kirimDenganRetri<string>({
+        kirim: async () => "tidak pernah tercapai",
+        sudahMendarat: async () => ({ status: "belum" }) as const,
+        log: logPalsu,
+        label: "uji",
+        maksPercobaan: 0,
+      }),
+    ).rejects.toThrow(/maksPercobaan harus >= 1/);
   });
 });
 

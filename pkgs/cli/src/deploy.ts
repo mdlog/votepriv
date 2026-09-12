@@ -4,6 +4,7 @@ import {
   findDeployedContract,
   type DeployContractOptionsWithPrivateState,
   type DeployedContract,
+  type FinalizedCallTxData,
   type FoundContract,
 } from "@midnight-ntwrk/midnight-js-contracts";
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
@@ -21,7 +22,7 @@ import { detikSekarang, type MetadataBallot } from "shared";
 import { pastikanAlamatKontrak } from "./artefak.ts";
 import { kompilasiBallot, kompilasiRegistry, type BallotC, type RegistryC } from "./kontrak.ts";
 import type { ProvidersBallot, ProvidersRegistry } from "./providers.ts";
-import { BATAS_MS, denganBatasWaktu } from "./tunggu.ts";
+import { BATAS_MS, denganBatasWaktu, kirimDenganRetri, type StatusMendarat } from "./tunggu.ts";
 import type { KonteksWallet } from "./wallet.ts";
 
 export type LedgerRegistry = ReturnType<typeof Registry.ledger>;
@@ -45,6 +46,81 @@ type FungsiDeployKontrak = (
 ) => Promise<DeployedContract<RegistryC>>;
 
 /**
+ * Opsi retri untuk `deployRegistry`/`deployBallot`. Lihat `sudahMendaratDeploy`
+ * di bawah untuk kenapa satu-satunya sinyal yang tersedia di sini adalah DUST,
+ * dan kenapa itu jauh lebih lemah daripada pemeriksaan ledger PASTI yang
+ * dipakai `daftarkanVoter`/`catatKeRegistry`.
+ */
+export interface OpsiRetriDeploy {
+  /**
+   * Membaca saldo DUST SAAT INI. Opsional: bila tidak diberikan, retri pada
+   * putus koneksi tetap terjadi (diklasifikasi murni dari bentuk galat), tapi
+   * pemeriksaan "sudah mendarat" SELALU "tidakPasti" — lihat
+   * `sudahMendaratDeploy`. Pemanggil produksi (deploy-ballot.ts,
+   * deploy-registry.ts) memberikannya lewat pembacaan `wallet.state()`.
+   */
+  readonly bacaDust?: () => Promise<bigint>;
+  readonly maksPercobaan?: number;
+  readonly jedaMs?: number;
+}
+
+/**
+ * "sudahMendarat" untuk deploy (deployBallot/deployRegistry).
+ *
+ * BEDA MENDASAR dari daftarkanVoter/catatKeRegistry di bawah: alamat kontrak
+ * BARU tidak diketahui sebelum `deployFn` berhasil kembali (dihitung dari
+ * konten transaksi + state wallet SAAT deploy — lihat createUnprovenLedgerDeployTx
+ * di @midnight-ntwrk/midnight-js-contracts), jadi TIDAK ADA pembacaan ledger
+ * yang bisa memastikan "apakah KONTRAK INI ada" seperti pada dua fungsi lain.
+ *
+ * Satu-satunya sinyal yang tersedia tanpa alamat adalah saldo DUST: DUST
+ * HANYA bertambah lewat akrual waktu (lihat `dust.balance()` di wallet.ts) dan
+ * HANYA berkurang lewat biaya transaksi yang benar-benar mendarat. Jadi:
+ *   - DUST turun sejak sebelum percobaan ini -> ADA biaya terpakai -> "tidakPasti"
+ *     (BERHENTI: kontrak KEDUA yang ter-deploy membakar biaya dua kali DAN
+ *     meninggalkan yang pertama yatim, tidak tercatat di mana pun).
+ *   - DUST tetap atau naik -> tidak ada biaya terpakai -> "belum" (aman diulang).
+ *   - `bacaDust` tidak diberikan sama sekali -> "tidakPasti" TANPA syarat: tanpa
+ *     sinyal apa pun, berhenti adalah pilihan aman, mengulang membabi buta
+ *     bukan.
+ *
+ * INI LEBIH LEMAH daripada pemeriksaan `daftarkanVoter`/`catatKeRegistry`
+ * (yang membaca KEBERADAAN nyata di ledger, bukan proksi saldo) — lihat
+ * "Yang TIDAK dilindungi" di .superpowers/retry-submit-cli.md. Karena itu
+ * `"mendarat"` TIDAK PERNAH dikembalikan di sini (tipe kembaliannya generik
+ * atas `T` justru supaya itu terlihat di tanda tangan fungsi): bahkan bila
+ * DUST membuktikan sesuatu terpakai, kita tetap tidak tahu ALAMATNYA, jadi
+ * tidak ada `T` yang bisa direkonstruksi untuk dipakai sebagai hasil.
+ */
+function sudahMendaratDeploy<T>(
+  bacaDust: (() => Promise<bigint>) | undefined,
+  dustAwal: bigint | undefined,
+): () => Promise<StatusMendarat<T>> {
+  return async () => {
+    if (bacaDust === undefined || dustAwal === undefined) {
+      return {
+        status: "tidakPasti",
+        alasan:
+          "bacaDust tidak diberikan, dan alamat kontrak baru tidak diketahui sebelum deployFn berhasil — tidak ada cara memastikan status mendarat untuk deploy",
+      };
+    }
+    let dustSekarang: bigint;
+    try {
+      dustSekarang = await bacaDust();
+    } catch (e) {
+      return { status: "tidakPasti", alasan: `pembacaan saldo DUST gagal: ${(e as Error).message}` };
+    }
+    if (dustSekarang < dustAwal) {
+      return {
+        status: "tidakPasti",
+        alasan: `saldo DUST turun dari ${dustAwal} ke ${dustSekarang} sejak sebelum percobaan ini — kemungkinan biaya sudah terpakai (transaksi mungkin mendarat dengan alamat yang belum diketahui)`,
+      };
+    }
+    return { status: "belum" };
+  };
+}
+
+/**
  * Deploy kontrak registry.
  *
  * Memakai overload BER-private-state, bukan yang tanpa. Overload pertama
@@ -59,6 +135,12 @@ type FungsiDeployKontrak = (
  *
  * `signingKey` dibiarkan kosong: deployContract mengambil sampel sendiri dan
  * menyimpannya di privateStateProvider di bawah alamat baru.
+ *
+ * Retri (lihat OpsiRetriDeploy/sudahMendaratDeploy di atas): dibungkus
+ * `kirimDenganRetri`, TAPI hanya mengulang pada galat berbentuk putus koneksi
+ * (`putusKoneksiAmanDiulang`) — timeout `denganBatasWaktu` di bawah TIDAK
+ * cocok pola itu, jadi regresi yang dijaga deploy.test.ts (menghapus
+ * `denganBatasWaktu`) tetap terdeteksi tanpa berubah.
  */
 export async function deployRegistry(
   providers: ProvidersRegistry,
@@ -69,21 +151,32 @@ export async function deployRegistry(
   // titik deklarasi — pemanggilan sesungguhnya (RegistryC konkret) tetap
   // diperiksa penuh lewat FungsiDeployKontrak di posisi parameter.
   deployFn: FungsiDeployKontrak = deployContract as FungsiDeployKontrak,
+  opsi: OpsiRetriDeploy = {},
 ): Promise<HasilDeployRegistry> {
   log.info(
     { batasMenit: BATAS_MS.deploy / 60_000 },
     "Men-deploy kontrak registry (menyusun transaksi, membuat proof, menunggu finalisasi — hitung menit)",
   );
 
-  const kontrak = await denganBatasWaktu(
-    deployFn(providers, {
-      compiledContract: kompilasiRegistry(),
-      privateStateId: RegistryPrivateStateId,
-      initialPrivateState: emptyRegistryPrivateState(),
-    }),
-    BATAS_MS.deploy,
-    `deployContract(registry) tidak selesai dalam ${BATAS_MS.deploy / 60_000} menit. watchForDeployTxData menunggu selamanya secara desain, jadi ini biasanya berarti transaksinya ditolak konsensus atau proof server/indexer tidak menjawab. JANGAN mengirim ulang sebelum memeriksa keadaan chain: transaksinya mungkin sudah mendarat.`,
-  );
+  const dustAwal = opsi.bacaDust ? await opsi.bacaDust() : undefined;
+
+  const kontrak = await kirimDenganRetri({
+    kirim: () =>
+      denganBatasWaktu(
+        deployFn(providers, {
+          compiledContract: kompilasiRegistry(),
+          privateStateId: RegistryPrivateStateId,
+          initialPrivateState: emptyRegistryPrivateState(),
+        }),
+        BATAS_MS.deploy,
+        `deployContract(registry) tidak selesai dalam ${BATAS_MS.deploy / 60_000} menit. watchForDeployTxData menunggu selamanya secara desain, jadi ini biasanya berarti transaksinya ditolak konsensus atau proof server/indexer tidak menjawab. JANGAN mengirim ulang sebelum memeriksa keadaan chain: transaksinya mungkin sudah mendarat.`,
+      ),
+    sudahMendarat: sudahMendaratDeploy<DeployedContract<RegistryC>>(opsi.bacaDust, dustAwal),
+    log,
+    label: "deployContract(registry)",
+    maksPercobaan: opsi.maksPercobaan,
+    jedaMs: opsi.jedaMs,
+  });
 
   const alamat = pastikanAlamatKontrak(kontrak.deployTxData.public.contractAddress);
   log.info(
@@ -320,6 +413,13 @@ type FungsiDeployBallot = (
  * initialPrivateState WAJIB sudah membawa kunci admin yang benar: witness
  * admin_secret_key dibaca DI DALAM constructor (di bawah alamat dummy
  * 0000...0000), sehingga tidak ada kesempatan memperbaikinya setelah deploy.
+ *
+ * Retri: parameter terakhir `opsiRetri` (namanya BUKAN `opsi` — nama itu
+ * sudah dipakai variabel lokal array label opsi ballot di bawah). Sama
+ * seperti `deployRegistry`: dibungkus `kirimDenganRetri`, hanya mengulang
+ * pada putus koneksi, dan lihat `sudahMendaratDeploy` untuk kenapa
+ * pemeriksaan "sudah mendarat"-nya cuma sinyal DUST, bukan pembacaan ledger
+ * yang pasti.
  */
 export async function deployBallot(
   providers: ProvidersBallot,
@@ -332,6 +432,7 @@ export async function deployBallot(
   // deployRegistry: deployContract asli generik + overload, tsc tidak bisa
   // menyempitkannya sendiri sebagai nilai bawaan parameter di titik deklarasi.
   deployFn: FungsiDeployBallot = deployContract as FungsiDeployBallot,
+  opsiRetri: OpsiRetriDeploy = {},
 ): Promise<HasilDeployBallot> {
   validasiMetadata(meta, jumlahCredential);
   if (rahasiaAdmin.length !== 32) throw new Error("Kunci rahasia admin harus 32 byte.");
@@ -353,31 +454,41 @@ export async function deployBallot(
     "Men-deploy ballot (deadline dalam DETIK sejak epoch)",
   );
 
-  const kontrak = await denganBatasWaktu(
-    deployFn(providers, {
-      compiledContract: kompilasiBallot(),
-      privateStateId: BallotPrivateStateId,
-      initialPrivateState: emptyBallotPrivateState(rahasiaAdmin),
-      args: [
-        meta.title,
-        meta.description,
-        meta.community,
-        opsi[0],
-        opsi[1],
-        opsi[2],
-        opsi[3],
-        BigInt(meta.options.length),
-        meta.voteDeadline,
-        meta.tallyDeadline,
-        BigInt(meta.quorumPercent),
-        BigInt(meta.eligibleCount),
-        meta.eligibilityPolicy,
-        nonce,
-      ],
-    }),
-    BATAS_MS.deploy,
-    `deployContract(ballot) tidak selesai dalam ${BATAS_MS.deploy / 60_000} menit. JANGAN mengirim ulang sebelum memeriksa indexer: bila transaksinya mendarat, mengulang akan men-deploy ballot KEDUA dan membakar biaya dua kali.`,
-  );
+  const dustAwal = opsiRetri.bacaDust ? await opsiRetri.bacaDust() : undefined;
+
+  const kontrak = await kirimDenganRetri({
+    kirim: () =>
+      denganBatasWaktu(
+        deployFn(providers, {
+          compiledContract: kompilasiBallot(),
+          privateStateId: BallotPrivateStateId,
+          initialPrivateState: emptyBallotPrivateState(rahasiaAdmin),
+          args: [
+            meta.title,
+            meta.description,
+            meta.community,
+            opsi[0],
+            opsi[1],
+            opsi[2],
+            opsi[3],
+            BigInt(meta.options.length),
+            meta.voteDeadline,
+            meta.tallyDeadline,
+            BigInt(meta.quorumPercent),
+            BigInt(meta.eligibleCount),
+            meta.eligibilityPolicy,
+            nonce,
+          ],
+        }),
+        BATAS_MS.deploy,
+        `deployContract(ballot) tidak selesai dalam ${BATAS_MS.deploy / 60_000} menit. JANGAN mengirim ulang sebelum memeriksa indexer: bila transaksinya mendarat, mengulang akan men-deploy ballot KEDUA dan membakar biaya dua kali.`,
+      ),
+    sudahMendarat: sudahMendaratDeploy<DeployedContract<BallotC>>(opsiRetri.bacaDust, dustAwal),
+    log,
+    label: "deployContract(ballot)",
+    maksPercobaan: opsiRetri.maksPercobaan,
+    jedaMs: opsiRetri.jedaMs,
+  });
 
   const alamat = pastikanAlamatKontrak(kontrak.deployTxData.public.contractAddress);
   log.info(
@@ -450,23 +561,108 @@ export async function bacaLedgerBallot(
  * registerVoters MENUTUP SENDIRI: ia menuntut voteCount == 0. Seluruh pemilih
  * harus terdaftar SEBELUM suara pertama masuk.
  */
+export interface OpsiRetriDaftarkanVoter {
+  /**
+   * Diberikan bersama: memungkinkan pemeriksaan "sudah mendarat" PASTI lewat
+   * `registeredCount` (BUKAN sinyal lemah seperti pada deploy — alamat ballot
+   * di sini SUDAH diketahui pemanggil). Bila salah satu/kedua tidak
+   * diberikan, retri pada putus koneksi tetap terjadi tapi pemeriksaannya
+   * selalu "tidakPasti" (berhenti, bukan mengulang membabi buta).
+   */
+  readonly publicDataProvider?: PublicDataProvider;
+  readonly alamatBallot?: string;
+  readonly maksPercobaan?: number;
+  readonly jedaMs?: number;
+}
+
+/**
+ * Aritmetika murni di balik pemeriksaan "sudah mendarat" `daftarkanVoter`,
+ * diekspor terpisah supaya bisa diuji langsung dengan bigint biasa — tanpa
+ * ledger ballot sungguhan (yang perlu compact-runtime nyata untuk diparsing,
+ * di luar jangkauan uji unit pkgs/cli tanpa jaringan).
+ *
+ * `>=`, bukan `===`: batch yang sedang diperiksa adalah SATU-SATUNYA operasi
+ * yang bisa menaikkan `registeredCount` ballot ini selagi berjalan
+ * (daftarkanVoter berurutan, lihat komentar di atas fungsi itu), jadi
+ * kenaikan sebesar `batchN` sudah cukup sebagai bukti — dan `>=` tetap benar
+ * bila kelak ada margin ekstra.
+ */
+export function registerVotersMendarat(registeredSebelum: bigint, batchN: bigint, registeredSekarang: bigint): boolean {
+  return registeredSekarang >= registeredSebelum + batchN;
+}
+
 export async function daftarkanVoter(
   ballot: FoundContract<BallotC>,
   daun: readonly Uint8Array[],
   log: Logger,
+  opsi: OpsiRetriDaftarkanVoter = {},
 ): Promise<void> {
+  // BUKAN `Awaited<ReturnType<typeof ballot.callTx.registerVoters>>`: circuit
+  // call di CircuitCallTxInterface (midnight-js-contracts) OVERLOADED — satu
+  // signature tanpa TransactionContext (yang KITA pakai, mengembalikan
+  // FinalizedCallTxData dengan `.public.txId`/`.public.status`) dan satu lagi
+  // DENGAN TransactionContext (mengembalikan CallResult, `.public`-nya TIDAK
+  // punya `txId`/`status`). ReturnType pada tipe fungsi overloaded mengambil
+  // signature TERAKHIR, bukan yang benar-benar dipakai di bawah — memakainya
+  // di sini diam-diam menghasilkan tipe yang salah dan gagal kompilasi tepat
+  // di titik pemakaian `.public.txId` (dibuktikan sekali, lihat riwayat).
+  type HasilRegisterVoters = FinalizedCallTxData<BallotC, "registerVoters">;
+
   const batch = batchDaun(daun);
   for (const [i, b] of batch.entries()) {
     log.info(
       { batch: i + 1, dari: batch.length, n: Number(b.n), batasMenit: BATAS_MS.panggilBerat / 60_000 },
       "Mendaftarkan batch daun eligibility (proof ZK 5-20 detik, lalu finalisasi — hitung menit)",
     );
-    const r = await denganBatasWaktu(
-      ballot.callTx.registerVoters(b.leaves, b.n),
-      BATAS_MS.panggilBerat,
-      `callTx.registerVoters (batch ${i + 1}/${batch.length}) tidak selesai dalam ${BATAS_MS.panggilBerat / 60_000} menit. JANGAN mengulang sebelum membaca registeredCount dari indexer — batch yang sudah mendarat akan terdaftar dua kali dan memakan kuota eligibleCount.`,
+
+    // Dasar pembanding "sudah mendarat" untuk BATCH INI, dibaca SEKALI sebelum
+    // percobaan pertamanya. Valid sepanjang retri batch yang sama:
+    // daftarkanVoter berjalan berurutan (lihat komentar di atas fungsi ini),
+    // jadi tidak ada operasi lain yang bisa menaikkan registeredCount ballot
+    // ini secara konkuren selagi batch ini berjalan.
+    const registeredSebelum =
+      opsi.publicDataProvider !== undefined && opsi.alamatBallot !== undefined
+        ? (await bacaLedgerBallot(opsi.publicDataProvider, opsi.alamatBallot)).registeredCount
+        : undefined;
+
+    const r = await kirimDenganRetri<HasilRegisterVoters | undefined>({
+      kirim: () =>
+        denganBatasWaktu(
+          ballot.callTx.registerVoters(b.leaves, b.n),
+          BATAS_MS.panggilBerat,
+          `callTx.registerVoters (batch ${i + 1}/${batch.length}) tidak selesai dalam ${BATAS_MS.panggilBerat / 60_000} menit. JANGAN mengulang sebelum membaca registeredCount dari indexer — batch yang sudah mendarat akan terdaftar dua kali dan memakan kuota eligibleCount.`,
+        ),
+      sudahMendarat: async () => {
+        if (opsi.publicDataProvider === undefined || opsi.alamatBallot === undefined || registeredSebelum === undefined) {
+          return {
+            status: "tidakPasti",
+            alasan: "publicDataProvider/alamatBallot tidak diberikan — tidak bisa membaca registeredCount",
+          };
+        }
+        try {
+          const lb = await bacaLedgerBallot(opsi.publicDataProvider, opsi.alamatBallot);
+          if (registerVotersMendarat(registeredSebelum, b.n, lb.registeredCount)) {
+            return { status: "mendarat", nilai: undefined };
+          }
+          return { status: "belum" };
+        } catch (e) {
+          return { status: "tidakPasti", alasan: `pembacaan registeredCount gagal: ${(e as Error).message}` };
+        }
+      },
+      log,
+      label: `registerVoters batch ${i + 1}/${batch.length}`,
+      maksPercobaan: opsi.maksPercobaan,
+      jedaMs: opsi.jedaMs,
+    });
+
+    log.info(
+      {
+        batch: i + 1,
+        txId: r?.public.txId ?? "(sudah mendarat sebelum retri — txId percobaan asli tidak diketahui)",
+        status: r?.public.status ?? "(disimpulkan dari registeredCount, bukan dari jawaban node)",
+      },
+      "Batch terdaftar",
     );
-    log.info({ batch: i + 1, txId: r.public.txId, status: r.public.status }, "Batch terdaftar");
   }
 }
 
@@ -475,17 +671,82 @@ export async function daftarkanVoter(
  * pun di sisi kontrak: mendaftarkan alamat yang sama dua kali menghasilkan dua
  * entri, dan `count` bertambah dua. Penyaringan duplikat adalah tanggung jawab
  * klien (registry.compact menyatakan itu secara eksplisit).
+ *
+ * KARENA `count` bertambah juga pada entri duplikat siapa pun (di atas),
+ * pemeriksaan "sudah mendarat" TIDAK BOLEH memakai `count` sendirian —
+ * count yang naik tidak membuktikan ENTRI KITA yang menaikkannya, hanya
+ * bahwa SESUATU mendarat. `registry.compact` memakai `ballots.pushFront`,
+ * jadi entri kita (bila mendarat) selalu ada di daftar; pemeriksaan di bawah
+ * mengecek KEANGGOTAAN `alamatBallot` di `ballots`, bukan `count`.
  */
+export interface OpsiRetriCatatKeRegistry {
+  /** Lihat catatan `OpsiRetriDaftarkanVoter` — pola dan alasannya sama. */
+  readonly publicDataProvider?: PublicDataProvider;
+  readonly alamatRegistry?: string;
+  readonly maksPercobaan?: number;
+  readonly jedaMs?: number;
+}
+
+/**
+ * Keanggotaan murni di balik pemeriksaan "sudah mendarat" `catatKeRegistry`,
+ * diekspor terpisah supaya bisa diuji dengan array string biasa (yang juga
+ * `Iterable<string>`) — tanpa ledger registry sungguhan. Lihat komentar di
+ * atas `catatKeRegistry` untuk kenapa ini keanggotaan, BUKAN `count`.
+ */
+export function ballotSudahTercatat(ballots: Iterable<string>, alamatBallot: string): boolean {
+  for (const a of ballots) {
+    if (a === alamatBallot) return true;
+  }
+  return false;
+}
+
 export async function catatKeRegistry(
   registry: FoundContract<RegistryC>,
   alamatBallot: string,
   log: Logger,
+  opsi: OpsiRetriCatatKeRegistry = {},
 ): Promise<void> {
+  // Lihat catatan di HasilRegisterVoters (daftarkanVoter, atas) — alasan yang
+  // sama persis melarang `Awaited<ReturnType<typeof registry.callTx.register>>`.
+  type HasilRegister = FinalizedCallTxData<RegistryC, "register">;
+
   log.info({ alamatBallot }, "Mencatat ballot ke registry (proof ZK, lalu finalisasi)");
-  const r = await denganBatasWaktu(
-    registry.callTx.register(pastikanAlamatKontrak(alamatBallot)),
-    BATAS_MS.panggilRingan,
-    `callTx.register (registry) tidak selesai dalam ${BATAS_MS.panggilRingan / 60_000} menit. Mengulang akan menambah entri KEDUA untuk ballot yang sama — periksa registry.count lebih dulu.`,
+
+  const r = await kirimDenganRetri<HasilRegister | undefined>({
+    kirim: () =>
+      denganBatasWaktu(
+        registry.callTx.register(pastikanAlamatKontrak(alamatBallot)),
+        BATAS_MS.panggilRingan,
+        `callTx.register (registry) tidak selesai dalam ${BATAS_MS.panggilRingan / 60_000} menit. Mengulang akan menambah entri KEDUA untuk ballot yang sama — periksa registry.count lebih dulu.`,
+      ),
+    sudahMendarat: async () => {
+      if (opsi.publicDataProvider === undefined || opsi.alamatRegistry === undefined) {
+        return {
+          status: "tidakPasti",
+          alasan: "publicDataProvider/alamatRegistry tidak diberikan — tidak bisa membaca daftar ballots",
+        };
+      }
+      try {
+        const lr = await bacaLedgerRegistry(opsi.publicDataProvider, opsi.alamatRegistry);
+        if (ballotSudahTercatat(lr.ballots, alamatBallot)) {
+          return { status: "mendarat", nilai: undefined };
+        }
+        return { status: "belum" };
+      } catch (e) {
+        return { status: "tidakPasti", alasan: `pembacaan registry gagal: ${(e as Error).message}` };
+      }
+    },
+    log,
+    label: "register (registry)",
+    maksPercobaan: opsi.maksPercobaan,
+    jedaMs: opsi.jedaMs,
+  });
+
+  log.info(
+    {
+      txId: r?.public.txId ?? "(sudah mendarat sebelum retri — txId percobaan asli tidak diketahui)",
+      status: r?.public.status ?? "(disimpulkan dari keanggotaan di registry.ballots, bukan dari jawaban node)",
+    },
+    "Ballot tercatat di registry",
   );
-  log.info({ txId: r.public.txId, status: r.public.status }, "Ballot tercatat di registry");
 }

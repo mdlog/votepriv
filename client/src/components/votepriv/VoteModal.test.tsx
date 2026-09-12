@@ -391,6 +391,19 @@ describe("VoteModal — jalur tulis sungguhan (Task 8)", () => {
     expect(onVote).not.toHaveBeenCalled();
   });
 
+  it("menolak submit tanpa opsi TERPILIH walau wallet dan credential VALID — guard 'selected' TERISOLASI (Task 8, gerbang mutasi G14)", async () => {
+    const onVote = vi.fn();
+    const { container } = render(
+      <VoteModal ballot={BALLOT} connected wallet={walletContoh()} jaringan="preview" proofStatus={null} onClose={() => {}} onVote={onVote} />,
+    );
+    // SENGAJA tidak mengklik satu pun .choice-row.
+    fireEvent.change(container.querySelector('input[type="password"]')!, { target: { value: "8".repeat(64) } });
+    fireEvent.click(within(container).getByText(/Generate proof & vote/));
+    await kurasAsync();
+    expect(kirimSuaraMock).not.toHaveBeenCalled();
+    expect(onVote).not.toHaveBeenCalled();
+  });
+
   it("sukses: memanggil onVote dengan txRef dari hasil kirimSuara, txRef BUKAN null", async () => {
     kirimSuaraMock.mockResolvedValue({ txId: "tx-nyata-123", nullifierHex: "a".repeat(64) });
     const onVote = vi.fn();

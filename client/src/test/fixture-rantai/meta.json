@@ -2,13 +2,13 @@
  "jaringan": "preview",
  "endpoint": "https://indexer.preview.midnight.network/api/v3/graphql",
  "alamatRegistry": "b9d127d83f1436488e2cc808d9732d51f4f5befe2711362c7d669759db2a298a",
- "direkamPada": "2026-09-11T14:01:04.891Z",
- "sekarangMs": 1789135248000,
- "tinggiBlok": 819599,
+ "direkamPada": "2026-09-12T10:12:41.947Z",
+ "sekarangMs": 1789207944000,
+ "tinggiBlok": 831711,
  "msPerPost": [
-  798,
-  441,
-  216
+  785,
+  403,
+  218
  ],
  "jumlahBallot": 2
 }

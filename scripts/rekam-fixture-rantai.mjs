@@ -12,6 +12,13 @@
  * sekali: sebuah ballot yang "sudah lewat deadline" harus tetap sudah lewat
  * deadline ketika uji dijalankan tahun depan.
  *
+ * Sejak invarian privasi pembayar (lihat client/src/test/fixture-rantai/README.md,
+ * bagian "tx-mentah-tulis.json"), skrip ini JUGA merekam byte MENTAH ("raw",
+ * hex apa adanya dari indexer) transaksi castVote/tallyVote yang ditemukan di
+ * ballots.json, ke tx-mentah-tulis.json. Uji privasi-pembayar men-deserialisasi
+ * ulang byte itu dengan @midnight-ntwrk/ledger-v8 secara OFFLINE, tanpa pernah
+ * menyentuh jaringan lagi setelah fixture ini direkam.
+ *
  * Jalankan:  node scripts/rekam-fixture-rantai.mjs
  * Env opsional: VITE_MIDNIGHT_NETWORK, VITE_VOTEPRIV_REGISTRY
  */
@@ -99,6 +106,125 @@ writeFileSync(
   JSON.stringify({ alamat, jawaban: r2.json }, null, 1) + "\n",
 );
 
+/**
+ * ── POST 2b: byte MENTAH transaksi jalur tulis (castVote/tallyVote) ────────
+ *
+ * MENGAPA berkas ini ada: klaim privasi aplikasi ("tidak ada identitas
+ * pembayar di rantai, jadi 'alamat A memilih opsi X' tidak dapat
+ * disimpulkan") sampai sekarang hanya hidup di PROSA (progress.md), bukan di
+ * uji yang bisa merah. Untuk mengujinya OFFLINE dan DETERMINISTIK, uji butuh
+ * byte MENTAH transaksi castVote/tallyVote yang SUNGGUH terkirim, supaya bisa
+ * di-deserialisasi ulang dengan @midnight-ntwrk/ledger-v8 tanpa menyentuh
+ * jaringan lagi setiap `pnpm test`.
+ *
+ * Sumbernya BUKAN daftar hash yang dikarang: aksi castVote/tallyVote diambil
+ * dari `r2` (jawaban POST 2 di atas, jawaban ballots.json yang BARU SAJA
+ * direkam), lalu untuk tiap hash dikueri ULANG field `raw` lewat kueri
+ * `transactions(offset:{hash})` — satu-satunya field indexer v3 yang membawa
+ * byte transaksi apa adanya (skema diverifikasi lewat introspeksi langsung
+ * terhadap indexer preview, 2026-09-12).
+ *
+ * TIDAK ADA fallback diam-diam di sini. Bila tidak ada satu pun aksi
+ * castVote/tallyVote di ballots.json, atau `transactions(offset:{hash})`
+ * tidak menemukan transaksinya, atau entryPoint/tinggi blok yang dikembalikan
+ * tidak cocok dengan yang tercatat di ballots.json — skrip BERHENTI (throw),
+ * BUKAN menulis fixture kosong/sebagian. Fixture privasi yang salah lebih
+ * berbahaya daripada tidak punya fixture sama sekali: ia membuat klaim
+ * privasi tampak diuji padahal tidak.
+ */
+const ENTRY_POINT_TULIS = new Set(["castVote", "tallyVote"]);
+
+function aksiTulisDariBallots(jawabanBallots) {
+  const keluar = [];
+  const dilihat = new Set();
+  for (const [alias, kontrak] of Object.entries(jawabanBallots.data ?? {})) {
+    if (!kontrak) continue;
+    for (const aksi of kontrak.terbaru ?? []) {
+      if (aksi.__typename !== "ContractCall") continue;
+      if (!ENTRY_POINT_TULIS.has(aksi.entryPoint)) continue;
+      const hash = aksi.transaction.hash;
+      if (dilihat.has(hash)) continue; // hash yang sama bisa muncul di lebih dari satu alias ballot
+      dilihat.add(hash);
+      keluar.push({
+        entryPoint: aksi.entryPoint,
+        hash,
+        blockHeight: aksi.transaction.block.height,
+        ballotAddress: kontrak.address,
+      });
+    }
+  }
+  return keluar;
+}
+
+const aksiTulis = aksiTulisDariBallots(r2.json);
+if (aksiTulis.length === 0) {
+  throw new Error(
+    "BLOCKED: nol aksi castVote/tallyVote ditemukan di ballots.json yang baru direkam — " +
+      "tidak ada transaksi jalur tulis untuk direkam byte raw-nya. Berhenti, BUKAN menulis fixture kosong.",
+  );
+}
+
+const qTx = `query Tx($h: HexEncoded!) {
+  transactions(offset: { hash: $h }) {
+    __typename
+    ... on RegularTransaction {
+      hash
+      raw
+      block { height }
+      contractActions { __typename ... on ContractCall { entryPoint } }
+    }
+  }
+}`;
+
+const transaksiTulis = [];
+for (const aksi of aksiTulis) {
+  const { json: jTx } = await post(qTx, { h: aksi.hash });
+  const tx = (jTx.data?.transactions ?? [])[0];
+  if (!tx || tx.__typename !== "RegularTransaction" || typeof tx.raw !== "string" || tx.raw.length === 0) {
+    throw new Error(
+      `BLOCKED: transaksi ${aksi.hash} (entryPoint=${aksi.entryPoint}) tidak ditemukan atau tidak ` +
+        `punya field "raw" di jaringan ${JARINGAN}. Berhenti, BUKAN mengarang byte.`,
+    );
+  }
+  const entryPointTx = tx.contractActions?.find((a) => a.__typename === "ContractCall")?.entryPoint;
+  if (entryPointTx !== aksi.entryPoint) {
+    throw new Error(
+      `BLOCKED: entryPoint tidak konsisten untuk transaksi ${aksi.hash} — ballots.json mencatat ` +
+        `"${aksi.entryPoint}", tetapi transactions(offset:{hash}) mencatat "${entryPointTx}". ` +
+        "Berhenti: ini tanda indexer tidak konsisten atau kueri salah, bukan sesuatu yang aman diabaikan.",
+    );
+  }
+  if (tx.block.height !== aksi.blockHeight) {
+    throw new Error(
+      `BLOCKED: tinggi blok tidak konsisten untuk transaksi ${aksi.hash} — ballots.json mencatat ` +
+        `${aksi.blockHeight}, transactions(offset:{hash}) mencatat ${tx.block.height}.`,
+    );
+  }
+  transaksiTulis.push({
+    entryPoint: aksi.entryPoint,
+    hash: aksi.hash,
+    blockHeight: aksi.blockHeight,
+    ballotAddress: aksi.ballotAddress,
+    rawByteLength: hexKeBita(tx.raw).length,
+    raw: tx.raw,
+  });
+}
+transaksiTulis.sort((a, b) => a.blockHeight - b.blockHeight);
+
+writeFileSync(
+  path.join(DIR, "tx-mentah-tulis.json"),
+  JSON.stringify(
+    {
+      jaringan: JARINGAN,
+      endpoint: ENDPOINT,
+      direkamPada: new Date().toISOString(),
+      transaksi: transaksiTulis,
+    },
+    null,
+    1,
+  ) + "\n",
+);
+
 // ── POST 3: keadaan jaringan ──────────────────────────────────────────────
 const q3 = `query Jaringan { block { height timestamp hash } currentEpochInfo { epochNo durationSeconds elapsedSeconds } }`;
 const r3 = await post(q3, {});
@@ -124,3 +250,8 @@ writeFileSync(path.join(DIR, "meta.json"), JSON.stringify(meta, null, 1) + "\n")
 
 console.log("fixture direkam ke", DIR);
 console.log(JSON.stringify(meta, null, 1));
+console.log(
+  `tx-mentah-tulis.json: ${transaksiTulis.length} transaksi (` +
+    transaksiTulis.map((t) => `${t.entryPoint}:${t.hash.slice(0, 8)}:${t.rawByteLength}B`).join(", ") +
+    ")",
+);

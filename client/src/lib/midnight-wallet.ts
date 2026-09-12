@@ -133,8 +133,18 @@ export function listConnectors(): ConnectorInfo[] {
   }));
 }
 
-/** Lace bila ada, kalau tidak konektor pertama yang menyuntikkan diri. */
-function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
+/**
+ * Lace bila ada, kalau tidak konektor pertama yang menyuntikkan diri.
+ *
+ * DIEKSPOR (sebelumnya privat) supaya penemuan konektor bisa DITEKAN LANGSUNG
+ * oleh uji, bukan hanya hidup di komentar. Sebelum midnight-wallet.test.ts ada,
+ * TIDAK ADA satu uji pun di pohon ini yang menstub `globalThis.midnight` atau
+ * memanggil fungsi ini — dibuktikan lewat mutation testing (Task 5, fix round 1):
+ * mengganti seleksi `rdns` di bawah menjadi pengindeksan kunci bernama
+ * (`injected.mnLace`, pola 3.x usang) tetap membuat `pnpm test` PENUH hijau.
+ * Ekspor ini menutup lubang itu tanpa mengubah perilaku produksi.
+ */
+export function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
   const injected = root();
   const all = listConnectors();
   if (!injected || all.length === 0) {
@@ -144,7 +154,21 @@ function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
     );
   }
   const info = all.find((c) => c.rdns === LACE_RDNS) ?? all[0];
-  return { info, raw: injected[info.key] };
+  const raw = injected[info.key];
+  // Penjaga BARU (fix round 1): sebelumnya, konektor yang tersuntik tanpa
+  // connect() lolos sampai `raw.connect(net)` dipanggil di connectMidnightWallet,
+  // melempar TypeError mentah yang tenggelam di dalam WalletError CONNECT_REJECTED
+  // — tidak salah kaprah fatal, tapi menyesatkan (kode itu berarti "pengguna
+  // menolak", padahal konektornya sendiri yang cacat). Gagal DI SINI, dengan
+  // pesan yang menyebut metode yang hilang, sama seperti panggilWajib() di
+  // adaptor-lace.ts.
+  if (typeof raw.connect !== "function") {
+    throw new WalletError(
+      "NO_CONNECTOR",
+      `Konektor "${info.name}" tidak menyediakan metode connect() yang dibutuhkan.`,
+    );
+  }
+  return { info, raw };
 }
 
 /**

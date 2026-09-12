@@ -69,8 +69,17 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   trimLogFile(logPath, MAX_LOG_SIZE_BYTES);
 }
 
+// Berkas skrip collector TIDAK boleh tinggal di client/public/: Vite menyalin
+// SELURUH isi publicDir apa adanya ke dist/public/, jadi apa pun di sana ikut
+// ke paket produksi walau tidak pernah disuntik oleh transformIndexHtml di
+// bawah. Disimpan di luar client/ sepenuhnya (tools/manus/) dan disajikan
+// lewat middleware dev di bawah, hanya saat plugin ini aktif.
+const DEBUG_COLLECTOR_SCRIPT_PATH = path.join(PROJECT_ROOT, "tools", "manus", "debug-collector.js");
+
 /**
  * Vite plugin to collect browser debug logs
+ * - GET /__manus__/debug-collector.js: serves the collector script itself
+ *   (from tools/manus/, not client/public/ — see comment on the constant above)
  * - POST /__manus__/logs: Browser sends logs, written directly to files
  * - Files: browserConsole.log, networkRequests.log, sessionReplay.log
  * - Auto-trimmed when exceeding 1MB (keeps newest entries)
@@ -99,6 +108,29 @@ function vitePluginManusDebugCollector(): Plugin {
     },
 
     configureServer(server: ViteDevServer) {
+      // GET /__manus__/debug-collector.js: sajikan skrip dari tools/manus/.
+      // Middleware ini hanya terpasang saat plugin ini disertakan di array
+      // `plugins`, yaitu hanya ketika modePengembangan && collectorDiminta
+      // (lihat definisi `plugins` di bawah) — jadi tanpa
+      // VOTEPRIV_DEBUG_COLLECTOR=1, jalur ini tidak pernah terdaftar sama
+      // sekali dan tetap 404.
+      server.middlewares.use("/__manus__/debug-collector.js", (req, res, next) => {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          return next();
+        }
+        fs.readFile(DEBUG_COLLECTOR_SCRIPT_PATH, (err, data) => {
+          if (err) {
+            return next();
+          }
+          res.writeHead(200, {
+            "Content-Type": "application/javascript; charset=utf-8",
+            "Content-Length": data.length,
+            "Cache-Control": "no-store",
+          });
+          res.end(req.method === "HEAD" ? undefined : data);
+        });
+      });
+
       // POST /__manus__/logs: Browser sends logs (written directly to files)
       server.middlewares.use("/__manus__/logs", (req, res, next) => {
         if (req.method !== "POST") {
@@ -146,6 +178,31 @@ function vitePluginManusDebugCollector(): Plugin {
             res.end(JSON.stringify({ success: false, error: String(e) }));
           }
         });
+      });
+    },
+  };
+}
+
+/**
+ * Saat VOTEPRIV_DEBUG_COLLECTOR TIDAK diset, vitePluginManusDebugCollector() di
+ * atas tidak disertakan sama sekali — jadi tidak ada middleware yang menangani
+ * /__manus__/debug-collector.js. Tanpa plugin ini, permintaan itu jatuh ke
+ * fallback SPA bawaan Vite (yang menyajikan index.html dengan status 200 untuk
+ * jalur apa pun yang tidak dikenal), bukan 404 — sebelum berkasnya dipindah
+ * keluar dari client/public/, jalur ini memang selalu 200 (menyajikan berkas
+ * statis apa adanya) sehingga celah itu tidak pernah terlihat.
+ *
+ * Plugin kecil ini murni menegaskan "tidak ada" itu: ia hanya aktif ketika
+ * collector TIDAK diminta, dan hanya men-404-kan satu jalur ini. Ia tidak
+ * menyentuh perilaku vitePluginManusDebugCollector() di atas sama sekali.
+ */
+function vitePluginManusDebugCollectorNotFound(): Plugin {
+  return {
+    name: "manus-debug-collector-not-found",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/__manus__/debug-collector.js", (_req, res) => {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
       });
     },
   };
@@ -270,6 +327,7 @@ const plugins = [
     ? [vitePluginManusRuntime(), vitePluginStorageProxy()]
     : []),
   ...(modePengembangan && collectorDiminta ? [vitePluginManusDebugCollector()] : []),
+  ...(modePengembangan && !collectorDiminta ? [vitePluginManusDebugCollectorNotFound()] : []),
 ];
 
 export default defineConfig(({ mode }) => {

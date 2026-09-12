@@ -12,7 +12,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { connectMidnightWallet, describeWalletError } from "@/lib/midnight-wallet";
+import { connectMidnightWallet, describeWalletError, type WalletConnection } from "@/lib/midnight-wallet";
 import { checkProofServer, type ProofServerStatus } from "@/lib/proof-server";
 import { useDataRantai } from "@/hooks/useDataRantai";
 import { GridBallotMemuat, PanelGagalRantai, SpandukSebagian } from "@/components/votepriv/KeadaanRantai";
@@ -42,7 +42,7 @@ function shortAddress(address: string) {
 }
 
 /**
- * Kalimat toast setelah simulasi suara selesai.
+ * Kalimat toast setelah kirimSuara selesai.
  *
  * Praperiksa P5: sebelumnya `toast.success("Vote verified on Midnight
  * testnet", …)` TANPA SYARAT — salah pada DUA sumbu sekaligus:
@@ -54,6 +54,18 @@ function shortAddress(address: string) {
  *       "Verified" pada tanda terima yang tidak pernah menyentuh kontrak
  *       adalah klaim yang tidak ditunaikan, kelas cacat yang sama dengan
  *       badge "Demo data" yang Task 8 buang di tempat lain.
+ *
+ * TASK 8 (sesi ini, jalur tulis tersambung): cabang `txRef === null` kini
+ * TIDAK PERNAH tercapai dari UI sungguhan — VoteModal.tsx hanya memanggil
+ * `onVote` sesudah `kirimSuara` benar-benar berhasil, dan hasilnya selalu
+ * membawa `txId` bertipe string. Cabang itu dipertahankan sebagai jaring
+ * pengaman murni (Receipt masih mengizinkan txRef null di tipe), BUKAN
+ * dihapus — tapi deskripsi cabang `txRef` non-null diperbaiki di sini: versi
+ * lama ("Your choice remains private.") adalah klaim privasi TANPA SYARAT
+ * persis seperti yang VoteModal.tsx sendiri sudah perbaiki (pesanPrivasiSuara)
+ * — toast ini tidak tahu topologi proof server sungguhan, jadi ia tidak boleh
+ * mengulang klaim itu. Kalimat barunya netral dan mengarahkan ke modal, yang
+ * memang menyimpan nuansa bersyaratnya.
  *
  * Diekspor supaya dapat diuji langsung sebagai fungsi murni, tanpa perlu
  * menjalankan seluruh alur vote lewat DOM dan tanpa perlu memata-matai
@@ -72,7 +84,7 @@ export function pesanSuksesVote(
   }
   return {
     judul: `Vote verified on Midnight ${jaringan ? jaringan.networkId : "network"}`,
-    deskripsi: "Your choice remains private.",
+    deskripsi: "Your ballot was sealed on-chain. See the vote dialog for exactly what stayed private.",
   };
 }
 
@@ -85,6 +97,14 @@ export default function Home() {
   const [wallet, setWallet] = useState("");
   const [network, setNetwork] = useState("");
   const [connecting, setConnecting] = useState(false);
+  // Objek WalletConnection PENUH (dipakai jalur tulis C-2b, bukan hanya
+  // alamat/jaringan yang dua state string di atas simpan untuk topbar).
+  const [walletConn, setWalletConn] = useState<WalletConnection | null>(null);
+  // Wallet MEMBUKA suara (bukaSuara) — SENGAJA state terpisah dari
+  // `walletConn`, tidak pernah diam-diam diisi dari situ. Lihat komentar prop
+  // `openWallet` di VoteModal.tsx untuk alasannya.
+  const [openWalletConn, setOpenWalletConn] = useState<WalletConnection | null>(null);
+  const [openConnecting, setOpenConnecting] = useState(false);
   const [proofStatus, setProofStatus] = useState<ProofServerStatus | null>(null);
 
   useEffect(() => {
@@ -165,6 +185,7 @@ export default function Home() {
       setConnected(false);
       setWallet("");
       setNetwork("");
+      setWalletConn(null);
       toast.info("Wallet disconnected");
       return;
     }
@@ -180,6 +201,7 @@ export default function Home() {
       );
       setWallet(result.address);
       setNetwork(result.networkId);
+      setWalletConn(result);
       setConnected(true);
       // Sengaja tidak mengklaim "eligibility check passed" seperti versi mock:
       // pemeriksaan itu belum ada sampai kontrak ballot tersambung.
@@ -191,6 +213,39 @@ export default function Home() {
       toast.error("Could not connect wallet", { description: describeWalletError(error) });
     } finally {
       setConnecting(false);
+    }
+  };
+
+  /**
+   * Wallet untuk MEMBUKA suara — TERPISAH dari connectWallet di atas dan
+   * TIDAK PERNAH berbagi state dengannya. "Bentuk alur yang saya putuskan"
+   * (Task 8, sesi ini): default-nya adalah menyambungkan wallet APA PUN yang
+   * sedang aktif di ekstensi saat tombol ini ditekan — yang bisa, dan
+   * sebaiknya, BUKAN wallet yang tadi mencoblos. VoteModal tidak pernah
+   * membaca `wallet`/`walletConn` untuk mengisi `openWallet` secara diam-diam.
+   */
+  const connectOpenWallet = async () => {
+    if (openWalletConn) {
+      setOpenWalletConn(null);
+      toast.info("Opening wallet disconnected");
+      return;
+    }
+    setOpenConnecting(true);
+    try {
+      const result = await connectMidnightWallet(undefined, () =>
+        toast.info("Menunggu wallet", {
+          description: "Buka Lace dari toolbar Chrome — mungkin ada jendela persetujuan yang menunggu.",
+        }),
+      );
+      setOpenWalletConn(result);
+      toast.success("Wallet connected to open votes", {
+        description: `${result.connectorName} · connector v${result.apiVersion}`,
+      });
+    } catch (error) {
+      console.error("[votepriv:wallet] connect (buka suara) gagal", error);
+      toast.error("Could not connect wallet", { description: describeWalletError(error) });
+    } finally {
+      setOpenConnecting(false);
     }
   };
 
@@ -357,11 +412,22 @@ export default function Home() {
           )}
         </div>
       </main>
-      {voteBallot && (
+      {/*
+       * `data.jaringan` bisa `null` pada fase memuat/gagal — tapi `voteBallot`
+       * hanya pernah diset dari daftar ballot yang HANYA dirender pada fase
+       * `siap`, di mana `data.jaringan` non-null; guard `&& data.jaringan` di
+       * sini murni defensif tipe, bukan perubahan perilaku.
+       */}
+      {voteBallot && data.jaringan && (
         <VoteModal
           ballot={voteBallot}
           connected={connected}
+          wallet={walletConn}
+          jaringan={data.jaringan.networkId}
           proofStatus={proofStatus}
+          openWallet={openWalletConn}
+          openConnecting={openConnecting}
+          onConnectOpenWallet={connectOpenWallet}
           onClose={() => setVoteBallot(null)}
           onVote={handleVote}
         />

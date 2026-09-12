@@ -32,6 +32,28 @@ vi.mock("sonner", () => ({
   },
 }));
 
+/**
+ * Task 8 (sesi ini): VoteModal tidak lagi mensimulasikan vote lewat
+ * window.setTimeout — ia memanggil kirimSuara() sungguhan lewat
+ * muatJalurTulis(). Tanpa mock ini, mengklik "Generate proof & vote" di
+ * bawah akan memuat ./tulis.ts SUNGGUHAN (paket @midnight-ntwrk/*) dan
+ * mencoba operasi jaringan/wallet sungguhan — persis yang dilarang keras
+ * ("Uji tidak boleh menyentuh jaringan, rantai, atau wallet sungguhan").
+ * kirimSuaraMock di sini menggantikannya, sama seperti VoteModal.test.tsx.
+ */
+const { kirimSuaraMock } = vi.hoisted(() => ({ kirimSuaraMock: vi.fn() }));
+vi.mock("@/lib/chain/jalur-tulis", () => ({
+  muatJalurTulis: async () => ({
+    kirimSuara: kirimSuaraMock,
+    bukaSuara: vi.fn(),
+    GalatCastVote: class GalatCastVote extends Error {
+      kode = "TIDAK_DIKENAL";
+      mungkinSudahMasuk?: { nullifierHex: string };
+    },
+    GalatOpeningHilang: class GalatOpeningHilang extends Error {},
+  }),
+}));
+
 vi.mock("@/lib/proof-server", async importAsli => {
   const asli = await importAsli<typeof import("@/lib/proof-server")>();
   return { ...asli, checkProofServer: async () => STATUS_LOKAL };
@@ -92,16 +114,22 @@ vi.mock("@/hooks/useDataRantai", () => ({
 
 afterEach(() => {
   WALLET_NETWORK_ID = "preview";
+  kirimSuaraMock.mockReset();
   cleanup();
 });
 
-describe("Home.handleVote — pilihan toast setelah simulasi", () => {
-  it("txRef null (SATU-SATUNYA bentuk yang terjadi hari ini) memanggil toast.info, BUKAN toast.success", async () => {
-    // Timer SUNGGUHAN dipakai, bukan vi.useFakeTimers(): waitFor milik
-    // testing-library memakai setTimeout/setInterval internal yang ikut
-    // dibekukan fake timers, dan keduanya berebut giliran tanpa
-    // vi.advanceTimersByTimeAsync — lebih sederhana menunggu jeda nyata
-    // ~1.8 detik yang memang dipakai VoteModal.
+describe("Home.handleVote — pilihan toast setelah vote sungguhan (Task 8: jalur tulis tersambung)", () => {
+  it("kirimSuara sukses memanggil toast.success 'Vote verified…', BUKAN toast.info 'Vote simulated'", async () => {
+    // Ditemukan lewat mutation testing (Task 8, gerbang mutasi): membalik
+    // kondisi `if (nextReceipt.txRef === null)` di handleVote (Home.tsx)
+    // lolos HIJAU pada seluruh uji lain di pohon ini — tidak satu pun yang
+    // benar-benar menekan jalur vote sampai ke `handleVote` sambil mengamati
+    // toast mana yang dipanggil. Sejak jalur tulis tersambung, txRef SELALU
+    // string pada keberhasilan sungguhan (kirimSuara tidak pernah resolve
+    // dengan txId kosong) — jadi skenario yang benar-benar tercapai lewat UI
+    // sekarang adalah cabang toast.success, bukan toast.info seperti pada
+    // versi simulasi lama berkas ini.
+    kirimSuaraMock.mockResolvedValue({ txId: "tx-uji-1", nullifierHex: "a".repeat(64) });
     const Home = (await import("./Home")).default;
     let container!: HTMLElement;
     await act(async () => {
@@ -117,20 +145,18 @@ describe("Home.handleVote — pilihan toast setelah simulasi", () => {
     await waitFor(() => expect(container.querySelector(".vote-modal")).not.toBeNull());
 
     fireEvent.click(container.querySelectorAll<HTMLElement>(".choice-row")[0]);
+    fireEvent.change(container.querySelector<HTMLInputElement>('input[type="password"]')!, {
+      target: { value: "b".repeat(64) },
+    });
     fireEvent.click(within(container).getByText("Generate proof & vote"));
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 1900));
-    });
-
-    expect(toastInfo).toHaveBeenCalledWith("Vote simulated", expect.objectContaining({
-      description: expect.stringContaining("No transaction was submitted"),
-    }));
-    expect(toastSuccess).not.toHaveBeenCalledWith("Vote simulated", expect.anything());
-    // toast.success MEMANG dipanggil sekali untuk "Wallet connected" pada alur
-    // lain — tapi TIDAK PERNAH dengan judul yang mengklaim "verified" di sini,
-    // karena txRef simulasi selalu null.
-    expect(toastSuccess).not.toHaveBeenCalledWith(expect.stringMatching(/verified/i), expect.anything());
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        "Vote verified on Midnight preview",
+        expect.objectContaining({ description: expect.any(String) }),
+      ),
+    );
+    expect(toastInfo).not.toHaveBeenCalledWith("Vote simulated", expect.anything());
   });
 });
 

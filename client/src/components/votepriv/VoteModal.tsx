@@ -3,18 +3,54 @@ import { toast } from "sonner";
 import {
   ArrowUpRight,
   Check,
-  Clock3,
   Fingerprint,
   LockKeyhole,
   ShieldCheck,
   Sparkles,
+  TriangleAlert,
+  Wallet,
   X,
-  Zap,
 } from "lucide-react";
 import { menerimaSuara, statusLabel } from "./ballot-status";
 import { labelNomor } from "@/lib/chain/ke-ballot";
+import { muatJalurTulis } from "@/lib/chain/jalur-tulis";
+import type { WalletConnection } from "@/lib/midnight-wallet";
+import type { MidnightNetworkId } from "@pkgs/shared/src/network-config";
 import type { Ballot, Receipt } from "./types";
 import type { ProofServerStatus } from "@/lib/proof-server";
+
+/**
+ * Salinan STRUKTURAL dari `TahapKirimSuara`/`CadanganOpening` milik
+ * `client/src/lib/chain/tulis.ts` — BUKAN diimpor, bahkan sebagai `import type`.
+ *
+ * batas-bundel.test.ts menjaring SEMUA specifier tekstual yang menunjuk ke
+ * chain/tulis lewat regex atas `import`/`export … from`, TANPA mengecualikan
+ * type-only (lihat komentarnya sendiri: itu properti yang disengaja, bukan
+ * celah). Berkas ini TERJANGKAU STATIS dari entri (main.tsx -> Home.tsx ->
+ * VoteModal.tsx), jadi satu baris `import type {...} from "@/lib/chain/tulis"`
+ * di sini akan memerahkan gerbang "modul jalur tulis tidak diimpor secara
+ * statis" — sama seperti impor NILAI, walau tidak akan pernah muncul di JS
+ * yang dibangun. TypeScript membandingkan dua tipe secara STRUKTURAL, bukan
+ * nominal, jadi nilai sungguhan yang datang dari `muatJalurTulis()` (yang
+ * bertipe `Promise<typeof import("./tulis")>` — pola yang SUDAH lolos gerbang
+ * yang sama, karena `typeof import(...)` tanpa klausa `from` tidak pernah
+ * cocok dengan regex-nya) tetap type-safe dipakai berdampingan dengan salinan
+ * ini, tanpa satu baris impor pun ke tulis.ts.
+ */
+type TahapKirimSuara =
+  | "menyiapkan-artefak"
+  | "membaca-eligibility"
+  | "menyusun-witness"
+  | "membuat-proof"
+  | "menyeimbangkan-wallet"
+  | "mengirim"
+  | "menunggu-indexer";
+
+interface CadanganOpening {
+  alamatBallot: string;
+  opsi: number;
+  saltHex: string;
+}
 
 /**
  * Kalimat privasi pilihan suara, BERSYARAT pada topologi proof server SUNGGUHAN.
@@ -35,6 +71,15 @@ import type { ProofServerStatus } from "@/lib/proof-server";
  * persis kesalahan yang komentar proof-server.ts sendiri memperingatkan: nilai
  * itu dipanggang saat BUILD, sedangkan proxy sungguhan membaca lingkungannya
  * saat START.
+ *
+ * TASK 8 (sesi ini) memperbarui TEKS klaim kuat, bukan strukturnya: klaim
+ * lama ("Only the proof, nullifier status, and aggregate tally are
+ * verifiable.") tidak salah, tapi tidak menyebut FAKTA yang sekarang mengikat
+ * — bahwa wallet TIDAK PERNAH melihat witness sama sekali, karena proof
+ * dibangun di perangkat ini SEBELUM wallet dipanggil (kirimSuara di tulis.ts:
+ * proveTx lalu balanceTx/submitTx). Klaim baru menyebut itu secara eksplisit,
+ * tanpa mengklaim apa pun soal privasi PEMBAYAR di rantai — itu urusan
+ * pesanPrivasiBuka() dan panel "Open your vote" di bawah, bukan di sini.
  */
 export function pesanPrivasiSuara(
   proofStatus: ProofServerStatus | null,
@@ -47,7 +92,8 @@ export function pesanPrivasiSuara(
   }
   if (proofStatus.reach === "lokal" && proofStatus.targetTerverifikasi) {
     return {
-      kalimat: "Your choice stays private. Only the proof, nullifier status, and aggregate tally are verifiable.",
+      kalimat:
+        "Your choice stays private. The proof is built on this device; your wallet only balances and submits the already-proven transaction — it never sees your selection.",
       kuat: true,
     };
   }
@@ -72,25 +118,151 @@ export function pesanPrivasiSuara(
   };
 }
 
+/**
+ * Kalimat privasi untuk MEMBUKA suara (tallyVote) — SENGAJA fungsi terpisah
+ * dari pesanPrivasiSuara, bukan cabang tambahan di dalamnya, karena fakta yang
+ * mengikatnya beda pada SATU sumbu penting: membuka SELALU melabeli
+ * transaksinya dengan opsi yang dibukanya, publik, di indexer (FAKTA PRIVASI
+ * butir 2 — snapshot `state` berurutan menyelisihkan transaksi ke opsinya
+ * dengan kepastian). Itu bukan risiko bersyarat seperti kebocoran ke proof
+ * server; itu bagian dari cara tallyVote bekerja, SELALU. Karena itu fungsi
+ * ini tidak punya cabang "sepenuhnya rahasia" ala kuat=true milik
+ * pesanPrivasiSuara — tidak ada topologi proof server yang membuat pembukaan
+ * tetap rahasia dari publik.
+ *
+ * Yang BERSYARAT di sini murni SATU sumbu: apakah witness (opsi+salt) sempat
+ * terlihat operator proof server SEBELUM disegel — risiko yang sama persis
+ * dengan mencoblos, karena bukaSuara menjalankan rantai proveTx yang sama
+ * (lihat tulis.ts::bukaSuara, callTx.tallyVote()).
+ *
+ * `kuat` di sini berarti "kaki proving-nya lokal", BUKAN "pembukaannya
+ * rahasia" — pemanggil TIDAK boleh membaca kuat=true sebagai izin merender
+ * klaim privasi tanpa syarat, dan komponen ini memang tidak pernah
+ * melakukannya (lihat render: kalimat fakta publik/anonimitas selalu
+ * dirender TERPISAH dan TANPA SYARAT dari `kuat`, karena fakta itu sendiri
+ * tidak bersyarat pada proof server).
+ */
+export function pesanPrivasiBuka(
+  proofStatus: ProofServerStatus | null,
+): { kalimat: string; kuat: boolean } {
+  if (!proofStatus) {
+    return {
+      kalimat: "Checking where this step will be proven before it can be marked private…",
+      kuat: false,
+    };
+  }
+  if (proofStatus.reach === "lokal" && proofStatus.targetTerverifikasi) {
+    return {
+      kalimat:
+        "The proof for opening is built on this device too — the proof server never sees which option you are revealing before it is sealed.",
+      kuat: true,
+    };
+  }
+  if (proofStatus.reach === "remote") {
+    return {
+      kalimat: `Opening still travels ${proofStatus.hop} to be proven, so its operator can see which option you are revealing before it is even public.`,
+      kuat: false,
+    };
+  }
+  if (proofStatus.reach === "lewat-host-halaman") {
+    return {
+      kalimat: `Opening travels ${proofStatus.hop} to be proven — whoever operates that machine can see which option you are revealing before it is sealed.`,
+      kuat: false,
+    };
+  }
+  return {
+    kalimat: `The proof server target for opening has not been confirmed by this page (${proofStatus.hop}), so this step cannot be guaranteed to stay on this device.`,
+    kuat: false,
+  };
+}
+
+export function teksTahap(tahap: TahapKirimSuara | null): string {
+  switch (tahap) {
+    case "menyiapkan-artefak":
+      return "Checking proof artifacts…";
+    case "membaca-eligibility":
+      return "Reading your eligibility proof from the chain…";
+    case "menyusun-witness":
+      return "Preparing your private ballot on this device…";
+    case "membuat-proof":
+      return "Generating your zero-knowledge proof — this can take 5 to 20 seconds.";
+    case "menyeimbangkan-wallet":
+      return "Waiting for your wallet to balance the transaction…";
+    case "mengirim":
+      return "Submitting your sealed vote…";
+    case "menunggu-indexer":
+      return "Waiting for the network to confirm…";
+    default:
+      return "Preparing…";
+  }
+}
+
+export function unduhCadangan(cadangan: CadanganOpening): void {
+  const blob = new Blob([JSON.stringify(cadangan, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `votepriv-opening-${cadangan.alamatBallot.slice(0, 8)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function VoteModal({
   ballot,
   connected,
+  wallet,
+  jaringan,
   proofStatus,
+  openWallet = null,
+  openConnecting = false,
+  onConnectOpenWallet = () => {},
   onClose,
   onVote,
 }: {
   ballot: Ballot;
   connected: boolean;
+  /** Wallet dipakai untuk MENCOBLOS (kirimSuara). */
+  wallet: WalletConnection | null;
+  jaringan: MidnightNetworkId;
   /** Dipakai HANYA untuk menyusun klaim privasi — lihat pesanPrivasiSuara. */
   proofStatus: ProofServerStatus | null;
+  /**
+   * Wallet dipakai untuk MEMBUKA suara (bukaSuara) — SENGAJA prop terpisah
+   * dari `wallet`, bukan dipakai ulang. tallyVote tidak pernah membaca
+   * voter_credential (ballot.compact) dan tulis.ts::bukaSuara menerima wallet
+   * sebagai parameter fungsi sendiri, jadi tidak ada apa pun di kontrak atau
+   * di jalur tulis yang menuntut wallet yang sama dipakai untuk mencoblos dan
+   * membuka. "Bentuk alur yang saya putuskan" (Task 8, sesi ini) menjadikan
+   * pemisahan ini BAWAAN: bawaannya `null` — TIDAK diam-diam diisi dari
+   * `wallet` — sehingga pemilih harus secara aktif menyambungkan (mungkin)
+   * wallet lain untuk membuka, bukan menemukan opsi itu terkubur di dokumen.
+   */
+  openWallet?: WalletConnection | null;
+  openConnecting?: boolean;
+  onConnectOpenWallet?: () => void;
   onClose: () => void;
   onVote: (receipt: Receipt) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
-  const [stage, setStage] = useState<"select" | "proving" | "success">("select");
+  const [credentialHex, setCredentialHex] = useState("");
+  const [stage, setStage] = useState<"select" | "proving" | "success" | "gagal">("select");
+  const [tahap, setTahap] = useState<TahapKirimSuara | null>(null);
+  const [cadangan, setCadangan] = useState<CadanganOpening | null>(null);
+  const [galat, setGalat] = useState<{ pesan: string; mungkinSudahMasuk?: { nullifierHex: string } } | null>(null);
 
-  const submit = () => {
-    if (!connected) {
+  // Keadaan MEMBUKA suara (bukaSuara) — mesin state TERPISAH dari mencoblos di
+  // atas, dirender inline di dalam layar "select" untuk ballot berstatus
+  // tally-open. Terpisah sengaja: menyatukannya dengan `stage` akan memaksa
+  // salah satu alur meniru bentuk transisi milik yang lain padahal
+  // keduanya independen (pemilih bisa menutup modal ini tanpa membuka, lalu
+  // kembali kapan pun dalam jendela tally).
+  const [openStage, setOpenStage] = useState<"idle" | "membuka" | "selesai" | "gagal">("idle");
+  const [openTahap, setOpenTahap] = useState<TahapKirimSuara | null>(null);
+  const [openGalat, setOpenGalat] = useState<string | null>(null);
+  const [openingHilang, setOpeningHilang] = useState(false);
+
+  const submit = async () => {
+    if (!connected || !wallet) {
       toast.error("Connect your wallet first", { description: "VotePriv needs a wallet to check eligibility." });
       return;
     }
@@ -98,17 +270,83 @@ export function VoteModal({
       toast.error("Select an option", { description: "Your choice stays private after you submit." });
       return;
     }
+    if (!/^[0-9a-fA-F]{64}$/.test(credentialHex.trim())) {
+      toast.error("Enter your credential", { description: "Paste the 64-character credential you received when you registered." });
+      return;
+    }
     setStage("proving");
-    window.setTimeout(() => setStage("success"), 1350);
-    window.setTimeout(() => {
-      // SIMULASI. Alur ini belum menyentuh kontrak: tidak ada witness yang disusun,
-      // tidak ada proof yang dibuat, tidak ada transaksi yang dikirim. txRef sengaja
-      // `null` — sebelumnya di sini ada hash palsu "0x7f…a91c" yang ditampilkan
-      // berdampingan dengan kalimat "The network accepted your proof", dan itu satu-
-      // satunya hal di aplikasi ini yang benar-benar tidak dapat dipertahankan.
-      // Diganti alur sungguhan pada Rencana C-2 (spec §9.2 butir 1).
-      onVote({ ballotId: ballot.id, proofStatus: "simulated", nullifierStatus: "not-consumed", txRef: null });
-    }, 1750);
+    setGalat(null);
+    setCadangan(null);
+    try {
+      const { kirimSuara } = await muatJalurTulis();
+      const hasil = await kirimSuara(
+        {
+          alamatBallot: ballot.id,
+          credentialHex: credentialHex.trim(),
+          opsi: ballot.options.indexOf(selected),
+          jaringan,
+          onStatus: setTahap,
+          onOpeningTersimpan: setCadangan,
+        },
+        wallet,
+      );
+      // TIDAK ADA jendela di sini di mana tx bisa "mendarat tapi UI mengira
+      // gagal": kirimSuara() HANYA mengembalikan (bukan melempar) ketika
+      // r.public.status === SucceedEntirely sungguhan (tulis.ts baris
+      // ~207-221) — tidak ada nilai "berhasil sebagian" yang lolos ke sini
+      // tersamar sebagai kegagalan.
+      setStage("success");
+      onVote({ ballotId: ballot.id, proofStatus: "verified", nullifierStatus: "consumed", txRef: hasil.txId });
+    } catch (e) {
+      setStage("gagal");
+      // `mungkinSudahMasuk` HANYA terisi ketika tulis.ts sudah mengonfirmasi
+      // ULANG ke indexer bahwa nullifier credential ini SUDAH ada di ledger
+      // meski panggilan di atas melempar (lihat periksaMungkinSudahMasuk di
+      // tulis.ts) — inilah SATU-SATUNYA sinyal yang membedakan "kirim
+      // melempar tapi tx mendarat" dari kegagalan biasa, dan permukaan UI
+      // WAJIB menampilkannya berbeda (lihat render di bawah): mencoba lagi
+      // pada kasus ini akan ditolak "credential sudah dipakai", dan pemilih
+      // harus tahu itu BUKAN tanda suaranya hilang.
+      const mungkinSudahMasuk = (e as { mungkinSudahMasuk?: { nullifierHex: string } } | undefined)?.mungkinSudahMasuk;
+      setGalat({ pesan: e instanceof Error ? e.message : String(e), mungkinSudahMasuk });
+    }
+  };
+
+  const submitOpen = async () => {
+    if (!openWallet) {
+      toast.error("Connect a wallet to open this vote", {
+        description: "This can be a different wallet than the one you voted with.",
+      });
+      return;
+    }
+    setOpenStage("membuka");
+    setOpenGalat(null);
+    setOpeningHilang(false);
+    try {
+      const jalur = await muatJalurTulis();
+      await jalur.bukaSuara(
+        { alamatBallot: ballot.id, jaringan, onStatus: setOpenTahap },
+        // `openWallet`, BUKAN `wallet` — lihat komentar prop di atas. Ini
+        // SATU-SATUNYA titik panggil bukaSuara di seluruh UI; memaksanya
+        // memakai `wallet` di sini akan membuang pemisahan yang props di atas
+        // ada untuk menegakkan.
+        openWallet,
+      );
+      // txId sengaja tidak dipakai di sini: layar sukses membuka tidak
+      // mengulang tanda terima ala mencoblos (onVote/Receipt) — bukaSuara
+      // tidak mengubah nullifier suara pemilih di kartu Results, hanya
+      // membuka commitment yang sudah ada.
+      setOpenStage("selesai");
+    } catch (e) {
+      setOpenStage("gagal");
+      // Sama seperti GalatCastVote: dibaca dari `.name`, bukan `instanceof`
+      // dengan kelas yang diimpor statis — GalatOpeningHilang HANYA ada di
+      // dalam modul yang dimuat dinamis lewat muatJalurTulis(), dan berkas
+      // ini tidak boleh mengimpornya (lihat komentar di kepala berkas soal
+      // batas-bundel.test.ts).
+      setOpeningHilang(e instanceof Error && e.name === "GalatOpeningHilang");
+      setOpenGalat(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const privasi = pesanPrivasiSuara(proofStatus);
@@ -174,6 +412,18 @@ export function VoteModal({
                 ))}
               </div>
             )}
+            {menerimaSuara(ballot.status) && (
+              <label className="credential-field">
+                <span>Your voting credential</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={credentialHex}
+                  onChange={(event) => setCredentialHex(event.target.value)}
+                  placeholder="64-character credential from registration"
+                />
+              </label>
+            )}
             {/* Klaim privasi soal KE MANA witness sungguhan pergi — BERSYARAT
                 pada topologi proof server (lihat pesanPrivasiSuara di atas).
                 Hanya berguna dirender saat sebuah proof memang BISA dibuat;
@@ -183,6 +433,94 @@ export function VoteModal({
               <div className="privacy-callout">
                 <ShieldCheck size={17} />
                 <span>{privasi.kuat ? <strong>{privasi.kalimat}</strong> : privasi.kalimat}</span>
+              </div>
+            )}
+            {/*
+             * Panel "Open your vote" — HANYA untuk tally-open, dan ia BUKAN
+             * bagian dari brief awal Task 8: ia mewujudkan keputusan sesi ini
+             * ("Bentuk alur yang saya putuskan") bahwa membuka dari wallet
+             * LAIN, pada waktu pilihan pemilih sendiri, adalah bentuk BAWAAN
+             * — bukan saran yang terkubur di Docs.
+             */}
+            {ballot.status === "tally-open" && (
+              <div className="open-vote-panel">
+                <p className="eyebrow mint-text">Open your vote</p>
+                {openStage === "idle" && (
+                  <>
+                    <p className="modal-description">
+                      Opening submits your sealed choice for tallying. This step uses its own wallet
+                      connection below — it does not have to be the wallet you voted with, and by
+                      default we suggest it isn't: connect a different wallet, and open whenever you
+                      choose within the tally window rather than right away.
+                    </p>
+                    <div className="privacy-callout">
+                      <ShieldCheck size={17} />
+                      <span>
+                        No payer, signer, or sender field exists on this transaction — the chain does
+                        not record who opens a vote. But opening labels the transaction with the
+                        option it reveals, publicly, on the indexer: what protects you is that the
+                        transaction cannot be traced back to you, not that the choice stays hidden
+                        once it is opened. {ballot.tallied} of {ballot.votes.toLocaleString()} votes on
+                        this ballot have been opened so far — the smaller that crowd when you open
+                        yours, the less cover you have.
+                      </span>
+                    </div>
+                    <div className="privacy-callout">
+                      <TriangleAlert size={17} />
+                      <span>{pesanPrivasiBuka(proofStatus).kalimat}</span>
+                    </div>
+                    <div className="privacy-callout">
+                      <Fingerprint size={17} />
+                      <span>
+                        The opening backup file you downloaded when you voted is a perfect receipt of
+                        your choice — anyone who holds it knows how you voted.
+                      </span>
+                    </div>
+                    {openWallet ? (
+                      <button className="primary-button full-button" onClick={submitOpen}>
+                        <Sparkles size={16} /> Open my vote
+                      </button>
+                    ) : (
+                      <button className="secondary-button full-button" onClick={onConnectOpenWallet} disabled={openConnecting}>
+                        <Wallet size={16} /> {openConnecting ? "Connecting…" : "Connect a wallet to open"}
+                      </button>
+                    )}
+                  </>
+                )}
+                {openStage === "membuka" && (
+                  <div className="proof-state">
+                    <div className="proof-orbit"><Fingerprint size={32} /><span className="orbit-ring ring-one" /><span className="orbit-ring ring-two" /></div>
+                    <p>{teksTahap(openTahap)}</p>
+                    <div className="progress-track"><span /></div>
+                  </div>
+                )}
+                {openStage === "selesai" && (
+                  <div className="proof-state success-state">
+                    <div className="success-mark"><Check size={28} /></div>
+                    <h2>Your vote is now counted.</h2>
+                    <p>
+                      The option you chose is now public on the indexer, labeled on this transaction —
+                      not linked to your identity.
+                    </p>
+                  </div>
+                )}
+                {openStage === "gagal" && (
+                  <div className="proof-state">
+                    <TriangleAlert size={28} />
+                    {openingHilang ? (
+                      <>
+                        <p className="eyebrow">No opening found on this device</p>
+                        <p>{openGalat}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="eyebrow">Vote not opened</p>
+                        <p>{openGalat}</p>
+                      </>
+                    )}
+                    <button className="ghost-button" onClick={() => setOpenStage("idle")}>Try again</button>
+                  </div>
+                )}
               </div>
             )}
             <div className="modal-actions">
@@ -203,13 +541,48 @@ export function VoteModal({
             <div className="proof-orbit"><Fingerprint size={32} /><span className="orbit-ring ring-one" /><span className="orbit-ring ring-two" /></div>
             <p className="eyebrow mint-text">ZK proof in progress</p>
             <h2>Sealing your ballot</h2>
-            <p>VotePriv is proving eligibility without revealing your identity or selection.</p>
+            <p>{teksTahap(tahap)}</p>
             <div className="progress-track"><span /></div>
-            <div className="proof-steps"><span className="done"><Check size={12} /> Eligibility checked</span><span className="active"><Zap size={12} /> Generating proof</span><span><Clock3 size={12} /> Submitting receipt</span></div>
+            {cadangan && (
+              <button className="ghost-button" onClick={() => unduhCadangan(cadangan)}>
+                Download opening backup (needed if you clear this device later)
+              </button>
+            )}
           </div>
         )}
         {stage === "success" && (
-          <div className="proof-state success-state"><div className="success-mark"><Check size={28} /></div><p className="eyebrow mint-text">Simulated vote</p><h2>This is a preview of the flow.</h2><p>No proof was generated and nothing was submitted to the network. The contract, the ZK proof and the on-chain receipt arrive with the Midnight adapter.</p><div className="receipt-mini"><div><span>Proof status</span><strong>Simulated</strong></div><div><span>Nullifier</span><strong>Not consumed</strong></div><div><span>Receipt</span><strong>None — no transaction</strong></div></div><button className="primary-button full-button" onClick={onClose}>Back to dashboard <ArrowUpRight size={15} /></button></div>
+          <div className="proof-state success-state">
+            <div className="success-mark"><Check size={28} /></div>
+            <p className="eyebrow mint-text">Vote recorded</p>
+            <h2>Your ballot is sealed on-chain.</h2>
+            {/* Klaim privasi di layar sukses harus BERSYARAT pada topologi
+                proof server sungguhan yang SAMA dengan layar pemilihan —
+                bukan pengulangan tanpa syarat "never sent as plain text" yang
+                akan salah persis pada reach remote/lewat-host-halaman, tempat
+                witness MEMANG melintasi jaringan sebelum disegel. */}
+            <p>{privasi.kuat ? privasi.kalimat : `Your vote was recorded. ${privasi.kalimat}`}</p>
+            <button className="primary-button full-button" onClick={onClose}>Back to dashboard <ArrowUpRight size={15} /></button>
+          </div>
+        )}
+        {stage === "gagal" && galat && (
+          <div className="proof-state">
+            <TriangleAlert size={28} />
+            {galat.mungkinSudahMasuk ? (
+              <>
+                <p className="eyebrow">Vote not confirmed here</p>
+                <h2>Your vote may have already gone through</h2>
+                <p>{galat.pesan}</p>
+                <p><strong>Do not vote again with this credential.</strong> The network already shows a matching nullifier — trying again will be rejected as already used.</p>
+              </>
+            ) : (
+              <>
+                <p className="eyebrow">Vote not sent</p>
+                <h2>Something went wrong</h2>
+                <p>{galat.pesan}</p>
+              </>
+            )}
+            <button className="ghost-button" onClick={onClose}>Close</button>
+          </div>
         )}
       </div>
     </div>

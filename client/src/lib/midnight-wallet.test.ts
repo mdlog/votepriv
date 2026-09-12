@@ -1,5 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { LACE_RDNS, listConnectors, pickConnector, WalletError } from "./midnight-wallet";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  connectMidnightWallet,
+  handleBasi,
+  jaringanKeliru,
+  LACE_RDNS,
+  listConnectors,
+  PROBE_NETWORKS,
+  pickConnector,
+  WalletError,
+} from "./midnight-wallet";
 
 /**
  * Bentuk `window.midnight[<kunci-UUID>]` yang BENAR-BENAR diukur langsung di
@@ -131,5 +140,192 @@ describe("pickConnector — penemuan konektor berbasis UUID (Task 5, fix round 1
       expect((error as WalletError).code).toBe("NO_CONNECTOR");
       expect((error as Error).message).toMatch(/connect/);
     }
+  });
+});
+
+/**
+ * Bentuk MINIMAL objek `api` yang dikembalikan `raw.connect()` — hanya method
+ * yang benar-benar dipanggil lewat tryCall() di dalam connectMidnightWallet.
+ * Tipe sendiri (bukan bergantung pada apa pun dari @midnight-ntwrk/dapp-
+ * connector-api, yang tidak terpasang — lihat komentar berkas ini baris 11-14)
+ * karena `api` sendiri bertipe `unknown` di titik pemakaiannya: TypeScript
+ * hanya perlu tahu bentuk NILAI yang dibuat di sini, bukan tipe yang
+ * connectMidnightWallet berikan padanya. Tidak ada `as any`/`as unknown`.
+ */
+type ApiUji = {
+  getConnectionStatus?: () => Promise<{ networkId?: string }>;
+  getShieldedAddresses?: () => Promise<Record<string, unknown>>;
+  getUnshieldedAddress?: () => Promise<Record<string, unknown>>;
+  getConfiguration?: () => Promise<Record<string, unknown>>;
+};
+
+/**
+ * Task 9 — menutup ENAM penjaga di connectMidnightWallet yang dibawa TANPA
+ * uji dari Task 5 (lihat task-9-report.md untuk daftar lengkap dengan nomor
+ * baris): NETWORK_MISMATCH ×2 (silang-periksa getConnectionStatus, dan
+ * seluruh PROBE_NETWORKS habis ditolak), WALLET_STALE, fallback
+ * CONNECT_REJECTED, NO_ADDRESS, dan klasifier jaringanKeliru/handleBasi.
+ *
+ * Fake timers WAJIB di sini (bukan gaya): connectMidnightWallet membungkus
+ * SETIAP raw.connect() dengan tungguWallet(), yang menyalakan setTimeout
+ * WALLET_LAMBAT_MS (8 detik) dan WALLET_TIMEOUT_MS (120 detik) nyata setiap
+ * panggilan. Mock connect() di bawah selalu selesai lewat microtask (resolve/
+ * reject langsung), jadi timer itu tidak pernah sungguh menyala — tapi tanpa
+ * fake timers, vitest tetap menjadwalkan clearTimeout terhadap timer NYATA di
+ * event loop Node, dan gerbang "uji tidak bergantung jam dinding" di brief
+ * task ini eksplisit melarang bergantung pada timer nyata sama sekali,
+ * disengaja atau tidak.
+ */
+describe("connectMidnightWallet — enam penjaga (Task 9, dibawa dari Task 5)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("jalur bahagia — connect berhasil di jaringan eksplisit, shielded diutamakan atas unshielded, field diteruskan APA ADANYA", async () => {
+    const lace = konektorLace();
+    const api: ApiUji = {
+      getConnectionStatus: vi.fn(async () => ({ networkId: "preview" })),
+      getShieldedAddresses: vi.fn(async () => ({
+        shieldedAddress: "mn_shield-addr_preview1xyz",
+        shieldedCoinPublicKey: "cpk-1",
+        shieldedEncryptionPublicKey: "epk-1",
+      })),
+      getUnshieldedAddress: vi.fn(async () => ({ address: "mn_addr_preview1abc" })),
+      getConfiguration: vi.fn(async () => ({ networkId: "preview", indexerUri: "https://indexer.example" })),
+    };
+    lace.connect = vi.fn(async () => api);
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const hasil = await connectMidnightWallet("preview");
+
+    expect(hasil.address).toBe("mn_shield-addr_preview1xyz");
+    expect(hasil.unshieldedAddress).toBe("mn_addr_preview1abc");
+    expect(hasil.coinPublicKey).toBe("cpk-1");
+    expect(hasil.encryptionPublicKey).toBe("epk-1");
+    expect(hasil.networkId).toBe("preview");
+    expect(hasil.connectorName).toBe("lace");
+    expect(hasil.api).toBe(api); // identitas objek, bukan salinan
+  });
+
+  it("Penjaga 1/6 — NETWORK_MISMATCH: connect() menerima networkId eksplisit tapi getConnectionStatus melapor jaringan LAIN", async () => {
+    const lace = konektorLace();
+    const api: ApiUji = { getConnectionStatus: vi.fn(async () => ({ networkId: "preview" })) };
+    lace.connect = vi.fn(async () => api);
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const err = await connectMidnightWallet("preprod").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WalletError);
+    expect((err as WalletError).code).toBe("NETWORK_MISMATCH");
+    expect((err as Error).message).toMatch(/preview/);
+    expect((err as Error).message).toMatch(/preprod/);
+  });
+
+  it("Penjaga 2/6 — NETWORK_MISMATCH: SELURUH PROBE_NETWORKS ditolak sebagai jaringan keliru", async () => {
+    const lace = konektorLace();
+    const dicoba: (string | undefined)[] = [];
+    lace.connect = vi.fn(async (net?: string) => {
+      dicoba.push(net);
+      throw new Error(`Unsupported network ID: ${net}`);
+    });
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const err = await connectMidnightWallet().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WalletError);
+    expect((err as WalletError).code).toBe("NETWORK_MISMATCH");
+    expect((err as Error).message).toMatch(/preprod, preview, undeployed/);
+    // Presence pin: SELURUH probe list benar-benar dicoba, urut, bukan berhenti
+    // di tengah — bukan sekadar "akhirnya melempar".
+    expect(dicoba).toEqual([...PROBE_NETWORKS]);
+  });
+
+  it("Penjaga 3/6 — WALLET_STALE: pesan penolakan cocok pola handle basi (context invalidated)", async () => {
+    const lace = konektorLace();
+    lace.connect = vi.fn(async () => {
+      throw new Error("Extension context invalidated.");
+    });
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WalletError);
+    expect((err as WalletError).code).toBe("WALLET_STALE");
+    expect((err as Error).message).toMatch(/muat ulang halaman/i);
+    expect((err as WalletError).cause).toBeInstanceOf(Error);
+    expect(((err as WalletError).cause as Error).message).toBe("Extension context invalidated.");
+  });
+
+  it("Penjaga 4/6 — CONNECT_REJECTED: fallback untuk penolakan yang BUKAN jaringan keliru maupun handle basi, pesan diteruskan APA ADANYA", async () => {
+    const lace = konektorLace();
+    lace.connect = vi.fn(async () => {
+      throw new Error("User rejected the request.");
+    });
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WalletError);
+    expect((err as WalletError).code).toBe("CONNECT_REJECTED");
+    expect((err as Error).message).toBe("User rejected the request.");
+  });
+
+  it("Penjaga 4/6 (cabang pesan kosong) — CONNECT_REJECTED jatuh ke pesan bawaan bila error tidak punya pesan", async () => {
+    const lace = konektorLace();
+    lace.connect = vi.fn(async () => {
+      throw new Error("");
+    });
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
+    expect((err as WalletError).code).toBe("CONNECT_REJECTED");
+    expect((err as Error).message).toBe("Wallet menolak permintaan koneksi.");
+  });
+
+  it("Penjaga 5/6 — NO_ADDRESS: connect berhasil tapi getShieldedAddresses/getUnshieldedAddress sama-sama tidak membawa alamat", async () => {
+    const lace = konektorLace();
+    const api: ApiUji = {
+      getShieldedAddresses: vi.fn(async () => ({})),
+      getUnshieldedAddress: vi.fn(async () => ({})),
+    };
+    lace.connect = vi.fn(async () => api);
+    vi.stubGlobal("midnight", { [UUID_LACE]: lace });
+
+    const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WalletError);
+    expect((err as WalletError).code).toBe("NO_ADDRESS");
+    expect((err as Error).message).toMatch(/tidak mengembalikan alamat/i);
+  });
+});
+
+/**
+ * Penjaga 6/6 — klasifier jaringanKeliru/handleBasi, diuji LANGSUNG (lihat
+ * alasan ekspornya di midnight-wallet.ts, baris 185-192): setiap pola regex
+ * dipin ke SATU pesan yang cocok DAN satu yang tidak, bukan sekadar "sesuatu
+ * lolos" — mutasi yang mempersempit atau memperlebar salah satu alternasi
+ * regex harus membuat salah satu assert di bawah merah.
+ */
+describe("jaringanKeliru — klasifikasi pesan penolakan jaringan (Penjaga 6/6)", () => {
+  it("cocok untuk 'network id mismatch' dan 'unsupported network id', case-insensitive", () => {
+    expect(jaringanKeliru("Network ID mismatch: expected preview")).toBe(true);
+    expect(jaringanKeliru("UNSUPPORTED NETWORK ID: testnet")).toBe(true);
+  });
+
+  it("TIDAK cocok untuk pesan penolakan lain", () => {
+    expect(jaringanKeliru("User rejected the request.")).toBe(false);
+  });
+});
+
+describe("handleBasi — klasifikasi handle wallet basi (Penjaga 6/6)", () => {
+  it("cocok untuk KELIMA pola pesan restart ekstensi, case-insensitive", () => {
+    expect(handleBasi("Extension was shutdown.")).toBe(true);
+    expect(handleBasi("This port can no longer be used.")).toBe(true);
+    expect(handleBasi("Extension context invalidated.")).toBe(true);
+    expect(handleBasi("The receiving end does not exist.")).toBe(true);
+    expect(handleBasi("Could not establish connection.")).toBe(true);
+  });
+
+  it("TIDAK cocok untuk pesan penolakan biasa", () => {
+    expect(handleBasi("User rejected the request.")).toBe(false);
   });
 });

@@ -23,7 +23,7 @@
  * Jalankan SETELAH `pnpm build`:
  *   node scripts/ukur-batas-bundel.mjs
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -157,17 +157,34 @@ if (entriTulis) {
 }
 
 // ---------------------------------------------------------------------------
-// 3) Safety net tambahan: grep konten dist untuk tanda tangan literal paket
-//    jalur tulis. Tidak diperbaiki dari brief karena praperiksa TIDAK
-//    menandainya cacat — dipertahankan sebagai lapis kedua yang independen
-//    dari cara Rollup menyusun chunk.
+// 3) Safety net independen: grep tanda tangan literal paket jalur tulis, TAPI
+//    hanya atas chunk yang TERJANGKAU STATIS DARI ENTRI — bukan lagi "sapu
+//    SEMUA .js di dist/public/assets" seperti sebelumnya.
+//
+//    Cacat versi lama (temuan spike C-2b): menyapu seluruh assets/ itu buta
+//    terhadap posisi chunk di graf. Begitu jalur tulis nyata ada di build
+//    SAMA SEKALI, chunk dinamisnya SENDIRI — yang justru sudah terisolasi
+//    dengan benar lewat `await import()` dan TIDAK terjangkau statis dari
+//    entri — memuat literal nama filenya sendiri ("ledger-v8",
+//    "midnight_ledger_wasm"), sehingga cek lama itu MERAH SELAMANYA persis
+//    pada kasus yang seharusnya LULUS. Predikat yang benar bukan "paket ini
+//    tidak boleh ada literal-nya di mana pun di dist" (itu mustahil dipenuhi
+//    chunk yang MEMANG isinya modul itu), melainkan predikat yang sama dengan
+//    cek #1 dan #2: "tidak boleh TERJANGKAU dari chunk entri".
+//
+//    Cek ini tetap independen dari cek #2 (yang mengunci ke SRC_TULIS_KEY
+//    persis): kalau tanda tangan paket jalur tulis pernah masuk ke SATU SAJA
+//    chunk yang terjangkau statis dari entri — lewat jalur mana pun, bukan
+//    hanya lewat tulis.ts — cek ini tetap menangkapnya sebagai lapis kedua.
 // ---------------------------------------------------------------------------
-const assetsDir = path.join(DIST, "assets");
-const semuaJs = existsSync(assetsDir) ? readdirSync(assetsDir).filter((f) => f.endsWith(".js")) : [];
 const POLA_JALUR_TULIS = /ledger-v8|midnight-js-indexer-public-data-provider|midnight_ledger_wasm/;
-const jsTercemar = semuaJs.filter((f) => POLA_JALUR_TULIS.test(readFileSync(path.join(assetsDir, f), "utf8")));
+const chunkJsEntri = [...entriReachable].map((k) => manifest[k].file).filter((f) => f.endsWith(".js"));
+const jsTercemar = chunkJsEntri.filter((f) => POLA_JALUR_TULIS.test(readFileSync(path.join(DIST, f), "utf8")));
 if (jsTercemar.length > 0) {
-  galat(`tanda tangan paket jalur tulis ditemukan di keluaran build: ${jsTercemar.join(", ")}`);
+  galat(
+    `tanda tangan paket jalur tulis ditemukan di chunk TERJANGKAU STATIS DARI ENTRI: ${jsTercemar.join(", ")} — ` +
+      `ini kebocoran sungguhan (beda dari chunk dinamis jalur tulis yang memuat nama filenya sendiri secara sah).`,
+  );
 }
 
 // ---------------------------------------------------------------------------

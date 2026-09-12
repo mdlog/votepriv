@@ -1,6 +1,7 @@
 import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
@@ -287,6 +288,88 @@ function vitePluginRuntimeConfig(proofServerTarget: string): Plugin {
 }
 
 /**
+ * Task 2 (C-2b) — KEPUTUSAN SADAR soal bagaimana ~15 MB artefak ZK ballot
+ * (castVote.prover 9.990.205 B, tallyVote.prover 5.223.586 B, plus
+ * .verifier/.bzkir masing-masing — diukur sendiri lewat `stat`, lihat
+ * task-2-report.md) sampai ke browser, DI DEV maupun DI PRODUKSI, TANPA
+ * menyentuh server/index.ts.
+ *
+ * DUA opsi dipertimbangkan:
+ *
+ * 1. Salin ke client/public/zk/ballot/ (opsi yang DITOLAK). client/public/
+ *    disalin Vite APA ADANYA ke dist/public/ — persis alasan yang membuat
+ *    e2fb2d0 mengeluarkan debug-collector.js dari sana ("Berkas skrip
+ *    collector TIDAK boleh tinggal di client/public/: Vite menyalin SELURUH
+ *    isi publicDir apa adanya ke dist/public/, jadi apa pun di sana ikut ke
+ *    paket produksi", lihat komentar DEBUG_COLLECTOR_SCRIPT_PATH di atas).
+ *    Menaruh binary 15+ MB di client/public/ berarti MENGGANDAKANNYA secara
+ *    PERMANEN di git di samping salinan yang sudah ada di
+ *    pkgs/contract/src/managed/ballot — dua salinan yang bisa diam-diam
+ *    berbeda (versi basi) adalah PERSIS kelas cacat yang bagian "Dan satu hal
+ *    yang menentukan kebenaran" di brief task ini memperingatkan: prover key
+ *    yang salah/basi baru ketahuan jauh kemudian sebagai proof yang ditolak.
+ *
+ * 2. Middleware baru di server/index.ts yang menyajikan LANGSUNG dari
+ *    pkgs/contract/src/managed/ballot tanpa menyalin (opsi draf awal task
+ *    brief, Step 5). DITOLAK di sini: instruksi tugas ini melarang menyentuh
+ *    server/ sama sekali, dan mewajibkan berhenti+lapor bila produksi
+ *    menuntutnya — bukan mengerjakannya diam-diam.
+ *
+ * OPSI YANG DIPILIH: dev dan produksi ditangani BERBEDA, keduanya tanpa
+ * menyentuh server/ maupun client/public/:
+ *
+ * - DEV (`vitePluginZkArtifacts`, `apply: "serve"`): middleware dev server
+ *   menyajikan LANGSUNG dari pkgs/contract/src/managed/ballot — tidak ada
+ *   penyalinan sama sekali, artefak selalu segar mengikuti pohon kerja.
+ *
+ * - PRODUKSI (`vitePluginZkArtifactsBuild`, `apply: "build"`): hook
+ *   `writeBundle` (jalan SETELAH Rollup selesai menulis dist/public/, sama
+ *   seperti pola vite-plugin-static-copy) menyalin
+ *   pkgs/contract/src/managed/ballot/{keys,zkir} ke
+ *   dist/public/zk/ballot/{keys,zkir}. dist/ ada di .gitignore (baris 7),
+ *   jadi salinan ini TIDAK PERNAH masuk git — ia lahir ulang setiap build
+ *   dari SATU sumber kebenaran (pkgs/contract/src/managed/ballot), tidak
+ *   pernah bisa basi ketinggalan sumbernya. Karena berkasnya berakhir di
+ *   DALAM staticPath (dist/public) yang SUDAH disajikan
+ *   `app.use(express.static(staticPath))` yang sudah ada di server/index.ts
+ *   (baris 114, TIDAK diubah), produksi bekerja tanpa satu baris pun berubah
+ *   di server/.
+ *
+ * Layout URL (`/zk/ballot/keys/*`, `/zk/ballot/zkir/*`) SENGAJA sama persis
+ * di dev dan produksi — meniru tata letak disk NodeZkConfigProvider — supaya
+ * FetchZkConfigProvider (client/src/lib/chain/zk-config-fetch.ts) memakai
+ * SATU baseUrl yang sama di kedua lingkungan.
+ */
+function vitePluginZkArtifacts(): Plugin {
+  const dirBallotManaged = path.resolve(import.meta.dirname, "pkgs", "contract", "src", "managed", "ballot");
+  return {
+    name: "votepriv-zk-artifacts",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/zk/ballot/keys", express.static(path.join(dirBallotManaged, "keys")));
+      server.middlewares.use("/zk/ballot/zkir", express.static(path.join(dirBallotManaged, "zkir")));
+    },
+  };
+}
+
+/** Separuh produksi dari keputusan di atas — lihat komentar `vitePluginZkArtifacts`. */
+function vitePluginZkArtifactsBuild(): Plugin {
+  const dirBallotManaged = path.resolve(import.meta.dirname, "pkgs", "contract", "src", "managed", "ballot");
+  const outDirPublic = path.resolve(import.meta.dirname, "dist", "public");
+  return {
+    name: "votepriv-zk-artifacts-build",
+    apply: "build",
+    writeBundle() {
+      for (const sub of ["keys", "zkir"]) {
+        const tujuan = path.join(outDirPublic, "zk", "ballot", sub);
+        fs.mkdirSync(tujuan, { recursive: true });
+        fs.cpSync(path.join(dirBallotManaged, sub), tujuan, { recursive: true });
+      }
+    },
+  };
+}
+
+/**
  * Perkakas scaffolding Manus: HANYA untuk pengembangan, dan debug collector
  * hanya bila diminta eksplisit.
  *
@@ -348,7 +431,12 @@ export default defineConfig(({ mode }) => {
     .filter(Boolean);
 
   return {
-  plugins: [...plugins, vitePluginRuntimeConfig(proofServerTarget)],
+  plugins: [
+    ...plugins,
+    vitePluginRuntimeConfig(proofServerTarget),
+    vitePluginZkArtifacts(),
+    vitePluginZkArtifactsBuild(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

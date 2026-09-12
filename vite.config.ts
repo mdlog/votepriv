@@ -555,11 +555,62 @@ export default defineConfig(({ mode }) => {
     ],
     fs: {
       strict: true,
-      // root Vite adalah client/. Modul kontrak tergenerasi dan network-config
-      // berada di pkgs/, di luar root, sehingga akar repo harus diizinkan
-      // eksplisit. deny tetap menutup seluruh berkas titik.
-      allow: [path.resolve(import.meta.dirname)],
-      deny: ["**/.*"],
+      // GANTI (bukan gabung) dari allow bawaan [searchForWorkspaceRoot(root)]
+      // — lihat resolveServerOptions di node_modules/vite/dist/node/chunks:
+      // begitu `allow` diisi eksplisit, root client/ TIDAK lagi otomatis ikut
+      // diizinkan, jadi harus disebut sendiri di bawah.
+      //
+      // Sebelumnya di sini: `allow: [path.resolve(import.meta.dirname)]`,
+      // yaitu SELURUH akar repo. Itu membuat siapa pun yang bisa menjangkau
+      // dev server ini (termasuk lewat tunnel publik) membaca APA SAJA di
+      // repo lewat /@fs/<akar>/<jalur apa pun>/ — termasuk kredensial dompet
+      // CLI dan credential/salt/opening pemilih, karena `deny: ["**/.*"]"
+      // hanya menutup jalur yang SEGMEN TERAKHIRNYA mulai dengan titik
+      // (diverifikasi lewat isFileLoadingAllowed+fsDenyGlob di source vite:
+      // pola "**/.*" tidak menembus ke dalam direktori titik seperti
+      // .manus-logs/ atau .git/ — nama BERKAS di dalamnya tidak diawali
+      // titik, jadi ikut lolos juga selama ini).
+      //
+      // Perbaikan: persempit `allow` ke HANYA subpohon yang benar-benar
+      // dituntut resolusi modul — diverifikasi dengan men-grep setiap impor
+      // @pkgs/@shared di client/src (lihat .superpowers/kebocoran-fs-allow.md):
+      //   - client/            root Vite: index.html, src/, public/
+      //   - pkgs/contract/     modul kontrak tergenerasi, dipakai lewat
+      //                        @pkgs/contract/src/managed/{ballot,registry}/…
+      //   - pkgs/shared/       @pkgs/shared/src/network-config
+      //   - shared/            @shared/const
+      //   - attached_assets/   alias @assets (belum ada di disk saat ini;
+      //                        tetap didaftarkan sesuai alias di atas)
+      //   - node_modules/      seluruh dependency npm/pnpm — symlink pnpm
+      //                        (node_modules/.pnpm/…) tetap di bawah jalur ini
+      //
+      // SENGAJA TIDAK termasuk (tidak pernah diimpor client, diverifikasi
+      // lewat grep yang sama): pkgs/cli/ — berisi wallet-cache/ (kredensial
+      // dompet), private-state/ (credential+salt+opening pemilih), logs/,
+      // dan artefak/ — juga dist/, .manus-logs/ (rekaman interaksi debug
+      // collector), .git/, docs/, server/, scripts/, tools/, .superpowers/,
+      // patches/. Apa pun di luar daftar allow di bawah dibalas 403 SEBELUM
+      // isinya pernah dibaca dari disk.
+      allow: [
+        path.resolve(import.meta.dirname, "client"),
+        path.resolve(import.meta.dirname, "pkgs", "contract"),
+        path.resolve(import.meta.dirname, "pkgs", "shared"),
+        path.resolve(import.meta.dirname, "shared"),
+        path.resolve(import.meta.dirname, "attached_assets"),
+        path.resolve(import.meta.dirname, "node_modules"),
+      ],
+      deny: [
+        // Lapis kedua, independen dari allow di atas — tetap menutup berkas
+        // titik apa pun (mis. .env) bila suatu saat allow melebar lagi.
+        "**/.*",
+        // Jaring pengaman eksplisit untuk kandidat kebocoran yang sudah
+        // terverifikasi (lihat .superpowers/kebocoran-fs-allow.md). Sudah
+        // tertutup oleh penyempitan allow di atas; disebut lagi di sini
+        // supaya penghapusan satu baris allow tidak diam-diam membuka lagi
+        // salah satu dari ini.
+        "**/pkgs/cli/**",
+        "**/.manus-logs/**",
+      ],
     },
     proxy: {
       // Browser tidak boleh memanggil proof server secara langsung: service worker

@@ -115,7 +115,67 @@ if (wasmDiEntri.size === 0) {
 }
 
 // ---------------------------------------------------------------------------
-// 2) DUA angka jalur tulis: byte chunk JS, dan byte .wasm yang ia picu.
+// 2) Safety net independen: grep tanda tangan literal paket jalur tulis, TAPI
+//    hanya atas chunk yang TERJANGKAU STATIS DARI ENTRI — bukan lagi "sapu
+//    SEMUA .js di dist/public/assets" seperti sebelumnya.
+//
+//    Cacat versi lama (temuan spike C-2b): menyapu seluruh assets/ itu buta
+//    terhadap posisi chunk di graf. Begitu jalur tulis nyata ada di build
+//    SAMA SEKALI, chunk dinamisnya SENDIRI — yang justru sudah terisolasi
+//    dengan benar lewat `await import()` dan TIDAK terjangkau statis dari
+//    entri — memuat literal nama filenya sendiri ("ledger-v8",
+//    "midnight_ledger_wasm"), sehingga cek lama itu MERAH SELAMANYA persis
+//    pada kasus yang seharusnya LULUS. Predikat yang benar bukan "paket ini
+//    tidak boleh ada literal-nya di mana pun di dist" (itu mustahil dipenuhi
+//    chunk yang MEMANG isinya modul itu), melainkan predikat yang sama dengan
+//    cek #1 dan #3: "tidak boleh TERJANGKAU dari chunk entri".
+//
+//    Dipindah SEBELUM cek #3 (byte jalur tulis) dengan sengaja: hasilnya
+//    (jsTercemar) dipakai di sana untuk membedakan "belum tersambung sama
+//    sekali" dari "tergabung statis" — lihat komentar di cek #3.
+//
+//    Cek ini tetap independen dari cek #3 (yang mengunci ke SRC_TULIS_KEY
+//    persis): kalau tanda tangan paket jalur tulis pernah masuk ke SATU SAJA
+//    chunk yang terjangkau statis dari entri — lewat jalur mana pun, bukan
+//    hanya lewat tulis.ts — cek ini tetap menangkapnya sebagai lapis kedua.
+// ---------------------------------------------------------------------------
+const POLA_JALUR_TULIS = /ledger-v8|midnight-js-indexer-public-data-provider|midnight_ledger_wasm/;
+const chunkJsEntri = [...entriReachable].map((k) => manifest[k].file).filter((f) => f.endsWith(".js"));
+const jsTercemar = chunkJsEntri.filter((f) => POLA_JALUR_TULIS.test(readFileSync(path.join(DIST, f), "utf8")));
+if (jsTercemar.length > 0) {
+  galat(
+    `tanda tangan paket jalur tulis ditemukan di chunk TERJANGKAU STATIS DARI ENTRI: ${jsTercemar.join(", ")} — ` +
+      `ini kebocoran sungguhan (beda dari chunk dinamis jalur tulis yang memuat nama filenya sendiri secara sah).`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 3) DUA angka jalur tulis: byte chunk JS, dan byte .wasm yang ia picu.
+//
+//    TIGA keadaan mungkin untuk client/src/lib/chain/tulis.ts, TIGA hasil:
+//
+//      (a) TIDAK terjangkau sama sekali dari graf entri (tidak ada satu pun
+//          pengimpor jalur-tulis.ts — pintunya — yang terjangkau entri) →
+//          LULUS, 0 B, dicatat dengan jelas sebagai "belum tersambung".
+//      (b) Terjangkau lewat DYNAMIC IMPORT (`await import("./tulis")` di
+//          dalam jalur-tulis.ts, dipanggil dari kode yang terjangkau entri)
+//          → LULUS, byte chunk JS + byte .wasm yang dipicunya dilaporkan.
+//      (c) Terjangkau lewat IMPOR STATIS dari kode yang terjangkau entri →
+//          GAGAL, chunk yang tercemar disebut namanya.
+//
+//    Vite HANYA memberi tulis.ts entri manifest sendiri (SRC_TULIS_KEY) kalau
+//    ia dijangkau lewat `import()` dinamis dari sesuatu yang benar-benar ikut
+//    dibundel (app ini satu-entri: index.html -> main.tsx, jadi "ikut
+//    dibundel" = "terjangkau dari main.tsx lewat kombinasi statis+dinamis
+//    apa pun"). Kalau SRC_TULIS_KEY TIDAK ada di manifest padahal berkasnya
+//    ADA di sumber, itu hanya bisa berarti SALAH SATU dari (a) atau (c) —
+//    TIDAK PERNAH "kemungkinan besar tergabung statis" seperti versi lama
+//    gerbang ini asumsikan: (c) sudah dibedakan dari (a) di sini memakai
+//    hasil cek #1 (wasm di chunk entri) dan cek #2 (tanda tangan paket di
+//    chunk entri) di atas — keduanya berjalan atas SELURUH graf entri, bukan
+//    cuma SRC_TULIS_KEY, jadi keduanya menangkap (c) sama valid-nya baik
+//    tulis.ts tergabung lewat jalur-tulis.ts maupun lewat pengimpor statis
+//    lain mana pun yang melewati pintu itu sama sekali.
 // ---------------------------------------------------------------------------
 let byteChunkJsJalurTulis = 0;
 let byteWasmJalurTulis = 0;
@@ -145,46 +205,32 @@ if (entriTulis) {
     catatanJalurTulis = `chunk jalur tulis ditemukan sebagai entri dinamis manifest (${entriTulis.file}), TIDAK terjangkau statis dari entri — seperti seharusnya.`;
   }
 } else if (existsSync(TULIS_DI_SUMBER)) {
-  galat(
-    "client/src/lib/chain/tulis.ts ADA di sumber tapi TIDAK muncul sebagai entri dinamis di manifest.json — " +
-      "kemungkinan besar sudah tergabung statis ke chunk lain (Rollup tidak lagi memberinya chunk terpisah). " +
-      "Periksa apakah jalur-tulis.ts (atau pemakainya) masih memuatnya lewat await import(), bukan import statis.",
-  );
+  const tandaTergabungStatis = jsTercemar.length > 0 || wasmTakDikenalDiEntri.length > 0;
+  if (tandaTergabungStatis) {
+    // (c): sudah GAGAL lewat cek #1/#2 di atas dengan nama chunk tercemarnya
+    // masing-masing — di sini cuma menyambungkan kesimpulan itu ke tulis.ts.
+    catatanJalurTulis =
+      "client/src/lib/chain/tulis.ts ADA di sumber, TIDAK muncul sebagai entri dinamis manifest.json, DAN cek " +
+      "#1/#2 di atas menemukan tanda kontaminasi di chunk entri — kesimpulannya TERGABUNG STATIS (lihat pesan " +
+      "GAGAL di atas untuk nama chunk yang tercemar), bukan 'belum tersambung'.";
+  } else {
+    // (a): tidak ada tanda kontaminasi apa pun di seluruh chunk entri — satu
+    // -satunya kesimpulan jujur adalah tulis.ts belum terjangkau SAMA SEKALI
+    // dari graf entri (tidak ada pengimpor jalur-tulis.ts yang terjangkau
+    // entri), BUKAN "kemungkinan besar tergabung statis" seperti versi lama
+    // gerbang ini asumsikan begitu saja tanpa bukti.
+    catatanJalurTulis =
+      "client/src/lib/chain/tulis.ts ADA di sumber tapi BELUM TERJANGKAU SAMA SEKALI dari graf entri — tidak " +
+      "ada satu pun pengimpor jalur-tulis.ts (pintunya) yang terjangkau entri, jadi Rollup tidak pernah " +
+      "menjangkau `await import(\"./tulis\")` untuk diikuti, dan tidak menerbitkan chunk apa pun untuknya " +
+      "(cek #1/#2 di atas juga bersih dari tanda kontaminasi). Kedua angka di bawah karena itu 0 B, dan itu " +
+      "angka JUJUR untuk 'belum tersambung' — JANGAN dibaca sebagai 'jalur tulis gratis 0 byte'. Penyambungan " +
+      "UI menyusul di Task 8.";
+  }
 } else {
   catatanJalurTulis =
     "client/src/lib/chain/tulis.ts belum ada di pohon ini — seam belum dipakai (C-2b belum dikerjakan). " +
     "Kedua angka di bawah karena itu 0, dan itu angka yang JUJUR untuk keadaan hari ini, bukan 'belum diukur'.";
-}
-
-// ---------------------------------------------------------------------------
-// 3) Safety net independen: grep tanda tangan literal paket jalur tulis, TAPI
-//    hanya atas chunk yang TERJANGKAU STATIS DARI ENTRI — bukan lagi "sapu
-//    SEMUA .js di dist/public/assets" seperti sebelumnya.
-//
-//    Cacat versi lama (temuan spike C-2b): menyapu seluruh assets/ itu buta
-//    terhadap posisi chunk di graf. Begitu jalur tulis nyata ada di build
-//    SAMA SEKALI, chunk dinamisnya SENDIRI — yang justru sudah terisolasi
-//    dengan benar lewat `await import()` dan TIDAK terjangkau statis dari
-//    entri — memuat literal nama filenya sendiri ("ledger-v8",
-//    "midnight_ledger_wasm"), sehingga cek lama itu MERAH SELAMANYA persis
-//    pada kasus yang seharusnya LULUS. Predikat yang benar bukan "paket ini
-//    tidak boleh ada literal-nya di mana pun di dist" (itu mustahil dipenuhi
-//    chunk yang MEMANG isinya modul itu), melainkan predikat yang sama dengan
-//    cek #1 dan #2: "tidak boleh TERJANGKAU dari chunk entri".
-//
-//    Cek ini tetap independen dari cek #2 (yang mengunci ke SRC_TULIS_KEY
-//    persis): kalau tanda tangan paket jalur tulis pernah masuk ke SATU SAJA
-//    chunk yang terjangkau statis dari entri — lewat jalur mana pun, bukan
-//    hanya lewat tulis.ts — cek ini tetap menangkapnya sebagai lapis kedua.
-// ---------------------------------------------------------------------------
-const POLA_JALUR_TULIS = /ledger-v8|midnight-js-indexer-public-data-provider|midnight_ledger_wasm/;
-const chunkJsEntri = [...entriReachable].map((k) => manifest[k].file).filter((f) => f.endsWith(".js"));
-const jsTercemar = chunkJsEntri.filter((f) => POLA_JALUR_TULIS.test(readFileSync(path.join(DIST, f), "utf8")));
-if (jsTercemar.length > 0) {
-  galat(
-    `tanda tangan paket jalur tulis ditemukan di chunk TERJANGKAU STATIS DARI ENTRI: ${jsTercemar.join(", ")} — ` +
-      `ini kebocoran sungguhan (beda dari chunk dinamis jalur tulis yang memuat nama filenya sendiri secara sah).`,
-  );
 }
 
 // ---------------------------------------------------------------------------

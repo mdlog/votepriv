@@ -182,14 +182,22 @@ export function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
  * worker-nya yang sibuk. Hanya muat ulang halaman yang membuat ekstensi menyuntikkan
  * handle baru yang hidup.
  */
-function handleBasi(msg: string): boolean {
+// DIEKSPOR (Task 9) demi alasan yang sama persis dengan pickConnector di atas
+// (baris 139-146): sebelum midnight-wallet.test.ts diperluas Task 9, TIDAK
+// ADA satu uji pun yang menekan connectMidnightWallet() sama sekali, sehingga
+// keenam cabang di bawah ini (kedua klasifier plus keempat titik pelemparan
+// WalletError yang memakainya) bisa rusak diam-diam tanpa satu uji pun merah.
+// Ekspor ini membuat KEDUA regex bisa diuji LANGSUNG, per pola, tanpa
+// bergantung pada bisa/tidaknya menembus seluruh connectMidnightWallet() untuk
+// memicunya — sama sekali tidak mengubah perilaku produksi.
+export function handleBasi(msg: string): boolean {
   return /was shutdown|no longer be used|context invalidated|receiving end does not exist|could not establish connection/i.test(
     msg,
   );
 }
 
 /** Kedua pesan ini sama artinya: jaringannya yang keliru, bukan Anda. */
-function jaringanKeliru(msg: string): boolean {
+export function jaringanKeliru(msg: string): boolean {
   return /network id mismatch/i.test(msg) || /unsupported network id/i.test(msg);
 }
 

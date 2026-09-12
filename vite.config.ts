@@ -329,6 +329,11 @@ export default defineConfig(({ mode }) => {
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Task 9: gerbang batas bundel butuh ATRIBUSI PER-CHUNK yang sebenarnya,
+    // bukan penjumlahan tekstual atas seluruh dist/public/assets — lihat
+    // scripts/ukur-batas-bundel.mjs. manifest.json memetakan setiap modul
+    // entri/chunk-dinamis ke berkas keluarannya dan aset yang ia picu.
+    manifest: true,
   },
   server: {
     port: 3000,

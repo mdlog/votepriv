@@ -35,6 +35,8 @@ import { SucceedEntirely } from "@midnight-ntwrk/midnight-js-types";
 import {
   BallotPrivateStateId,
   emptyBallotPrivateState,
+  openingFor,
+  withCommitmentPath,
   withCredential,
   withEligibilityPath,
   withOpening,
@@ -45,8 +47,9 @@ import { MIDNIGHT_NETWORK_ENDPOINTS, type MidnightNetworkId } from "@pkgs/shared
 import type { WalletConnection } from "@/lib/midnight-wallet";
 import { PROOF_SERVER_PATH } from "@/lib/proof-server";
 import { buatAdaptorLace } from "./adaptor-lace";
-import { ambilJalurEligibility, bacaLedgerBallotTulis } from "./eligibility-tulis";
+import { ambilJalurCommitment, ambilJalurEligibility, bacaLedgerBallotTulis } from "./eligibility-tulis";
 import { kompilasiBallotBrowser } from "./kontrak-tulis";
+import { buatPrivateStateProviderIdb } from "./private-state-idb";
 import { rakitProvidersBallotBrowser, type ProvidersBallotBrowser } from "./providers-tulis";
 import { pastikanArtefakZkMurah } from "./zk-config-fetch";
 
@@ -226,5 +229,141 @@ export async function kirimSuara(params: ParamKirimSuara, wallet: WalletConnecti
       throw new GalatCastVote(e.message, e.kode, e.cause, mungkinSudahMasuk ?? e.mungkinSudahMasuk);
     }
     throw new GalatCastVote(e instanceof Error ? e.message : String(e), "TIDAK_DIKENAL", e, mungkinSudahMasuk);
+  }
+}
+
+/**
+ * Dilempar bila tidak ada opening (opsi + salt) tersimpan di private state
+ * lokal untuk ballot ini — satu-satunya sumber kebenaran yang bisa membuka
+ * commitment suara pada fase tally. Dipisah dari `GalatCastVote` generik
+ * karena UI (Task 8) HARUS bisa membedakan "belum dibuka" (state sementara
+ * yang wajar — coba lagi setelah memulihkan opening) dari "gagal membuka"
+ * (kesalahan transaksi/jaringan biasa). Menyamarkan keduanya di balik satu
+ * tipe galat berarti pemilih yang openingnya hilang melihat pesan yang sama
+ * dengan pemilih yang wallet-nya sekadar menolak — dan hanya salah satu dari
+ * keduanya punya jalan keluar (pulihkan dari cadangan).
+ */
+export class GalatOpeningHilang extends Error {
+  constructor(alamatBallot: string) {
+    super(
+      `Tidak ada opening tersimpan untuk ballot ${alamatBallot} di perangkat ini. ` +
+        "Bila Anda pernah mencoblos dari perangkat lain atau membersihkan data situs, " +
+        "pulihkan dari berkas cadangan yang diunduh saat mencoblos (pulihkanOpeningDariCadangan).",
+    );
+    this.name = "GalatOpeningHilang";
+  }
+}
+
+// Sama persis dengan NAMA_DB_PRIVATE_STATE di providers-tulis.ts — WAJIB
+// identik, sebab pulihkanOpeningDariCadangan menulis ke penyimpan yang sama
+// persis yang dibaca bukaSuara lewat rakitProvidersBallotBrowser. String
+// literal (bukan impor) karena providers-tulis.ts tidak mengekspornya —
+// duplikasi sengaja, bukan lupa disatukan (mengekspornya hanya untuk satu
+// pemakai lagi tidak sepadan dengan menambah permukaan ekspor modul itu).
+const NAMA_DB_PRIVATE_STATE = "votepriv-private-state";
+
+/**
+ * Menulis ulang opening dari berkas cadangan yang diunduh Task 8 saat
+ * `kirimSuara` (lewat `onOpeningTersimpan`). Jalur pemulihan ini yang membuat
+ * `tallyVote` masih mungkin dari PERANGKAT LAIN, atau dari perangkat yang
+ * sama setelah IndexedDB-nya dibersihkan di antara castVote dan tallyVote.
+ */
+export async function pulihkanOpeningDariCadangan(cadangan: CadanganOpening): Promise<void> {
+  const psp = buatPrivateStateProviderIdb<typeof BallotPrivateStateId, BallotPrivateState>(NAMA_DB_PRIVATE_STATE);
+  psp.setContractAddress(cadangan.alamatBallot);
+  const dasar = (await psp.get(BallotPrivateStateId)) ?? emptyBallotPrivateState(new Uint8Array(32));
+  const ps = withOpening(dasar, cadangan.alamatBallot, {
+    option: BigInt(cadangan.opsi),
+    salt: hexKeBytes(cadangan.saltHex),
+  });
+  await psp.set(BallotPrivateStateId, ps);
+}
+
+export interface ParamBukaSuara {
+  alamatBallot: string;
+  jaringan: MidnightNetworkId;
+  onStatus?: (tahap: TahapKirimSuara) => void;
+}
+
+export async function bukaSuara(params: ParamBukaSuara, wallet: WalletConnection): Promise<HasilKirimSuara> {
+  const { alamatBallot, jaringan, onStatus } = params;
+
+  try {
+    onStatus?.("menyiapkan-artefak");
+    try {
+      await pastikanArtefakZkMurah(zkBaseUrl(), "tallyVote");
+    } catch (e) {
+      throw new GalatCastVote("Artefak ZK untuk tallyVote tidak terbaca.", "ARTEFAK_ZK", e);
+    }
+
+    const providers = await siapkanProviders(wallet, jaringan);
+
+    // TANPA initialPrivateState: varian ini MEMBACA state tersimpan dan
+    // MELEMPAR bila kosong (midnight-js-contracts dist/index.mjs,
+    // setOrGetInitialPrivateState -> assertDefined) alih-alih menimpanya
+    // dengan private state kosong seperti varian yang dipakai kirimSuara.
+    // Menimpa di sini akan menghapus opening yang justru sedang dicari —
+    // lihat blok komentar G1 di kepala berkas untuk alasan urutan yang sama
+    // berlaku juga di sini, hanya arah akibatnya dibalik (di kirimSuara,
+    // urutan yang benar MENDAHULUI penulisan; di sini, opsi yang benar
+    // adalah TIDAK MENULIS sama sekali).
+    const ballot = await findDeployedContract(providers, {
+      compiledContract: kompilasiBallotBrowser(),
+      contractAddress: alamatBallot,
+      privateStateId: BallotPrivateStateId,
+    });
+
+    onStatus?.("menyusun-witness");
+    const psp = providers.privateStateProvider;
+    psp.setContractAddress(alamatBallot);
+    const psTersimpan = await psp.get(BallotPrivateStateId);
+    const opening = psTersimpan ? openingFor(psTersimpan, alamatBallot) : null;
+    // SATU guard gabungan, sengaja bukan dua `if` terpisah: psTersimpan null
+    // berarti belum pernah ada apa pun tersimpan untuk ballot ini; opening
+    // null berarti privat state ADA tapi openingnya sendiri tidak (mis. state
+    // lama dari format berbeda). Keduanya sama-sama "belum dibuka", bukan
+    // "gagal membuka" — inilah titik yang membedakan keduanya bagi pemanggil:
+    // galat spesifik dengan pesan yang menunjuk pemulihan, bukan melanjutkan
+    // ke witness dengan opening kosong lalu gagal generik di dalam proof.
+    // Digabung satu `if` (bukan dua guard berurutan) supaya TIDAK ADA jalan
+    // bagi salah satu cabang untuk diam-diam menutupi mutasi pada cabang lain
+    // — dua guard terpisah yang kebetulan menolak skenario uji yang sama
+    // berarti mem-nol-kan salah satunya tidak pernah membuat uji itu merah.
+    if (!psTersimpan || !opening) throw new GalatOpeningHilang(alamatBallot);
+
+    onStatus?.("membaca-eligibility");
+    // Nullifier di sini (vote_commitment) HANYA dipakai untuk mencari letak
+    // commitment di pohon — bukan nullifier yang dipakai castVote
+    // (vote_nullifier, dari ballotNonce+credential) dan bukan pula nullifier
+    // yang dipublikasikan tallyVote (tally_nullifier, dari salt saja).
+    const commitment = Ballot.pureCircuits.vote_commitment(opening.option, opening.salt);
+    const jalurCommitment = await ambilJalurCommitment(providers.publicDataProvider, alamatBallot, commitment);
+    await psp.set(BallotPrivateStateId, withCommitmentPath(psTersimpan, alamatBallot, jalurCommitment));
+
+    onStatus?.("membuat-proof");
+    onStatus?.("menyeimbangkan-wallet");
+    const r = await ballot.callTx.tallyVote();
+    onStatus?.("mengirim");
+
+    if (r.public.status !== SucceedEntirely) {
+      throw new GalatCastVote(
+        `tallyVote difinalisasi dengan status ${r.public.status}, bukan ${SucceedEntirely}.`,
+        "ON_CHAIN",
+      );
+    }
+    onStatus?.("menunggu-indexer");
+    // tally_nullifier(salt) — BUKAN vote_nullifier(ballotNonce, credential)
+    // yang dipakai castVote. Dua nullifier, dua Set on-chain terpisah
+    // (nullifiers vs tallyNullifiers), diturunkan dari dua rahasia yang
+    // berbeda; lihat ballot.compact untuk assert kedua fase.
+    const tnf = Ballot.pureCircuits.tally_nullifier(opening.salt);
+    return { txId: r.public.txId, nullifierHex: bytesKeHex(tnf) };
+  } catch (e) {
+    // GalatOpeningHilang TIDAK dibungkus ulang jadi GalatCastVote generik:
+    // Task 8 butuh bisa membedakan tipe ini secara spesifik (instanceof) untuk
+    // menampilkan teks pemulihan, bukan pesan kegagalan transaksi biasa.
+    if (e instanceof GalatOpeningHilang) throw e;
+    if (e instanceof GalatCastVote) throw e;
+    throw new GalatCastVote(e instanceof Error ? e.message : String(e), "TIDAK_DIKENAL", e);
   }
 }

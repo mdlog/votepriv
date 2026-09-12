@@ -6,8 +6,16 @@
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BallotPrivateState } from "@pkgs/contract/src/ballot-witnesses.js";
+import * as Ballot from "@pkgs/contract/src/managed/ballot/contract/index.js";
 import type { Ledger as LedgerBallot } from "@pkgs/contract/src/managed/ballot/contract/index.js";
 import type { WalletConnection } from "@/lib/midnight-wallet";
+
+// Dipakai HANYA oleh uji nullifierHex di bawah, untuk membandingkan hasil
+// bukaSuara() terhadap tally_nullifier(salt) yang dihitung independen di sini
+// — bukan disalin dari implementasi tulis.ts.
+function bytesKeHexUji(b: Uint8Array): string {
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
 
 const { setNetworkIdMock } = vi.hoisted(() => ({ setNetworkIdMock: vi.fn() }));
 vi.mock("@midnight-ntwrk/midnight-js-network-id", () => ({ setNetworkId: setNetworkIdMock, getNetworkId: () => "preview" }));
@@ -24,8 +32,9 @@ vi.mock("./zk-config-fetch", async (impor) => {
   return { ...asli, pastikanArtefakZkMurah: pastikanArtefakZkMurahMock };
 });
 
-const { ambilJalurEligibilityMock, bacaLedgerBallotTulisMock } = vi.hoisted(() => ({
+const { ambilJalurEligibilityMock, ambilJalurCommitmentMock, bacaLedgerBallotTulisMock } = vi.hoisted(() => ({
   ambilJalurEligibilityMock: vi.fn(async () => ({ leaf: new Uint8Array(32), path: [] })),
+  ambilJalurCommitmentMock: vi.fn(async () => ({ leaf: new Uint8Array(32), path: [] })),
   bacaLedgerBallotTulisMock: vi.fn<(pdp: unknown, alamat: string) => Promise<LedgerBallot>>(),
 }));
 vi.mock("./eligibility-tulis", async (impor) => {
@@ -33,6 +42,7 @@ vi.mock("./eligibility-tulis", async (impor) => {
   return {
     ...asli,
     ambilJalurEligibility: ambilJalurEligibilityMock,
+    ambilJalurCommitment: ambilJalurCommitmentMock,
     bacaLedgerBallotTulis: bacaLedgerBallotTulisMock,
   };
 });
@@ -47,7 +57,8 @@ const { buatAdaptorLaceMock } = vi.hoisted(() => ({
 }));
 vi.mock("./adaptor-lace", () => ({ buatAdaptorLace: buatAdaptorLaceMock }));
 
-const { kirimSuara, GalatCastVote } = await import("./tulis");
+const { kirimSuara, GalatCastVote, bukaSuara, pulihkanOpeningDariCadangan, GalatOpeningHilang } =
+  await import("./tulis");
 
 /**
  * Ledger sintetis LENGKAP (pola sama dengan eligibility-tulis.test.ts Task 3
@@ -270,5 +281,86 @@ describe("kirimSuara", () => {
     const { kirimSuara: kirimSuaraSegar } = await import("./tulis");
     await kirimSuaraSegar(paramDasar, walletContoh());
     expect(urutan).toEqual(["find", "set"]);
+  });
+});
+
+describe("bukaSuara", () => {
+  // "b".repeat(64), BUKAN "a".repeat(64): "a".repeat(64) adalah alamatBallot
+  // yang dipakai SELURUH describe("kirimSuara", ...) di atas, dan
+  // privateStateProvider di berkas ini adalah IndexedDB SUNGGUHAN
+  // (fake-indexeddb, tidak di-mock — sama seperti kirimSuara) yang bertahan
+  // untuk SELURUH proses uji ini, bukan di-reset per `it`. Memakai alamat yang
+  // sama akan mewarisi opening yang sudah ditulis test kirimSuara lain —
+  // tepat kebocoran yang ingin dihindari komentar brief Task 7 Step 1.
+  const paramDasar = { alamatBallot: "b".repeat(64), jaringan: "preview" as const };
+
+  it("findDeployedContract dipanggil TANPA initialPrivateState (tidak menimpa opening tersimpan)", async () => {
+    findDeployedContractMock.mockResolvedValue({
+      callTx: { tallyVote: vi.fn(async () => ({ public: { status: "SucceedEntirely", txId: "tx-1" } })) },
+    });
+    await expect(bukaSuara(paramDasar, walletContoh())).rejects.toBeInstanceOf(GalatOpeningHilang);
+    const opts = findDeployedContractMock.mock.calls.at(-1)?.[1];
+    expect(opts).not.toHaveProperty("initialPrivateState");
+  });
+
+  it("melempar GalatOpeningHilang (bukan GalatCastVote generik) bila tidak ada opening tersimpan", async () => {
+    findDeployedContractMock.mockResolvedValue({
+      callTx: { tallyVote: vi.fn(async () => ({ public: { status: "SucceedEntirely", txId: "tx-1" } })) },
+    });
+    const galat = await bukaSuara({ alamatBallot: "f".repeat(64), jaringan: "preview" }, walletContoh()).catch(
+      (e) => e,
+    );
+    expect(galat).toBeInstanceOf(GalatOpeningHilang);
+    expect(galat.name).toBe("GalatOpeningHilang");
+    expect(galat.message).toMatch(/pulihkan dari berkas cadangan/);
+  });
+
+  it("pulihkanOpeningDariCadangan menulis opening yang lalu terbaca bukaSuara", async () => {
+    await pulihkanOpeningDariCadangan({ alamatBallot: paramDasar.alamatBallot, opsi: 2, saltHex: "c".repeat(64) });
+    const tallyVote = vi.fn(async () => ({ public: { status: "SucceedEntirely", txId: "tx-tally" } }));
+    findDeployedContractMock.mockResolvedValue({ callTx: { tallyVote } });
+    const hasil = await bukaSuara(paramDasar, walletContoh());
+    expect(hasil.txId).toBe("tx-tally");
+    expect(tallyVote).toHaveBeenCalledTimes(1);
+  });
+
+  it("jalur commitment dibangun FRESH lewat ambilJalurCommitment, bukan ambilJalurEligibility", async () => {
+    await pulihkanOpeningDariCadangan({ alamatBallot: paramDasar.alamatBallot, opsi: 0, saltHex: "d".repeat(64) });
+    findDeployedContractMock.mockResolvedValue({
+      callTx: { tallyVote: vi.fn(async () => ({ public: { status: "SucceedEntirely", txId: "tx-2" } })) },
+    });
+    await bukaSuara(paramDasar, walletContoh());
+    expect(ambilJalurCommitmentMock).toHaveBeenCalled();
+    expect(ambilJalurEligibilityMock).not.toHaveBeenCalled();
+  });
+
+  it("status akhir bukan SucceedEntirely melempar GalatCastVote berkode ON_CHAIN", async () => {
+    await pulihkanOpeningDariCadangan({ alamatBallot: paramDasar.alamatBallot, opsi: 0, saltHex: "e".repeat(64) });
+    findDeployedContractMock.mockResolvedValue({
+      callTx: { tallyVote: vi.fn(async () => ({ public: { status: "FailFallible", txId: "tx-3" } })) },
+    });
+    await expect(bukaSuara(paramDasar, walletContoh())).rejects.toMatchObject({ kode: "ON_CHAIN" });
+  });
+
+  it("nullifierHex yang dikembalikan adalah tally_nullifier(salt) — BUKAN nullifier ala castVote", async () => {
+    // Guard mutasi WAJIB #1 (brief): "pakai nullifier castVote untuk
+    // tallyVote (alih-alih yang diturunkan dari salt)". Tidak satu pun uji
+    // di atas memeriksa NILAI nullifierHex (hanya txId) — tanpa uji ini,
+    // menukar tally_nullifier(salt) dengan vote_nullifier(...) pada baris
+    // return bukaSuara() lolos diam-diam.
+    const saltHex = "9".repeat(64);
+    await pulihkanOpeningDariCadangan({ alamatBallot: paramDasar.alamatBallot, opsi: 1, saltHex });
+    findDeployedContractMock.mockResolvedValue({
+      callTx: { tallyVote: vi.fn(async () => ({ public: { status: "SucceedEntirely", txId: "tx-nf" } })) },
+    });
+    const hasil = await bukaSuara(paramDasar, walletContoh());
+    const salt = new Uint8Array(32).fill(0x99);
+    const tnfDiharapkan = bytesKeHexUji(Ballot.pureCircuits.tally_nullifier(salt));
+    expect(hasil.nullifierHex).toBe(tnfDiharapkan);
+    // Bukti negatif: nullifier ala castVote (vote_nullifier) memakai
+    // ballotNonce+credential, bentuknya beda dari tally_nullifier(salt) untuk
+    // masukan yang sama — kedua nilai TIDAK BOLEH pernah kebetulan sama.
+    const nfCastVoteStyle = bytesKeHexUji(Ballot.pureCircuits.vote_nullifier(salt, salt));
+    expect(hasil.nullifierHex).not.toBe(nfCastVoteStyle);
   });
 });

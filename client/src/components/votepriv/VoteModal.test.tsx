@@ -372,6 +372,25 @@ describe("VoteModal — jalur tulis sungguhan (Task 8)", () => {
     expect(kirimSuaraMock).not.toHaveBeenCalled();
   });
 
+  it("menolak submit tanpa wallet TERSAMBUNG walau opsi dan credential VALID — guard 'connected/wallet' TERISOLASI dari guard credential (Task 8, gerbang mutasi G13)", async () => {
+    // Ditemukan lewat mutation testing: uji "menolak mengirim tanpa wallet"
+    // di describe "alur dasar (warisan)" TIDAK mengisi credential sama
+    // sekali, jadi menghapus guard `!connected || !wallet` tetap lolos HIJAU
+    // di sana — panggilan tetap tertahan guard REGEX credential (G1), bukan
+    // guard wallet yang sebenarnya diuji. Uji ini mengisi opsi DAN credential
+    // valid, sehingga HANYA guard wallet yang tersisa untuk diuji.
+    const onVote = vi.fn();
+    const { container } = render(
+      <VoteModal ballot={BALLOT} connected={false} wallet={null} jaringan="preview" proofStatus={null} onClose={() => {}} onVote={onVote} />,
+    );
+    fireEvent.click(within(container).getByText(BALLOT.options[0]));
+    fireEvent.change(container.querySelector('input[type="password"]')!, { target: { value: "9".repeat(64) } });
+    fireEvent.click(within(container).getByText(/Generate proof & vote/));
+    await kurasAsync();
+    expect(kirimSuaraMock).not.toHaveBeenCalled();
+    expect(onVote).not.toHaveBeenCalled();
+  });
+
   it("sukses: memanggil onVote dengan txRef dari hasil kirimSuara, txRef BUKAN null", async () => {
     kirimSuaraMock.mockResolvedValue({ txId: "tx-nyata-123", nullifierHex: "a".repeat(64) });
     const onVote = vi.fn();

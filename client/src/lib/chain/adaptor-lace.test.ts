@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WalletConnection } from "@/lib/midnight-wallet";
-import { buatAdaptorLace } from "./adaptor-lace";
+
+// `Transaction.deserialize` DIMOCK, bukan dipanggil sungguhan: parsing biner
+// wasm sungguhan butuh blob transaksi valid yang tidak murah dibuat di uji
+// unit. Yang diverifikasi di sini adalah bahwa ADAPTOR memanggilnya dengan
+// marker dan bytes yang BENAR, dan meneruskan hasilnya APA ADANYA — bukan
+// bahwa ledger-v8 sendiri bisa mem-parse byte sembarangan (di luar lingkup
+// berkas ini).
+const { deserializeMock } = vi.hoisted(() => ({ deserializeMock: vi.fn() }));
+vi.mock("@midnight-ntwrk/ledger-v8", () => ({
+  Transaction: { deserialize: deserializeMock },
+}));
+
+const { buatAdaptorLace } = await import("./adaptor-lace");
 
 function walletContoh(api: unknown, override: Partial<WalletConnection> = {}): WalletConnection {
   return {
@@ -15,6 +27,34 @@ function walletContoh(api: unknown, override: Partial<WalletConnection> = {}): W
   };
 }
 
+/**
+ * Meniru PERSIS bagaimana Lace sungguhan menolak masukan. Pesan dan jenis
+ * galat di bawah dikutip DARI PENGGUNA yang menekan vote pada ekstensi Lace
+ * sungguhan (bukan tebakan):
+ *
+ *   Unexpected error submitting scoped transaction '<unnamed>':
+ *   TypeError: The first argument must be one of type string, Buffer,
+ *   ArrayBuffer, Array, or Array-like Object. Received type object
+ *
+ * — ciri khas `Buffer.from(x)` menolak objek biasa. `hasilBila` HANYA
+ * dipanggil bila `x` LOLOS pemeriksaan bentuk itu, sama seperti Buffer.from
+ * sungguhan hanya memproses lebih lanjut bila masukannya array-like.
+ */
+function bufferFromPersis<T>(x: unknown, hasilBila: () => T): T {
+  const arrayLike =
+    typeof x === "string" ||
+    x instanceof Uint8Array ||
+    x instanceof ArrayBuffer ||
+    Array.isArray(x) ||
+    (typeof x === "object" && x !== null && typeof (x as { length?: unknown }).length === "number");
+  if (!arrayLike) {
+    throw new TypeError(
+      "The first argument must be one of type string, Buffer, ArrayBuffer, Array, or Array-like Object. Received type object",
+    );
+  }
+  return hasilBila();
+}
+
 describe("buatAdaptorLace", () => {
   it("melempar bila wallet tidak melaporkan coinPublicKey/encryptionPublicKey", () => {
     expect(() => buatAdaptorLace(walletContoh({}, { coinPublicKey: undefined }))).toThrow(/coinPublicKey/);
@@ -26,56 +66,132 @@ describe("buatAdaptorLace", () => {
     expect(dompet.getEncryptionPublicKey()).toBe("epk-hex");
   });
 
-  it("balanceTx mencoba balanceSealedTransaction LEBIH DULU", async () => {
-    const balanceSealedTransaction = vi.fn(async () => "tx-seimbang");
-    const balanceUnsealedTransaction = vi.fn(async () => "tidak-dipakai");
-    const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction, balanceUnsealedTransaction }));
-    await expect(dompet.balanceTx({} as never)).resolves.toBe("tx-seimbang");
-    expect(balanceSealedTransaction).toHaveBeenCalledTimes(1);
-    expect(balanceUnsealedTransaction).not.toHaveBeenCalled();
+  describe("balanceTx", () => {
+    it("mengoper BENTUK TERSERIALISASI ke wallet, bukan objek Transaction (reproduksi galat Lace sungguhan)", async () => {
+      const hasilSeimbang = { __sentinel: "tx-seimbang" };
+      const balanceSealedTransaction = vi.fn(async (tx: unknown) => bufferFromPersis(tx, () => hasilSeimbang));
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
+      const bytesTx = new Uint8Array([7, 7, 7]);
+      const tx = { serialize: () => bytesTx, identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilSeimbang);
+      expect(balanceSealedTransaction).toHaveBeenCalledWith(bytesTx, undefined);
+    });
+
+    it("mencoba balanceSealedTransaction LEBIH DULU", async () => {
+      const hasilSeimbang = { __sentinel: "tx-seimbang" };
+      const balanceSealedTransaction = vi.fn(async () => hasilSeimbang);
+      const balanceUnsealedTransaction = vi.fn(async () => ({ __sentinel: "tidak-dipakai" }));
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction, balanceUnsealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([1]), identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilSeimbang);
+      expect(balanceSealedTransaction).toHaveBeenCalledTimes(1);
+      expect(balanceUnsealedTransaction).not.toHaveBeenCalled();
+    });
+
+    it("jatuh ke balanceUnsealedTransaction bila balanceSealedTransaction tidak ada", async () => {
+      const hasilSeimbang = { __sentinel: "tx-seimbang-2" };
+      const balanceUnsealedTransaction = vi.fn(async () => hasilSeimbang);
+      const dompet = buatAdaptorLace(walletContoh({ balanceUnsealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([2]), identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilSeimbang);
+    });
+
+    it("melempar galat yang MENYEBUT NAMA METODE bila keduanya tidak ada", async () => {
+      const dompet = buatAdaptorLace(walletContoh({ metodeLain: () => {} }));
+      await expect(dompet.balanceTx({} as never)).rejects.toThrow(/balanceSealedTransaction/);
+    });
+
+    it("bentuk 'objek': memakai objek transaksi APA ADANYA bila wallet sudah mengembalikan objek", async () => {
+      const hasilObjek = { __sentinel: "objek-langsung" };
+      const balanceSealedTransaction = vi.fn(async () => hasilObjek);
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([3]), identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilObjek);
+      expect(deserializeMock).not.toHaveBeenCalled();
+    });
+
+    it("bentuk 'bytes': mendeserialisasi bila wallet mengembalikan Uint8Array", async () => {
+      deserializeMock.mockReset();
+      const bytesBalik = new Uint8Array([1, 2, 3]);
+      const hasilDeserialize = { __sentinel: "dari-bytes" };
+      deserializeMock.mockReturnValueOnce(hasilDeserialize);
+      const balanceSealedTransaction = vi.fn(async () => bytesBalik);
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([4]), identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilDeserialize);
+      expect(deserializeMock).toHaveBeenCalledWith("signature", "proof", "binding", bytesBalik);
+    });
+
+    it("bentuk 'hex': mendeserialisasi bila wallet mengembalikan string heksadesimal", async () => {
+      deserializeMock.mockReset();
+      const hasilDeserialize = { __sentinel: "dari-hex" };
+      deserializeMock.mockReturnValueOnce(hasilDeserialize);
+      const balanceSealedTransaction = vi.fn(async () => "0a0b0c");
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([5]), identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).resolves.toBe(hasilDeserialize);
+      expect(deserializeMock).toHaveBeenCalledTimes(1);
+      const bytesDikirim = deserializeMock.mock.calls[0][3] as Uint8Array;
+      expect(Array.from(bytesDikirim)).toEqual([0x0a, 0x0b, 0x0c]);
+    });
+
+    it("melempar galat yang jelas bila wallet mengembalikan bentuk yang tidak dikenali", async () => {
+      const balanceSealedTransaction = vi.fn(async () => 42);
+      const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
+      const tx = { serialize: () => new Uint8Array([6]), identifiers: () => [] };
+
+      await expect(dompet.balanceTx(tx as never)).rejects.toThrow(/bentuk yang tidak dikenali/);
+    });
   });
 
-  it("balanceTx jatuh ke balanceUnsealedTransaction bila balanceSealedTransaction tidak ada", async () => {
-    const balanceUnsealedTransaction = vi.fn(async () => "tx-seimbang-2");
-    const dompet = buatAdaptorLace(walletContoh({ balanceUnsealedTransaction }));
-    await expect(dompet.balanceTx({} as never)).resolves.toBe("tx-seimbang-2");
-  });
+  describe("submitTx", () => {
+    it("mengoper BENTUK TERSERIALISASI ke wallet, bukan objek Transaction (reproduksi PERSIS galat Lace sungguhan)", async () => {
+      const submitTransaction = vi.fn(async (tx: unknown) => bufferFromPersis(tx, () => "tx-id-dari-bytes"));
+      const bytesTx = new Uint8Array([9, 8, 7]);
+      const tx = { serialize: () => bytesTx, identifiers: () => [] };
+      const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
 
-  it("balanceTx melempar galat yang MENYEBUT NAMA METODE bila keduanya tidak ada", async () => {
-    const dompet = buatAdaptorLace(walletContoh({ metodeLain: () => {} }));
-    await expect(dompet.balanceTx({} as never)).rejects.toThrow(/balanceSealedTransaction/);
-  });
+      await expect(dompet.submitTx(tx as never)).resolves.toBe("tx-id-dari-bytes");
+      expect(submitTransaction).toHaveBeenCalledWith(bytesTx);
+    });
 
-  it("submitTx memakai nilai submitTransaction bila berupa string", async () => {
-    const submitTransaction = vi.fn(async () => "tx-id-dari-wallet");
-    const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
-    const tx = { identifiers: () => ["tidak-dipakai"] };
-    await expect(dompet.submitTx(tx as never)).resolves.toBe("tx-id-dari-wallet");
-  });
+    it("memakai nilai submitTransaction bila berupa string", async () => {
+      const submitTransaction = vi.fn(async () => "tx-id-dari-wallet");
+      const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
+      const tx = { identifiers: () => ["tidak-dipakai"], serialize: () => new Uint8Array([10]) };
+      await expect(dompet.submitTx(tx as never)).resolves.toBe("tx-id-dari-wallet");
+    });
 
-  it("submitTx jatuh ke tx.identifiers() bila submitTransaction mengembalikan undefined (Risiko #1)", async () => {
-    const submitTransaction = vi.fn(async () => undefined);
-    const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
-    const tx = { identifiers: () => ["id-lokal-1"] };
-    await expect(dompet.submitTx(tx as never)).resolves.toBe("id-lokal-1");
-  });
+    it("jatuh ke tx.identifiers() bila submitTransaction mengembalikan undefined (Risiko #1)", async () => {
+      const submitTransaction = vi.fn(async () => undefined);
+      const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
+      const tx = { identifiers: () => ["id-lokal-1"], serialize: () => new Uint8Array([11]) };
+      await expect(dompet.submitTx(tx as never)).resolves.toBe("id-lokal-1");
+    });
 
-  it("submitTx melempar bila submitTransaction undefined DAN identifiers() kosong", async () => {
-    const submitTransaction = vi.fn(async () => undefined);
-    const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
-    const tx = { identifiers: () => [] };
-    await expect(dompet.submitTx(tx as never)).rejects.toThrow(/tidak punya identifier/);
-  });
+    it("melempar bila submitTransaction undefined DAN identifiers() kosong", async () => {
+      const submitTransaction = vi.fn(async () => undefined);
+      const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
+      const tx = { identifiers: () => [], serialize: () => new Uint8Array([12]) };
+      await expect(dompet.submitTx(tx as never)).rejects.toThrow(/tidak punya identifier/);
+    });
 
-  it("submitTx melempar galat yang jelas bila wallet tidak punya submitTransaction sama sekali", async () => {
-    const dompet = buatAdaptorLace(walletContoh({}));
-    await expect(dompet.submitTx({ identifiers: () => [] } as never)).rejects.toThrow(/submitTransaction/);
-  });
+    it("melempar galat yang jelas bila wallet tidak punya submitTransaction sama sekali", async () => {
+      const dompet = buatAdaptorLace(walletContoh({}));
+      await expect(dompet.submitTx({ identifiers: () => [] } as never)).rejects.toThrow(/submitTransaction/);
+    });
 
-  it("submitTx jatuh ke identifiers() bila submitTransaction mengembalikan string KOSONG", async () => {
-    const submitTransaction = vi.fn(async () => "");
-    const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
-    const tx = { identifiers: () => ["id-lokal-2"] };
-    await expect(dompet.submitTx(tx as never)).resolves.toBe("id-lokal-2");
+    it("jatuh ke identifiers() bila submitTransaction mengembalikan string KOSONG", async () => {
+      const submitTransaction = vi.fn(async () => "");
+      const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
+      const tx = { identifiers: () => ["id-lokal-2"], serialize: () => new Uint8Array([13]) };
+      await expect(dompet.submitTx(tx as never)).resolves.toBe("id-lokal-2");
+    });
   });
 });

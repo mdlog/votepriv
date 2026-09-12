@@ -352,6 +352,41 @@ function vitePluginZkArtifacts(): Plugin {
   };
 }
 
+// Task 9 (C-2b) — KEPUTUSAN SADAR #2 soal berkas MANA yang disalin, dibawa
+// dari catatan jujur Task 2 (task-2-report.md): salinan sebelumnya menyalin
+// SELURUH direktori keys/ dan zkir/ apa adanya lewat fs.cpSync recursive,
+// termasuk registerVoters.prover (9.973.749 B — 40% dari total 25 MB
+// dist/public/zk) dan finalize.prover (22.970 B) yang TIDAK PERNAH dipakai
+// browser: lingkup jalur tulis C-2b hanya castVote+tallyVote (Keputusan #1
+// rencana C-2b) — registerVoters/finalize tetap lewat CLI (pkgs/cli),
+// yang membaca LANGSUNG dari pkgs/contract/src/managed/ballot, tidak pernah
+// dari dist/public/zk sama sekali.
+//
+// TIDAK bisa disederhanakan jadi "salin hanya castVote+tallyVote" untuk
+// KETIGA subfolder: findDeployedContract (midnight-js-contracts 4.0.4,
+// dist/index.mjs:1725, dipanggil kirimSuara/bukaSuara di tulis.ts) memanggil
+// zkConfigProvider.getVerifierKeys(getProvableCircuitIds()) — VERIFIER KEY
+// SELURUH sirkuit yang dideklarasikan kontrak (keempatnya: castVote,
+// tallyVote, finalize, registerVoters), untuk mencocokkan verifier key lokal
+// terhadap verifierKey on-chain (verifyContractState, dist/index.mjs:1690).
+// Bila salah satu verifier key hilang, findDeployedContract — dan karena itu
+// SELURUH castVote/tallyVote — gagal dengan ContractTypeError, sebelum satu
+// baris pun jalur tulis sungguhan berjalan. Verifier key kecil (2.119 B per
+// sirkuit, ~8,5 KB untuk keempatnya) sehingga menyalin semuanya di sini AMAN
+// dan tahan terhadap sirkuit baru di masa depan (dibaca dari isi direktori,
+// bukan daftar nama sirkuit yang di-hardcode).
+//
+// PROVER KEY dan ZKIR (.bzkir) sebaliknya HANYA dibutuhkan untuk sirkuit yang
+// BENAR-BENAR dipanggil (createUnprovenCallTxFromInitialStates memanggil
+// zkConfigProvider dengan `options.circuitId` TUNGGAL, dist/index.mjs:917-925)
+// — karena browser hanya pernah memanggil ballot.callTx.castVote()/tallyVote()
+// (tulis.ts:207,345), prover key + zkir registerVoters/finalize TIDAK PERNAH
+// diminta oleh kode ini. Berkas .zkir polos (non-.bzkir) tidak disalin sama
+// sekali, sirkuit apa pun: zk-config-fetch.ts::getZKIR() hanya pernah meminta
+// `${circuitId}.bzkir` (ZKIR_EXT), tidak ada satu titik kode pun yang meminta
+// ekstensi .zkir dari dist/public/zk.
+const SIRKUIT_TULIS_ZK = ["castVote", "tallyVote"] as const;
+
 /** Separuh produksi dari keputusan di atas — lihat komentar `vitePluginZkArtifacts`. */
 function vitePluginZkArtifactsBuild(): Plugin {
   const dirBallotManaged = path.resolve(import.meta.dirname, "pkgs", "contract", "src", "managed", "ballot");
@@ -360,10 +395,32 @@ function vitePluginZkArtifactsBuild(): Plugin {
     name: "votepriv-zk-artifacts-build",
     apply: "build",
     writeBundle() {
-      for (const sub of ["keys", "zkir"]) {
-        const tujuan = path.join(outDirPublic, "zk", "ballot", sub);
-        fs.mkdirSync(tujuan, { recursive: true });
-        fs.cpSync(path.join(dirBallotManaged, sub), tujuan, { recursive: true });
+      const tujuanKeys = path.join(outDirPublic, "zk", "ballot", "keys");
+      const tujuanZkir = path.join(outDirPublic, "zk", "ballot", "zkir");
+      fs.mkdirSync(tujuanKeys, { recursive: true });
+      fs.mkdirSync(tujuanZkir, { recursive: true });
+
+      // Verifier key: SEMUA sirkuit yang benar-benar ada di sumber, apa pun
+      // namanya — lihat blok komentar di atas untuk alasan findDeployedContract
+      // butuh keempatnya, bukan hanya castVote/tallyVote.
+      for (const berkas of fs.readdirSync(path.join(dirBallotManaged, "keys"))) {
+        if (berkas.endsWith(".verifier")) {
+          fs.copyFileSync(path.join(dirBallotManaged, "keys", berkas), path.join(tujuanKeys, berkas));
+        }
+      }
+
+      // Prover key + zkir: HANYA sirkuit jalur tulis (castVote, tallyVote).
+      // registerVoters.prover (9.973.749 B) dan finalize.prover sengaja TIDAK
+      // ikut — lihat blok komentar di atas.
+      for (const sirkuit of SIRKUIT_TULIS_ZK) {
+        fs.copyFileSync(
+          path.join(dirBallotManaged, "keys", `${sirkuit}.prover`),
+          path.join(tujuanKeys, `${sirkuit}.prover`),
+        );
+        fs.copyFileSync(
+          path.join(dirBallotManaged, "zkir", `${sirkuit}.bzkir`),
+          path.join(tujuanZkir, `${sirkuit}.bzkir`),
+        );
       }
     },
   };

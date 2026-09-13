@@ -122,7 +122,7 @@ describe("ambilJalurEligibility", () => {
     const pdp = providerDengan([stateSintetis()]);
     await expect(
       ambilJalurEligibility(pdp, "alamat-a", daun, { tunda, percobaan: 3, jedaMs: 1 }),
-    ).rejects.toThrow(/3 percobaan/);
+    ).rejects.toThrow(/3 attempts/);
     // 3 percobaan, tunda hanya di ANTARA percobaan (0 dan 1) — bukan setelah yang terakhir.
     expect(tunda).toHaveBeenCalledTimes(2);
   });
@@ -163,7 +163,7 @@ describe("ambilJalurEligibility", () => {
     const pdp = providerYangMenolak("indexer down");
     await expect(
       ambilJalurEligibility(pdp, "alamat-a", daun, { tunda: tundaInstan, percobaan: 3, jedaMs: 1 }),
-    ).rejects.toThrow(/Pembacaan indexer itu sendiri gagal/);
+    ).rejects.toThrow(/The indexer read itself failed/);
   });
 
   it("pesan galat menyebut KALAH BALAPAN (bukan galat indexer) bila pembacaan TERAKHIR berhasil walau percobaan sebelumnya sempat gagal", async () => {
@@ -171,7 +171,7 @@ describe("ambilJalurEligibility", () => {
     const pdp = providerCampuran(["tolak", stateSintetis(), stateSintetis()]);
     await expect(
       ambilJalurEligibility(pdp, "alamat-a", daun, { tunda: tundaInstan, percobaan: 3, jedaMs: 1 }),
-    ).rejects.toThrow(/kalah balapan/);
+    ).rejects.toThrow(/lost a race/);
   });
 });
 

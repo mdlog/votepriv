@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Check, Copy, Download, KeyRound, ShieldCheck, TriangleAlert, Upload, X } from "lucide-react";
 import { labelNomor } from "@/lib/chain/ke-ballot";
 import { muatJalurTulis } from "@/lib/chain/jalur-tulis";
+import { terjemahkanGalatRantai } from "@/lib/chain/pesan-rantai";
 import type { Ballot } from "./types";
 
 /**
@@ -108,7 +109,13 @@ export function RegisterModal({ ballot, onClose }: { ballot: Ballot; onClose: ()
         setStage("siap");
       } catch (e) {
         if (dibatalkan) return;
-        setPesanGalat(e instanceof Error ? e.message : String(e));
+        // terjemahkanGalatRantai: daftarkanDiriSendiri() ini adalah fungsi
+        // jalur tulis yang sama (tulis.ts, lewat muatJalurTulis()) yang
+        // dipakai VoteModal — bila ia pernah melempar galat berbentuk sama
+        // (assert kontrak terbungkus, atau invarian witness pkgs/contract),
+        // pesannya harus tetap ditutup di sini juga. Lihat komentar di
+        // VoteModal.tsx submit()/submitOpen() dan audit-bahasa-ui-2.md.
+        setPesanGalat(terjemahkanGalatRantai(e instanceof Error ? e.message : String(e)));
         setStage("gagal");
       }
     })();
@@ -159,7 +166,9 @@ export function RegisterModal({ ballot, onClose }: { ballot: Ballot; onClose: ()
       setStage("siap");
       toast.success("Credential restored", { description: "Showing the leaf for the restored credential below." });
     } catch (e) {
-      setGalatPulih(e instanceof Error ? e.message : String(e));
+      // terjemahkanGalatRantai: pulihkanKredensialDariCadangan() juga jalur
+      // tulis (tulis.ts) — sama alasannya dengan setPesanGalat di atas.
+      setGalatPulih(terjemahkanGalatRantai(e instanceof Error ? e.message : String(e)));
     } finally {
       setMemulihkan(false);
     }

@@ -28,12 +28,38 @@ import {
   jalurBerkasLeafDariArgv,
   periksaLeafSudahTerdaftar,
   validasiKuotaPendaftaran,
+  validasiLokalLaluSesi,
 } from "./leaf-file.ts";
 import { rakitProvidersBallot } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
 
-const sesi = await siapkanSesi();
+// Baca dan validasi berkas leaf (jalur dari argv, format hex 64 karakter,
+// duplikat internal DI DALAM berkas) DULU, SEBELUM siapkanSesi() (yang
+// meminta 24 kata seed dan mensinkronkan wallet — mahal dan interaktif).
+//
+// Kejadian lapangan: jalur berkas yang salah (ENOENT — lihat komentar
+// `bacaBerkasLeaf` di leaf-file.ts untuk sebabnya: skrip ini berjalan dari
+// cwd pkgs/cli/, bukan root repo) baru ketahuan SETELAH pengguna mengetik
+// seed dan wallet selesai sinkron, padahal membaca/mengurai berkas ini
+// sama sekali tidak butuh keduanya. `validasiLokalLaluSesi` (leaf-file.ts)
+// menegakkan urutan ini SECARA STRUKTURAL: `siapkanSesi` tidak pernah
+// tereksekusi bila `bacaBerkasLeaf` di bawah melempar.
+//
+// Galat format/duplikat (dari uraiBerkasLeaf, lewat bacaBerkasLeaf) sengaja
+// TIDAK ditangkap di sini — pola yang sama dengan validasiMetadata pada
+// deploy-ballot.ts: pesan galatnya sendiri (menyebut BARIS yang salah, atau
+// cwd+jalur absolut untuk ENOENT) sudah cukup menjelaskan.
+const jalurBerkas = jalurBerkasLeafDariArgv();
+console.log(`Membaca dan memvalidasi berkas leaf di "${jalurBerkas}" (belum menyentuh rantai, belum ada seed/wallet)...`);
+const { daftar, sesi } = await validasiLokalLaluSesi(
+  () => bacaBerkasLeaf(jalurBerkas),
+  () => siapkanSesi(),
+);
 const { config, log, ctx, kp } = sesi;
+log.info(
+  { jalurBerkas, jumlah: daftar.length },
+  "Berkas leaf valid secara format (hex 64 karakter, tanpa duplikat internal)",
+);
 
 const alamatBallotMentah = process.env.VOTEPRIV_BALLOT ?? bacaArtefak(config.networkId)?.ballot;
 if (alamatBallotMentah === undefined) {
@@ -44,16 +70,7 @@ if (alamatBallotMentah === undefined) {
   process.exit(1);
 }
 const alamatBallot = pastikanAlamatKontrak(alamatBallotMentah);
-
-const jalurBerkas = jalurBerkasLeafDariArgv();
-log.info({ jalurBerkas, alamatBallot }, "Membaca dan memvalidasi berkas leaf (belum menyentuh rantai)");
-
-// Format berkas + duplikat DI DALAM berkas: bacaBerkasLeaf (lewat
-// uraiBerkasLeaf) melempar dengan pesan yang menyebut BARIS mana yang salah.
-// Sengaja TIDAK ditangkap di sini — pola yang sama dengan validasiMetadata
-// pada deploy-ballot.ts: pesan galatnya sendiri sudah cukup menjelaskan.
-const daftar = bacaBerkasLeaf(jalurBerkas);
-log.info({ jumlah: daftar.length }, "Berkas leaf valid secara format (hex 64 karakter, tanpa duplikat internal)");
+log.info({ alamatBallot }, "Ballot target ditentukan — siap memvalidasi terhadap rantai");
 
 const rahasiaAdmin = kunciAdmin(ctx); // JANGAN PERNAH di-log
 const providersBallot = await rakitProvidersBallot(kp, "admin");

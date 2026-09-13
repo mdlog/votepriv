@@ -12,6 +12,7 @@ import {
   periksaLeafSudahTerdaftar,
   uraiBerkasLeaf,
   validasiKuotaPendaftaran,
+  validasiLokalLaluSesi,
   type FungsiDaftarkanVoter,
 } from "./leaf-file.ts";
 import type { BallotC } from "./kontrak.ts";
@@ -95,6 +96,84 @@ describe("bacaBerkasLeaf", () => {
   it("membungkus galat baca dengan jalurnya ketika berkas tidak ada", () => {
     const jalur = path.join(dirSementara(), "tidak-ada.txt");
     expect(() => bacaBerkasLeaf(jalur)).toThrow(new RegExp(jalur.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  });
+
+  // Regresi kejadian lapangan: `pnpm cli register-leaves pkgs/cli/leaves/x.txt`
+  // gagal ENOENT karena `pnpm --filter cli run` menjalankan skrip dengan cwd
+  // pkgs/cli/, sehingga jalur relatif (ditulis relatif ROOT repo) diam-diam
+  // resolve ke `pkgs/cli/pkgs/cli/leaves/x.txt`. Pesan LAMA hanya mengulang
+  // jalur mentah — tidak menunjukkan DI MANA ia sebenarnya mencari.
+  it("pesan ENOENT menyertakan cwd, jalur absolut (path.resolve), dan petunjuk pkgs/cli — tidak menebak lokasi", () => {
+    const jalur = path.join(dirSementara(), "tidak-ada-sungguhan.txt"); // sudah absolut (dirSementara pakai os.tmpdir())
+    let pesan = "";
+    try {
+      bacaBerkasLeaf(jalur);
+      throw new Error("bacaBerkasLeaf seharusnya melempar untuk berkas yang tidak ada");
+    } catch (e) {
+      pesan = (e as Error).message;
+    }
+    expect(pesan).toContain(process.cwd());
+    expect(pesan).toContain(jalur); // absolut, jadi sama dengan path.resolve(jalur)
+    expect(pesan).toContain(
+      "Skrip ini berjalan dari pkgs/cli — pakai jalur absolut, atau relatif terhadap direktori itu.",
+    );
+  });
+});
+
+// Regresi kejadian lapangan: register-leaves.ts memanggil siapkanSesi()
+// (prompt 24 kata seed + sinkronisasi wallet) SEBELUM membaca berkas leaf —
+// jalur berkas yang salah baru ketahuan SETELAH seed diketik dan wallet
+// selesai sinkron, padahal validasi berkas ini murni lokal (fs saja).
+describe("validasiLokalLaluSesi", () => {
+  const dirSementara = () => fs.mkdtempSync(path.join(os.tmpdir(), "votepriv-leaf-"));
+  const sesiPalsu = { tanda: "sesi-palsu" } as const;
+
+  it("(a) berkas leaf TIDAK ADA: melempar SEBELUM mulaiSesiFn (siapkanSesi) pernah dipanggil, pesan memuat cwd", async () => {
+    const jalur = path.join(dirSementara(), "tidak-ada.txt");
+    const panggilan: string[] = [];
+    const mulaiSesiPalsu = async () => {
+      panggilan.push("siapkanSesi");
+      return sesiPalsu;
+    };
+
+    await expect(validasiLokalLaluSesi(() => bacaBerkasLeaf(jalur), mulaiSesiPalsu)).rejects.toThrow(
+      new RegExp(`cwd: ${process.cwd().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    );
+    expect(panggilan).toEqual([]); // siapkanSesi TIDAK PERNAH dipanggil — bukan cuma "dipanggil belakangan"
+  });
+
+  it("(b) berkas ADA tapi hex rusak: juga melempar SEBELUM mulaiSesiFn (siapkanSesi) dipanggil", async () => {
+    const jalur = path.join(dirSementara(), "rusak.txt");
+    fs.writeFileSync(jalur, "bukan-hex-valid\n");
+    const panggilan: string[] = [];
+    const mulaiSesiPalsu = async () => {
+      panggilan.push("siapkanSesi");
+      return sesiPalsu;
+    };
+
+    await expect(validasiLokalLaluSesi(() => bacaBerkasLeaf(jalur), mulaiSesiPalsu)).rejects.toThrow(
+      /bukan leaf hex yang valid/,
+    );
+    expect(panggilan).toEqual([]);
+  });
+
+  it("berkas valid: mulaiSesiFn (siapkanSesi) dipanggil SETELAH validasi lokal lolos — urutan tercatat lewat mock", async () => {
+    const jalur = path.join(dirSementara(), "leaves.txt");
+    fs.writeFileSync(jalur, `${hexLeaf(1)}\n${hexLeaf(2)}\n`);
+    const panggilan: string[] = [];
+    const mulaiSesiPalsu = async () => {
+      panggilan.push("siapkanSesi");
+      return sesiPalsu;
+    };
+
+    const hasil = await validasiLokalLaluSesi(() => {
+      panggilan.push("bacaBerkasLeaf");
+      return bacaBerkasLeaf(jalur);
+    }, mulaiSesiPalsu);
+
+    expect(panggilan).toEqual(["bacaBerkasLeaf", "siapkanSesi"]);
+    expect(hasil.sesi).toBe(sesiPalsu);
+    expect(hasil.daftar.map((e) => e.hex)).toEqual([hexLeaf(1), hexLeaf(2)]);
   });
 });
 

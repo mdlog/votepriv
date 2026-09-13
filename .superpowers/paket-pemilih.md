@@ -1,6 +1,6 @@
 # Paket distribusi pemilih VotePriv — laporan
 
-HEAD saat dikerjakan: `6869667b0ab3e4bf871050a3db6c0a91aa5bcfd7` (tidak diubah — tidak ada commit baru dibuat sepanjang kerja ini, lihat bagian "Status akhir").
+HEAD saat mulai dikerjakan: `6869667b0ab3e4bf871050a3db6c0a91aa5bcfd7`. Seluruh isi laporan ini (ukuran image, keluaran skrip uji, dst.) diukur terhadap pohon pada HEAD tersebut, SEBELUM commit paket ini dibuat — lihat SHA commit sungguhan di bagian "Status akhir" di bawah.
 
 Berkas yang dihasilkan (semua baru, tidak ada satu pun berkas di `pkgs/`, `server/`, `client/src/`, `docs/`, atau `vite.config.ts` yang disentuh):
 
@@ -184,4 +184,6 @@ Sama persis dengan baseline yang dinyatakan di awal tugas ("klien 40 berkas/612 
 
 ## Status akhir
 
-Tidak ada commit dibuat. Sesuai instruksi ("Conventional Commits, tanpa trailer atribusi AI apa pun. Jangan commit di pohon merah. Jangan mengirim subagen"), commit diserahkan ke pemanggil tugas ini untuk direview dulu isinya (lima berkas baru di atas) sebelum di-commit — bukan gagal, sengaja tidak dieksekusi otomatis dalam laporan ini. Semua kontainer dan network `votepriv*` yang dibuat sepanjang pengujian sudah dibersihkan (`docker compose down`); tidak ada yang ditinggalkan berjalan.
+Pohon terverifikasi hijau (§5) pada HEAD `6869667`, baru kemudian di-commit: enam berkas di atas (`.dockerignore`, `Dockerfile`, `docker-compose.yml`, `README-VOTER.md`, `scripts/uji-paket-pemilih.sh`, `.superpowers/paket-pemilih.md`) di-*stage* satu per satu by name (bukan `git add -A`, supaya berkas untracked pra-existing yang tidak berkaitan — `pkgs/cli/leaves/` dan beberapa `.superpowers/*.md` riset lain — tidak ikut kebawa) dan di-commit sebagai satu Conventional Commit, tanpa trailer atribusi apa pun (mengikuti CLAUDE.md pengguna dan instruksi eksplisit tugas ini, yang keduanya konsisten dan mengungguli instruksi atribusi lain yang tampak di percakapan). SHA commit: `196c0ea3fcd9bccb73c6c4ad2aa680f08a243d21`, di atas HEAD sebelumnya `6869667`, di branch `feat/fondasi-kontrak`.
+
+Semua kontainer dan network `votepriv*` yang dibuat sepanjang pengujian sudah dibersihkan (`docker compose down`); tidak ada yang ditinggalkan berjalan. Port 5180 (tunnel produksi) dan container `midnight-proof-server` host tidak disentuh sepanjang pengerjaan (diverifikasi tetap `Up ... (healthy)` di akhir).

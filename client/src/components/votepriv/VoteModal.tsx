@@ -14,6 +14,7 @@ import {
 import { menerimaSuara, statusLabel } from "./ballot-status";
 import { labelNomor } from "@/lib/chain/ke-ballot";
 import { muatJalurTulis } from "@/lib/chain/jalur-tulis";
+import { terjemahkanGalatRantai } from "@/lib/chain/pesan-rantai";
 import { buatKredensialStoreIdb, kredensialKeHex, NAMA_DB_KREDENSIAL } from "@/lib/chain/kredensial-idb";
 import type { WalletConnection } from "@/lib/midnight-wallet";
 import type { MidnightNetworkId } from "@pkgs/shared/src/network-config";
@@ -342,7 +343,10 @@ export function VoteModal({
       // pada kasus ini akan ditolak "credential sudah dipakai", dan pemilih
       // harus tahu itu BUKAN tanda suaranya hilang.
       const mungkinSudahMasuk = (e as { mungkinSudahMasuk?: { nullifierHex: string } } | undefined)?.mungkinSudahMasuk;
-      setGalat({ pesan: e instanceof Error ? e.message : String(e), mungkinSudahMasuk });
+      // terjemahkanGalatRantai: CallTxFailedError (midnight-js) membungkus
+      // string assert Indonesia dari pkgs/contract/src/ballot.compact di
+      // dalam e.message apa adanya — lihat audit-bahasa-ui-2.md Kelas 1.
+      setGalat({ pesan: terjemahkanGalatRantai(e instanceof Error ? e.message : String(e)), mungkinSudahMasuk });
     }
   };
 
@@ -379,7 +383,9 @@ export function VoteModal({
       // ini tidak boleh mengimpornya (lihat komentar di kepala berkas soal
       // batas-bundel.test.ts).
       setOpeningHilang(e instanceof Error && e.name === "GalatOpeningHilang");
-      setOpenGalat(e instanceof Error ? e.message : String(e));
+      // terjemahkanGalatRantai: sama seperti setGalat di submit() di atas —
+      // lihat komentar di sana.
+      setOpenGalat(terjemahkanGalatRantai(e instanceof Error ? e.message : String(e)));
     }
   };
 

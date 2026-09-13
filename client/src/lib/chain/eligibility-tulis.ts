@@ -40,7 +40,11 @@ export async function bacaLedgerBallotTulis(
 ): Promise<LedgerBallotTulis> {
   const st = await publicDataProvider.queryContractState(alamat);
   if (st === null) {
-    throw new GalatEligibility(`Ballot ${alamat} belum terlihat di indexer.`);
+    // Pesan ini TEKS UI — sampai ke layar lewat setGalat/setOpenGalat
+    // (VoteModal.tsx) atau setPesanGalat (RegisterModal.tsx) tanpa
+    // pembungkus lain, persis seperti GalatCastVote/GalatOpeningHilang.
+    // Ditulis Inggris karena itu (audit-bahasa-ui-2.md Kelas 2).
+    throw new GalatEligibility(`Ballot ${alamat} is not visible on the indexer yet.`);
   }
   return ledgerBallot(st.data);
 }
@@ -83,11 +87,13 @@ async function ambilPathDenganRetry(
     }
     if (i < percobaan - 1) await tunda(jedaMs);
   }
+  // Pesan ini TEKS UI juga (sama alasannya dengan bacaLedgerBallotTulis di
+  // atas) — kedua cabang ditulis Inggris.
   throw new GalatEligibility(
-    `${namaUntukGalat} tidak ditemukan setelah ${percobaan} percobaan.` +
+    `${namaUntukGalat} was not found after ${percobaan} attempts.` +
       (galatTerakhir
-        ? ` Pembacaan indexer itu sendiri gagal: ${String(galatTerakhir)}. Ini soal konektivitas/indexer, bukan (belum tentu) data yang hilang.`
-        : " Seluruh pembacaan indexer BERHASIL, daun/commitment-nya saja belum tampak — kemungkinan besar kalah balapan dengan pendaftaran/suara baru yang menggeser root; bukan kegagalan jaringan."),
+        ? ` The indexer read itself failed: ${String(galatTerakhir)}. This points to connectivity/indexer trouble, not (necessarily) missing data.`
+        : " Every indexer read succeeded, but the leaf/commitment still hasn't shown up — most likely it lost a race against a newer registration/vote that moved the root; this is not a network failure."),
   );
 }
 

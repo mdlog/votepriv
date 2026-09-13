@@ -44,11 +44,41 @@
  *     rincian GalatRantai NYATA dari graphql.ts/dekode.ts/baca-rantai.ts (bukan
  *     GalatRantai karangan), WalletError, GalatOpeningHilang, adaptor-lace.
  *
- * BUKTI GUARD BISA MERAH: didokumentasikan di .superpowers/audit-bahasa-ui.md
- * — proofServerHop() dikembalikan sementara ke bentuk Indonesia lama, `pnpm
- * vitest run client/src/test/audit-bahasa-ui.test.tsx` dijalankan, hasilnya
- * MERAH pada uji "proofServerHop — tunnel", lalu dikembalikan.
+ * BUKTI GUARD BISA MERAH (audit #1): didokumentasikan di
+ * .superpowers/audit-bahasa-ui.md — proofServerHop() dikembalikan sementara ke
+ * bentuk Indonesia lama, `pnpm vitest run client/src/test/audit-bahasa-ui.test.tsx`
+ * dijalankan, hasilnya MERAH pada uji "proofServerHop — tunnel", lalu
+ * dikembalikan.
+ *
+ * ── AUDIT #2 (.superpowers/audit-bahasa-ui-2.md) — DUA KELAS yang audit #1
+ * di atas TIDAK menjangkau, karena keduanya bukan STRING TETAP di kode
+ * `lib/`/komponen, melainkan `e.message` mentah dari galat yang dilempar saat
+ * RUNTIME dan dirender apa adanya oleh `setGalat`/`setOpenGalat`/`setPesanGalat`:
+ *
+ *   - Kelas 1: `CallTxFailedError` (midnight-js) membungkus salah satu dari
+ *     23 string `assert(...)` di pkgs/contract/src/ballot.compact — SEMUANYA
+ *     Indonesia, dan TIDAK BOLEH diubah di sana (lihat keputusan tugas #2:
+ *     mengubahnya menuntut membangun ulang artefak ZK). Ditutup di klien lewat
+ *     `terjemahkanGalatRantai` (client/src/lib/chain/pesan-rantai.ts),
+ *     dipasang di KEDUA titik `setGalat`/`setOpenGalat` VoteModal.tsx dan di
+ *     `setPesanGalat`/`setGalatPulih` RegisterModal.tsx. Diuji langsung di
+ *     bawah (ke-23 pesan, dipaku ke nilai Inggris) DAN lewat render VoteModal
+ *     dengan pesan terbungkus ala CallTxFailedError.
+ *   - Kelas 2: galat jalur tulis biasa (bukan assert kontrak) di
+ *     client/src/lib/chain/eligibility-tulis.ts yang SEBELUMNYA Indonesia
+ *     (`GalatEligibility` — "ballot belum terlihat di indexer", "tidak
+ *     ditemukan setelah N percobaan" dengan dua varian sebab) — diperbaiki
+ *     LANGSUNG di sumbernya (bukan lewat pesan-rantai.ts), diuji di
+ *     eligibility-tulis.test.ts (pin diperbarui ke teks Inggris baru).
+ *
+ * GERBANG BUNDEL BAHASA (bagian D di bawah): dist/public/assets/*.js MEMANG
+ * memuat ke-23 string Indonesia (kontrak tergenerasi memuatnya — itu bukan
+ * bug, lihat komentar di sana), jadi gerbang itu TIDAK BISA mengassert
+ * ketiadaannya. Ia mengassert kehadiran ke-23 PADANAN INGGRIS sebagai bukti
+ * `terjemahkanGalatRantai` sungguh ikut ter-bundle dan tidak di-tree-shake.
  */
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import "fake-indexeddb/auto";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +89,7 @@ import { postGraphQL } from "@/lib/chain/graphql";
 import { dekodeRegistry } from "@/lib/chain/dekode";
 import { GalatOpeningHilang } from "@/lib/chain/tulis";
 import { buatAdaptorLace } from "@/lib/chain/adaptor-lace";
+import { terjemahkanGalatRantai } from "@/lib/chain/pesan-rantai";
 import type { WalletConnection } from "@/lib/midnight-wallet";
 import { describeWalletError, pickConnector, WalletError } from "@/lib/midnight-wallet";
 import type { ProofServerStatus } from "@/lib/proof-server";
@@ -446,6 +477,101 @@ describe("WalletError, adaptor-lace, GalatOpeningHilang — 'wallet tidak ada' d
   });
 });
 
+/**
+ * Tiruan bentuk `CallTxFailedError` (@midnight-ntwrk/midnight-js-contracts,
+ * kelas `TxFailedError` yang diwarisinya) — verifikasi langsung terhadap
+ * paket TERPASANG (dist/index.mjs, node_modules/.pnpm/@midnight-ntwrk+midnight-js-contracts@4.0.4):
+ * `this.message = JSON.stringify({circuitId, ...finalizedTxData}, ..., "\t")`.
+ * Bentuk NYATA `finalizedTxData` tidak direproduksi persis di sini (itu butuh
+ * testnet sungguhan) — yang dibuktikan cukup satu hal, dan itulah yang
+ * ditegakkan gerbang bahasa ini: string assert ada DI DALAM `e.message` yang
+ * dibungkus JSON lain, BUKAN sama dengan `e.message` itu sendiri. Itu alasan
+ * `terjemahkanGalatRantai` WAJIB mencocokkan lewat substring (`.includes`),
+ * bukan kesetaraan (`===`) — uji di bawah gagal (merah) bila pesan-rantai.ts
+ * pernah diam-diam diganti ke pencocokan `===`.
+ */
+function bungkusCallTxFailedError(pesanAssert: string): string {
+  return JSON.stringify(
+    { circuitId: "castVote", status: "FailFallible", description: `assert failed: '${pesanAssert}'` },
+    null,
+    "\t",
+  );
+}
+
+describe("terjemahkanGalatRantai — ke-23 pesan assert ballot.compact (audit #2, Kelas 1)", () => {
+  // Disalin MANUAL dari pkgs/contract/src/ballot.compact (grep `assert(`) dan
+  // dari padanan Inggris yang DIPAKU sebagai nilai literal di sini — BUKAN
+  // diimpor dari pesan-rantai.ts. Mengimpor peta yang sama yang diuji akan
+  // membuat uji ini tautologis (map[i] === map[i]): mengosongkan satu entri
+  // peta harus membuat BARIS INI merah, bukan ikut kosong bersamanya.
+  const KE_23_PESAN_ASSERT: ReadonlyArray<readonly [indonesia: string, inggris: string]> = [
+    ["Jumlah opsi harus 2 sampai 4", "This ballot must have between 2 and 4 options."],
+    [
+      "Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara",
+      "The vote-opening deadline must come after the voting deadline.",
+    ],
+    ["Jumlah pemilih yang berhak minimal 1", "This ballot needs at least 1 eligible voter."],
+    [
+      "Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)",
+      "This ballot allows more eligible voters than the maximum of 1,024.",
+    ],
+    ["Persentase kuorum tidak boleh melebihi 100", "The quorum percentage cannot be more than 100."],
+    ["Hanya admin yang boleh mendaftarkan pemilih", "Only this ballot's admin can register voters."],
+    ["Ballot sudah tidak dalam fase pemungutan suara", "This ballot is no longer in its voting phase."],
+    ["Pendaftaran ditutup setelah suara pertama masuk", "Registration closed as soon as the first vote was cast."],
+    ["Jumlah pendaftaran harus 1 sampai 8", "You can register between 1 and 8 voters at a time."],
+    [
+      "Melebihi eligibleCount yang ditetapkan ballot",
+      "This would exceed the number of eligible voters set for this ballot.",
+    ],
+    ["Batas waktu pemungutan suara sudah lewat", "The voting deadline for this ballot has passed."],
+    ["Ballot tidak sedang menerima suara", "This ballot is not currently accepting votes."],
+    ["Merkle path bukan untuk credential ini", "The submitted proof path does not match this credential."],
+    ["Anda tidak terdaftar sebagai pemilih pada ballot ini", "This credential is not registered for this ballot."],
+    ["Pilihan di luar opsi yang tersedia", "That option is not available on this ballot."],
+    ["Credential ini sudah dipakai memilih", "This credential has already voted on this ballot."],
+    ["Ballot sudah difinalisasi", "This ballot has already been finalized."],
+    ["Pemungutan suara masih berlangsung", "Voting is still open — votes can't be opened yet."],
+    ["Batas waktu pembukaan suara sudah lewat", "The deadline to open votes on this ballot has passed."],
+    ["Merkle path bukan untuk commitment ini", "The submitted proof path does not match this sealed vote."],
+    ["Commitment tidak ditemukan pada ballot ini", "This sealed vote was not found on this ballot."],
+    ["Suara ini sudah pernah dibuka", "This vote has already been opened."],
+    [
+      "Batas waktu pembukaan suara belum lewat",
+      "This ballot can't be finalized yet — the vote-opening deadline hasn't passed.",
+    ],
+  ];
+
+  it("mencakup PERSIS 23 pesan — bukan lebih sedikit, bukan duplikat", () => {
+    expect(KE_23_PESAN_ASSERT).toHaveLength(23);
+    expect(new Set(KE_23_PESAN_ASSERT.map(([indonesia]) => indonesia)).size).toBe(23);
+  });
+
+  it.each(KE_23_PESAN_ASSERT)(
+    "%s -> dipaku ke Inggris, walau dibungkus ala CallTxFailedError",
+    (indonesia, inggris) => {
+      // Pesan MENTAH (tanpa pembungkus) — pencocokan substring mencakup kasus
+      // pesan == kebutuhan persis, bukan hanya pesan yang lebih panjang.
+      expect(terjemahkanGalatRantai(indonesia)).toBe(inggris);
+      // Pesan TERBUNGKUS (bentuk sungguhan yang sampai ke setGalat) — DIPAKU
+      // ke nilai Inggris yang SAMA, bukan sekadar "berbeda dari masukan".
+      expect(terjemahkanGalatRantai(bungkusCallTxFailedError(indonesia))).toBe(inggris);
+      // Dan hasilnya sendiri tidak mengandung kata Indonesia terlarang.
+      expect(inggris).not.toMatch(POLA_INDONESIA);
+    },
+  );
+
+  it("pesan tak dikenal (bukan salah satu dari ke-23) lolos APA ADANYA — galat tak terduga tidak disembunyikan", () => {
+    const takDikenal = "Some future assert message this contract has never had before.";
+    expect(terjemahkanGalatRantai(takDikenal)).toBe(takDikenal);
+    // Dibungkus ala CallTxFailedError: masih tidak dikenal (substring-nya
+    // sendiri tidak cocok satu pun dari ke-23), jadi seluruh pesan terbungkus
+    // dikembalikan apa adanya — bukan dipotong jadi hanya bagian assert-nya.
+    const terbungkus = bungkusCallTxFailedError(takDikenal);
+    expect(terjemahkanGalatRantai(terbungkus)).toBe(terbungkus);
+  });
+});
+
 // ─── C. Render setiap komponen pada setiap kondisi yang dapat dicapai ──────
 
 describe("KeadaanRantai — kesembilan sebab, keadaan memuat, spanduk sebagian", () => {
@@ -568,6 +694,37 @@ describe("VoteModal — KELIMA cabang reach, keadaan gagal, tally-open, ballot t
     fireEvent.click(within(container).getByText("Generate proof & vote"));
     await waitFor(() => expect(screen.getByText("Something went wrong")).toBeTruthy());
     assertHanyaInggris(teksBody(), /proof server refused the request/, "VoteModal kegagalan generik");
+  });
+
+  it("kegagalan KONTRAK (CallTxFailedError membungkus assert Indonesia) dirender Inggris — audit #2 Kelas 1", async () => {
+    // Bentuk nyata: midnight-js melempar CallTxFailedError (lihat komentar
+    // bungkusCallTxFailedError di atas), tapi VoteModal hanya pernah membaca
+    // `e.message` (`e instanceof Error ? e.message : String(e)`) — Error
+    // biasa dengan message BERBENTUK SAMA (JSON yang memuat string assert)
+    // sudah cukup untuk membuktikan jalur terjemahkanGalatRantai bekerja,
+    // tanpa mengimpor CallTxFailedError sungguhan (yang menyeret
+    // midnight-js-contracts ke berkas uji ini).
+    const pesanKontrakTerbungkus = bungkusCallTxFailedError("Credential ini sudah dipakai memilih");
+    kirimSuaraMock.mockRejectedValue(Object.assign(new Error(pesanKontrakTerbungkus), { kode: "ON_CHAIN" }));
+    const { container } = renderVoteModal({
+      wallet: { address: "mn_shield-addr_test1x", networkId: "preview", connectorName: "lace", apiVersion: "4.0.1", api: {} },
+    });
+    fireEvent.change(within(container).getByPlaceholderText("64-character credential from registration"), {
+      target: { value: "a".repeat(64) },
+    });
+    fireEvent.click(within(container).getByText(BALLOT.options[0]));
+    fireEvent.click(within(container).getByText("Generate proof & vote"));
+    await waitFor(() => expect(screen.getByText("Something went wrong")).toBeTruthy());
+    // Dirender INGGRIS (paku yang SAMA dengan peta di pesan-rantai.ts dan
+    // dengan uji ke-23 di atas) — bukan pembungkus JSON mentah.
+    assertHanyaInggris(
+      teksBody(),
+      /This credential has already voted on this ballot\./,
+      "VoteModal galat kontrak (assert Indonesia terbungkus)",
+    );
+    // Dan secara eksplisit: string assert Indonesia ASLI tidak muncul sama
+    // sekali di DOM — bukan cuma lolos dari POLA_INDONESIA lewat kebetulan.
+    expect(teksBody()).not.toContain("Credential ini sudah dipakai memilih");
   });
 
   it("layar sukses mencoblos berbahasa Inggris pada proof server REMOTE (klaim BERSYARAT)", async () => {
@@ -795,5 +952,106 @@ describe("Home — KEENAM cabang privacy (title= sidebar), keadaan memuat, walle
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     const [judul, opsi] = toastError.mock.calls[0] as [string, { description?: string }];
     assertHanyaInggris(`${judul} ${opsi?.description ?? ""}`, /No Midnight wallet detected/, "Home wallet tidak ada");
+  });
+});
+
+// ─── D. Gerbang bundel bahasa — dist/public/assets/*.js (audit #2) ─────────
+//
+// BATASAN JUJUR, diminta eksplisit oleh brief audit #2: ke-23 string assert
+// INDONESIA tetap ADA di dist/public/assets/*.js pada build apa pun —
+// pkgs/contract/src/managed/ballot/contract (kontrak TERGENERASI, kode
+// pihak lain yang diimpor sebagai kotak hitam — lihat komentar
+// batas-bundel.test.ts soal batas kepercayaan yang sama) memuatnya apa
+// adanya di dalam circuit yang dikompilasi, dan itu BUKAN bug — lihat
+// keputusan tugas ini soal MENGAPA ballot.compact tidak boleh diubah.
+//
+// Gerbang ini karena itu TIDAK mengassert KETIADAAN Indonesia (assert itu
+// PASTI merah selamanya, untuk alasan yang tidak ada hubungannya dengan
+// regresi bahasa apa pun). Yang ia assert: ke-23 PADANAN INGGRIS dari
+// `terjemahkanGalatRantai` (pesan-rantai.ts) benar-benar IKUT ter-bundle,
+// bukan di-tree-shake sebagai kode "tidak terpakai" oleh Vite/Rollup — bukti
+// TIDAK LANGSUNG bahwa jalur terjemahan sungguh terpasang di build produksi,
+// bukan cuma lolos di lingkungan uji (jsdom, tanpa build sungguhan).
+//
+// INI BUKAN bukti bahwa terjemahan dipanggil pada waktu yang tepat dengan
+// argumen yang tepat, atau bahwa hasil renderiannya benar — bukti UNTUK ITU
+// ada di describe "terjemahkanGalatRantai" dan uji VoteModal "kegagalan
+// KONTRAK" di atas (render sungguhan lewat @testing-library/react, bukan
+// pemindaian teks bundel). Kedua jenis bukti saling melengkapi, tidak saling
+// menggantikan.
+//
+// LEWATI BERSIH bila dist/ belum dibangun — pola yang sama dengan
+// client/src/lib/chain/batas-bundel.test.ts (gerbang jalur SUMBER di sana
+// selalu jalan; gerbang jalur KELUARAN, seperti ini, butuh `pnpm build`
+// lebih dulu, sama seperti scripts/ukur-batas-bundel.mjs).
+//
+// path.resolve(process.cwd(), …), BUKAN `new URL(…, import.meta.url)`: berkas
+// ini di-render lewat pool jsdom (environmentMatchGlobs memetakan *.test.tsx
+// ke jsdom — lihat vitest.config.ts), dan di sana import.meta.url tidak bisa
+// dipakai sebagai basis URL relatif yang bisa diandalkan (dibuktikan empiris:
+// resolusi relatif darinya menghasilkan path `/@fs/...` yang salah, BUKAN
+// path repo sungguhan — persis masalah yang sudah didokumentasikan di
+// client/src/test/paritas-permukaan-rantai.test.tsx). `pnpm test`/`vitest run`
+// selalu dijalankan dari akar repo (lihat package.json), jadi process.cwd()
+// adalah dasar yang stabil di kedua pool (node MAUPUN jsdom).
+const AKAR_GERBANG_BUNDEL = path.resolve(process.cwd());
+const DIST_ASSETS = path.join(AKAR_GERBANG_BUNDEL, "dist", "public", "assets");
+const DIST_ADA = existsSync(DIST_ASSETS);
+
+describe.skipIf(!DIST_ADA)("D. Gerbang bundel bahasa — dist/public/assets/*.js (audit #2)", () => {
+  function teksSeluruhBundelJs(): string {
+    const berkas = readdirSync(DIST_ASSETS).filter((f) => f.endsWith(".js"));
+    expect(berkas.length, "tidak ada satu pun .js di dist/public/assets — build diduga rusak").toBeGreaterThan(0);
+    return berkas.map((f) => readFileSync(path.join(DIST_ASSETS, f), "utf8")).join("\n");
+  }
+
+  // Salinan INDEPENDEN dari padanan Inggris ke-23 assert — SENGAJA diketik
+  // ulang di sini, bukan diimpor dari describe "terjemahkanGalatRantai" di
+  // atas maupun dari pesan-rantai.ts: dua tempat yang mengetik ulang nilai
+  // yang sama secara independen saling menjaga dari salah ketik yang lolos
+  // tak teramati di satu tempat (pola yang sama dengan alasan uji ke-23 di
+  // atas TIDAK mengimpor peta internal pesan-rantai.ts).
+  const KE_23_PADANAN_INGGRIS = [
+    "This ballot must have between 2 and 4 options.",
+    "The vote-opening deadline must come after the voting deadline.",
+    "This ballot needs at least 1 eligible voter.",
+    "This ballot allows more eligible voters than the maximum of 1,024.",
+    "The quorum percentage cannot be more than 100.",
+    "Only this ballot's admin can register voters.",
+    "This ballot is no longer in its voting phase.",
+    "Registration closed as soon as the first vote was cast.",
+    "You can register between 1 and 8 voters at a time.",
+    "This would exceed the number of eligible voters set for this ballot.",
+    "The voting deadline for this ballot has passed.",
+    "This ballot is not currently accepting votes.",
+    "The submitted proof path does not match this credential.",
+    "This credential is not registered for this ballot.",
+    "That option is not available on this ballot.",
+    "This credential has already voted on this ballot.",
+    "This ballot has already been finalized.",
+    "Voting is still open — votes can't be opened yet.",
+    "The deadline to open votes on this ballot has passed.",
+    "The submitted proof path does not match this sealed vote.",
+    "This sealed vote was not found on this ballot.",
+    "This vote has already been opened.",
+    "This ballot can't be finalized yet — the vote-opening deadline hasn't passed.",
+  ] as const;
+
+  it("mencakup PERSIS 23 padanan — jaring rangkap terhadap salah ketik di uji ini sendiri", () => {
+    expect(KE_23_PADANAN_INGGRIS).toHaveLength(23);
+    expect(new Set(KE_23_PADANAN_INGGRIS).size).toBe(23);
+  });
+
+  it("ke-23 padanan Inggris terjemahkanGalatRantai ADA di bundel produksi (bukti tidak di-tree-shake)", () => {
+    const gabungan = teksSeluruhBundelJs();
+    const hilang = KE_23_PADANAN_INGGRIS.filter((s) => !gabungan.includes(s));
+    expect(hilang, `padanan Inggris hilang dari dist/public/assets/*.js: ${JSON.stringify(hilang)}`).toEqual([]);
+  });
+
+  it("padanan invarian witness pkgs/contract/ballot-witnesses.ts (di luar 23, lihat pesan-rantai.ts) juga ADA di bundel", () => {
+    const gabungan = teksSeluruhBundelJs();
+    expect(gabungan).toContain(
+      "This device is missing required local vote data for this ballot — try restoring your credential or vote backup file, then try again.",
+    );
   });
 });

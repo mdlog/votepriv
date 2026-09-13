@@ -1,7 +1,15 @@
 # Pendaftaran mandiri di browser — pemilih membuat credential-nya sendiri
 
-HEAD dasar: `7981887`. Cabang: `feat/fondasi-kontrak`. Belum ter-commit saat
-laporan ini ditulis (lihat catatan gerbang mutasi soal metode pemulihan).
+SHA commit: `613fbb1e46d1c9da0dd909f16883ab7e9abc3783` (feat(client):
+pendaftaran mandiri di browser — pemilih membuat credential sendiri, hanya
+leaf yang keluar). HEAD dasar sebelum tugas ini: `7981887`. Cabang:
+`feat/fondasi-kontrak`.
+
+Catatan metode gerbang mutasi (§6): pada SAAT mutasi dijalankan, berkas-berkas
+ini BELUM ter-commit — pemulihan antar-mutasi karena itu memakai `cp` dari
+salinan cadangan, BUKAN `git checkout --` (yang akan kembali ke `7981887`,
+sebelum tugas ini ada sama sekali, persis situasi yang sudah dicatat
+`.superpowers/register-leaves-cli.md`).
 
 ## 1. Mengapa (ringkas)
 
@@ -105,12 +113,9 @@ mana pun tanpa memaksa keadaan yang mustahil dicapai dari render.
 
 ## 6. GERBANG MUTASI — Tabel 2: hasil, satu per satu, `git checkout --` diganti `cp` backup
 
-Catatan metode: **belum ada commit** untuk berkas-berkas ini (baru vs.
-diubah, semuanya di working tree) — persis situasi yang dicatat
-`register-leaves-cli.md`. `git checkout -- <file>` akan mengembalikan ke
-HEAD `7981887` (SEBELUM tugas ini ada), bukan ke versi sebelum satu mutasi.
-Pemulihan memakai `cp` dari salinan cadangan per berkas, dijalankan SATU
-mutasi pada satu waktu, tidak pernah ditumpuk.
+(Metode pemulihan dijelaskan di catatan pembuka berkas ini.) Setiap baris di
+bawah: SATU mutasi, `pnpm test` (penuh), catat, `cp` pulihkan, baru lanjut —
+tidak pernah ditumpuk.
 
 | # | Mutasi | Titik panggil diserang | `pnpm test` | Uji yang jatuh |
 |---|---|---|---|---|

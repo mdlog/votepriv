@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Gerbang commit-msg: tolak trailer atribusi AI SEBELUM commit terbentuk.
+# Aturannya dari ~/.claude/CLAUDE.md pemilik repo — commit ditulis polos,
+# tanpa Co-Authored-By/Claude-Session/"Generated with". Riwayat 132 commit
+# pertama sempat memuatnya dan harus ditulis ulang sebelum push pertama
+# (scripts/tulis-ulang-tanpa-trailer.sh); hook ini memastikan itu sekali saja.
+#
+# Pasang: git config core.hooksPath .githooks
+set -euo pipefail
+PESAN="$1"
+if grep -qiE '^(Co-Authored-By:.*Claude|Claude-Session:|🤖 Generated with \[Claude Code\]|https://claude\.ai/code/session_)' "$PESAN"; then
+  echo "commit-msg: trailer atribusi AI ditolak. Hapus baris berikut lalu commit ulang:" >&2
+  grep -niE '^(Co-Authored-By:.*Claude|Claude-Session:|🤖 Generated with|https://claude\.ai/code/session_)' "$PESAN" | sed 's/^/  /' >&2
+  exit 1
+fi

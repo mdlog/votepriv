@@ -1,0 +1,31 @@
+# Lapis kedua gerbang trailer atribusi: hook commit-msg lokal (.githooks) hanya
+# berlaku di mesin yang memasangnya. Workflow ini memeriksa SETIAP commit yang
+# masuk lewat push atau PR, supaya tidak ada jalan memutar.
+name: periksa-commit
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tanpa-trailer-atribusi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 — SHA dipatok, sama dengan rilis-image.yml
+        with:
+          fetch-depth: 0
+      - name: Tolak trailer atribusi AI di pesan commit
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RENTANG="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            SEBELUM="${{ github.event.before }}"
+            if [ "$SEBELUM" = "0000000000000000000000000000000000000000" ]; then RENTANG="${{ github.sha }}"; else RENTANG="$SEBELUM..${{ github.sha }}"; fi
+          fi
+          BURUK=$(git log --format='%H %s%n%b' "$RENTANG" | grep -niE '^(Co-Authored-By:.*Claude|Claude-Session:|🤖 Generated with \[Claude Code\]|https://claude\.ai/code/session_)' || true)
+          if [ -n "$BURUK" ]; then
+            echo "::error::Trailer atribusi AI ditemukan di pesan commit:"; echo "$BURUK"; exit 1
+          fi
+          echo "Bersih: tidak ada trailer atribusi di $RENTANG"

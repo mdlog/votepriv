@@ -81,7 +81,39 @@ export function bacaArtefak(networkId: string, dir: string = DIR_ARTEFAK): Artef
   return JSON.parse(fs.readFileSync(p, "utf8")) as ArtefakDeploy;
 }
 
-/** Merge, bukan timpa: deploy ballot tidak boleh menghapus alamat registry. */
+/**
+ * Field yang DIMILIKI SATU ballot (lihat komentar `ArtefakDeploy.e2e` di
+ * atas, yang sudah menyebutnya). Begitu `ballot` berganti, keempat field ini
+ * TIDAK BOLEH ikut bertahan dari ballot lama — kalau tidak, credential/
+ * deadline/opsi milik ballot LAMA menempel ke ballot BARU yang belum tentu
+ * (atau belum pernah, mis. VOTEPRIV_TANPA_PENDAFTARAN=1) punya field itu
+ * sama sekali. `ballot` sendiri sengaja TIDAK masuk daftar ini: field itu
+ * diganti begitu saja oleh `tambahan.ballot` lewat spread di `tulisArtefak`,
+ * tidak perlu "dibuang" dulu dari yang lama.
+ */
+type FieldMilikBallot = "credentials" | "voteDeadline" | "tallyDeadline" | "options";
+
+/** Buang field milik-ballot (`FieldMilikBallot`) dari sebuah artefak; sisakan field yang memang boleh bertahan lintas-ganti-ballot (`networkId`, `ballot`, `registry`, `e2e`, `diperbarui`). */
+function tanpaFieldMilikBallot(a: ArtefakDeploy): Omit<ArtefakDeploy, FieldMilikBallot> {
+  const { credentials, voteDeadline, tallyDeadline, options, ...sisanya } = a;
+  return sisanya;
+}
+
+/**
+ * Merge, bukan timpa: deploy ballot tidak boleh menghapus alamat registry.
+ * Itu sebabnya `registry` dan namespace `e2e` selalu bertahan lintas
+ * pemanggilan — persis alasan merge ini ada.
+ *
+ * TAPI field milik-ballot (`FieldMilikBallot`) BUKAN bagian dari alasan itu.
+ * Begitu `tambahan.ballot` ada dan BEDA dari `ballot` yang sudah tersimpan
+ * (artinya: ballot baru saja berganti/redeploy), field-field itu dibuang
+ * dulu dari artefak lama sebelum di-merge — supaya ballot baru yang tidak
+ * menyebutkannya (mis. tidak pernah membuat credential) tidak diam-diam
+ * mewarisi credential/deadline/opsi milik ballot lama. Ballot yang SAMA,
+ * atau pemanggilan yang sama sekali tidak menyebut `ballot` (mis.
+ * deploy-registry.ts, atau tulisArtefak di bawah kunci `e2e`), tetap
+ * memakai merge polos seperti biasa.
+ */
 export function tulisArtefak(
   networkId: string,
   tambahan: Partial<ArtefakDeploy>,
@@ -89,7 +121,9 @@ export function tulisArtefak(
 ): ArtefakDeploy {
   fs.mkdirSync(dir, { recursive: true });
   const lama = bacaArtefak(networkId, dir) ?? { networkId };
-  const baru: ArtefakDeploy = { ...lama, ...tambahan, networkId, diperbarui: new Date().toISOString() };
+  const ballotBerganti = tambahan.ballot !== undefined && tambahan.ballot !== lama.ballot;
+  const dasar = ballotBerganti ? tanpaFieldMilikBallot(lama) : lama;
+  const baru: ArtefakDeploy = { ...dasar, ...tambahan, networkId, diperbarui: new Date().toISOString() };
   fs.writeFileSync(jalurArtefak(networkId, dir), `${JSON.stringify(baru, null, 2)}\n`, "utf8");
   return baru;
 }

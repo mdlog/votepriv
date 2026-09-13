@@ -1,5 +1,7 @@
 # `register-leaves`: penyelenggara menerima leaf, bukan membuat credential
 
+SHA commit: `455f7b635dc12959b0b53421aca5a1dc707620ec` (feat(cli): register-leaves — penyelenggara menerima leaf, bukan membuat credential).
+
 ## 1. Mengapa (ringkas)
 
 Sebelum perbaikan ini, `pkgs/cli/src/deploy-ballot.ts` memanggil `buatCredential()`

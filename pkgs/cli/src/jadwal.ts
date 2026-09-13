@@ -23,5 +23,12 @@
 // kecil dari biaya terburuk satu iterasi loop coblos (835 detik x 3 +
 // pra-loop 750 detik = 3255 detik) — regresi yang sama persis yang Fix
 // Round 3 perbaiki.
-export const MENIT_VOTE = 60;
-export const MENIT_TALLY = 95;
+//
+// 2026-09-13: dinaikkan 60/95 -> 120/180. Dua ballot berturut-turut kalah
+// balapan dengan sesi pengujian dari browser: jendela tally 35 menit habis
+// selagi perbaikan jalur tulis masih dikerjakan, dan satu suara sah tidak
+// pernah sempat dibuka. Arah naik AMAN terhadap invarian e2e di atas — batas
+// yang dijaga adalah batas BAWAH ("cukup waktu"), dan jendela pembukaan
+// suara (MENIT_TALLY - MENIT_VOTE) justru melebar dari 35 ke 60 menit.
+export const MENIT_VOTE = 120;
+export const MENIT_TALLY = 180;

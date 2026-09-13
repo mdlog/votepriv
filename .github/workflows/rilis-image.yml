@@ -158,5 +158,12 @@ jobs:
           else
             gh release create "$TAG" --title "$TAG" --notes-file "$CATATAN"
           fi
-          gh release upload "$TAG" "docker-compose.voter.filled.yml#docker-compose.voter.yml" --clobber
+          # Sintaks "berkas#label" HANYA mengubah label tampilan; nama UNDUHAN tetap
+          # nama berkas di disk. Rilis v0.1.0 pertama tampil sebagai
+          # docker-compose.voter.filled.yml sementara README menyuruh mengunduh
+          # docker-compose.voter.yml. Salin ke nama akhir dulu supaya nama unduhan
+          # persis sama dengan yang README dan catatan rilis sebutkan.
+          UNDUH_DIR="$(mktemp -d)"
+          cp docker-compose.voter.filled.yml "$UNDUH_DIR/docker-compose.voter.yml"
+          gh release upload "$TAG" "$UNDUH_DIR/docker-compose.voter.yml" --clobber
           gh release view "$TAG"

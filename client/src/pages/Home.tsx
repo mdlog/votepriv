@@ -20,6 +20,7 @@ import { CreateBallotModal } from "@/components/votepriv/CreateBallotModal";
 import { Docs } from "@/components/votepriv/Docs";
 import { LiveBallots } from "@/components/votepriv/LiveBallots";
 import { Overview } from "@/components/votepriv/Overview";
+import { RegisterModal } from "@/components/votepriv/RegisterModal";
 import { Results } from "@/components/votepriv/Results";
 import { VoteModal } from "@/components/votepriv/VoteModal";
 import type { JaringanAktif } from "@/lib/chain";
@@ -176,6 +177,11 @@ export default function Home() {
     };
   }, [proofStatus]);
   const [voteBallot, setVoteBallot] = useState<Ballot | null>(null);
+  // Pendaftaran mandiri (pemilih membuat credential-nya sendiri) — state
+  // TERPISAH dari voteBallot dengan sengaja: pendaftaran tidak butuh wallet
+  // maupun jaringan sama sekali (lihat RegisterModal.tsx), jadi tidak ada
+  // alasan menggabungkannya dengan mesin state milik VoteModal.
+  const [registerBallot, setRegisterBallot] = useState<Ballot | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -383,6 +389,7 @@ export default function Home() {
                   hasil={data.hasil}
                   ballots={ballots}
                   onVote={setVoteBallot}
+                  onRegister={setRegisterBallot}
                   onCreate={() => setCreateOpen(true)}
                   onSection={setSection}
                 />
@@ -391,6 +398,7 @@ export default function Home() {
                 <LiveBallots
                   ballots={ballots}
                   onVote={setVoteBallot}
+                  onRegister={setRegisterBallot}
                   onCreate={() => setCreateOpen(true)}
                   atas={<SpandukSebagian gagal={data.hasil.gagal} />}
                 />
@@ -432,6 +440,11 @@ export default function Home() {
           onVote={handleVote}
         />
       )}
+      {/* Tidak butuh guard `data.jaringan` seperti VoteModal: pendaftaran
+          mandiri tidak menyentuh wallet maupun jaringan sama sekali (lihat
+          RegisterModal.tsx) — registerBallot hanya pernah diset dari ballot
+          yang dirender pada fase `siap`, jadi ballot itu sendiri sudah valid. */}
+      {registerBallot && <RegisterModal ballot={registerBallot} onClose={() => setRegisterBallot(null)} />}
       {createOpen && <CreateBallotModal onClose={() => setCreateOpen(false)} />}
     </div>
   );

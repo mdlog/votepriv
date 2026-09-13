@@ -93,10 +93,12 @@ export function aktivitasTerbaru(hasil: HasilRantai, batas = 3): AksiTerbaca[] {
     .slice(0, batas);
 }
 
-export function Overview({ hasil, ballots, onVote, onCreate, onSection }: {
+export function Overview({ hasil, ballots, onVote, onRegister, onCreate, onSection }: {
   hasil: HasilRantai;
   ballots: Ballot[];
   onVote: (ballot: Ballot) => void;
+  /** Opsional — lihat komentar prop yang sama di BallotCard.tsx. */
+  onRegister?: (ballot: Ballot) => void;
   onCreate: () => void;
   onSection: (section: Section) => void;
 }) {
@@ -214,13 +216,13 @@ export function Overview({ hasil, ballots, onVote, onCreate, onSection }: {
             <div><p className="eyebrow">Make your voice count</p><h2>Featured ballot</h2></div>
             <button className="link-button" onClick={() => onSection("Live ballots")}>View all ballots <ArrowUpRight size={14} /></button>
           </div>
-          <BallotCard ballot={featured} onVote={onVote} />
+          <BallotCard ballot={featured} onVote={onVote} onRegister={onRegister} />
           <div className="section-heading lower-heading">
             <div><p className="eyebrow">Browse the room</p><h2>Active ballots</h2></div>
             <button className="link-button" onClick={() => onSection("Live ballots")}>Explore <ArrowUpRight size={14} /></button>
           </div>
           <div className="mini-ballot-list">
-            {ballots.slice(1, 3).map(ballot => <BallotCard key={ballot.id} ballot={ballot} onVote={onVote} />)}
+            {ballots.slice(1, 3).map(ballot => <BallotCard key={ballot.id} ballot={ballot} onVote={onVote} onRegister={onRegister} />)}
           </div>
         </div>
         <aside className="side-column">

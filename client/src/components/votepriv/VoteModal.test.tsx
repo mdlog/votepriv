@@ -1,7 +1,15 @@
+// WAJIB sebelum impor lain apa pun: describe("VoteModal — auto-isi credential", ...)
+// di bawah butuh IndexedDB SUNGGUHAN (bukan yang jsdom sediakan — atau tidak
+// sediakan sama sekali) untuk menyeeding store lewat kredensial-idb.ts, modul
+// yang sama yang VoteModal.tsx sendiri pakai (bukan lewat mock jalur tulis di
+// bawah — membaca credential mentah tidak butuh WASM, lihat komentar effect
+// auto-isi di VoteModal.tsx).
+import "fake-indexeddb/auto";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VoteModal, pesanPrivasiBuka, pesanPrivasiSuara, teksTahap, unduhCadangan } from "./VoteModal";
 import { ballotUji } from "@/test/fixture-ballot";
+import { buatKredensialStoreIdb, NAMA_DB_KREDENSIAL } from "@/lib/chain/kredensial-idb";
 import type { WalletConnection } from "@/lib/midnight-wallet";
 import type { ProofServerStatus } from "@/lib/proof-server";
 import type { CadanganOpening, TahapKirimSuara } from "@/lib/chain/tulis";
@@ -358,6 +366,66 @@ describe("VoteModal — alur dasar (warisan)", () => {
     expect(onVote).not.toHaveBeenCalled();
     expect(kirimSuaraMock).not.toHaveBeenCalled();
     expect(container.querySelector(".choice-list")).not.toBeNull();
+  });
+});
+
+describe("VoteModal — auto-isi credential dari store (kredensial-idb.ts)", () => {
+  it("GUARD MUTASI WAJIB #2 — mengisi kolom credential DAN menandai 'found on this device' ketika store punya credential untuk ballot ini", async () => {
+    const ballotAutofill = { ...BALLOT, id: "ballot-autofill-a" };
+    await buatKredensialStoreIdb(NAMA_DB_KREDENSIAL).simpanKredensial(ballotAutofill.id, new Uint8Array(32).fill(0xcd));
+    const { container } = render(
+      <VoteModal ballot={ballotAutofill} connected wallet={null} jaringan="preview" proofStatus={LOKAL_VERIFIED} onClose={() => {}} onVote={() => {}} />,
+    );
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("cd".repeat(32)));
+    // Berpasangan dengan assert nilai di atas — bukan sekadar "muncul di suatu tempat".
+    expect(container.textContent).toContain("found on this device");
+  });
+
+  it("TIDAK mengisi apa pun ketika store kosong untuk ballot ini, dan TIDAK menampilkan badge", async () => {
+    const ballotKosong = { ...BALLOT, id: "ballot-autofill-b" };
+    const { container } = render(
+      <VoteModal ballot={ballotKosong} connected wallet={null} jaringan="preview" proofStatus={LOKAL_VERIFIED} onClose={() => {}} onVote={() => {}} />,
+    );
+    await kurasAsync();
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+    // Berpasangan: kolom tetap kosong DAN placeholder tempel-manual tetap ada
+    // (jalur tempel manual tidak pernah dihapus oleh fitur auto-isi ini).
+    expect(input.value).toBe("");
+    expect(input.getAttribute("placeholder")).toBe("64-character credential from registration");
+    expect(container.textContent).not.toContain("found on this device");
+  });
+
+  it("mengetik manual menghapus badge 'found on this device', dan nilai yang diketik tidak ditimpa", async () => {
+    const ballotAutofill = { ...BALLOT, id: "ballot-autofill-c" };
+    await buatKredensialStoreIdb(NAMA_DB_KREDENSIAL).simpanKredensial(ballotAutofill.id, new Uint8Array(32).fill(0xef));
+    const { container } = render(
+      <VoteModal ballot={ballotAutofill} connected wallet={null} jaringan="preview" proofStatus={LOKAL_VERIFIED} onClose={() => {}} onVote={() => {}} />,
+    );
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("ef".repeat(32)));
+    fireEvent.change(input, { target: { value: "1".repeat(64) } });
+    expect(input.value).toBe("1".repeat(64));
+    expect(container.textContent).not.toContain("found on this device");
+  });
+
+  it("credential yang diautoisi tetap terkirim ke kirimSuara apa adanya", async () => {
+    const ballotAutofill = { ...BALLOT, id: "ballot-autofill-d" };
+    await buatKredensialStoreIdb(NAMA_DB_KREDENSIAL).simpanKredensial(ballotAutofill.id, new Uint8Array(32).fill(0x11));
+    kirimSuaraMock.mockResolvedValue({ txId: "tx-autofill", nullifierHex: "0".repeat(64) });
+    const { container } = render(
+      <VoteModal ballot={ballotAutofill} connected wallet={walletContoh()} jaringan="preview" proofStatus={null} onClose={() => {}} onVote={() => {}} />,
+    );
+    const input = container.querySelector('input[type="password"]') as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("11".repeat(32)));
+    fireEvent.click(within(container).getByText(ballotAutofill.options[0]));
+    fireEvent.click(within(container).getByText(/Generate proof & vote/));
+    await waitFor(() =>
+      expect(kirimSuaraMock).toHaveBeenCalledWith(
+        expect.objectContaining({ credentialHex: "11".repeat(32) }),
+        expect.anything(),
+      ),
+    );
   });
 });
 

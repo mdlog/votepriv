@@ -3,6 +3,7 @@ import {
   BATAS_ATAS_TUTUP_SEGERA_MS,
   ambangTutupSegeraMs,
   keadaanHasil,
+  menerimaPendaftaran,
   menerimaSuara,
   statusLabel,
   statusTag,
@@ -290,5 +291,25 @@ describe("keadaanHasil — JEBAKAN 4", () => {
     expect(terlihat).toEqual(
       new Set<KeadaanHasil>(["ada-hasil", "tersegel", "menunggu-pembukaan", "tidak-ada-yang-dibuka"]),
     );
+  });
+});
+
+describe("menerimaPendaftaran", () => {
+  it("benar ketika votes 0 dan registered belum mencapai eligible", () => {
+    expect(menerimaPendaftaran({ votes: 0, registered: 2, eligible: 3 })).toBe(true);
+  });
+
+  it("salah begitu votes bukan 0 — pendaftaran menutup PERMANEN, bukan sementara", () => {
+    expect(menerimaPendaftaran({ votes: 1, registered: 0, eligible: 3 })).toBe(false);
+    expect(menerimaPendaftaran({ votes: 250, registered: 0, eligible: 3 })).toBe(false);
+  });
+
+  it("salah ketika registered sudah mencapai (bukan hanya melebihi) eligible", () => {
+    expect(menerimaPendaftaran({ votes: 0, registered: 3, eligible: 3 })).toBe(false);
+    expect(menerimaPendaftaran({ votes: 0, registered: 4, eligible: 3 })).toBe(false);
+  });
+
+  it("benar pada tepi registered === eligible - 1 (satu slot tersisa)", () => {
+    expect(menerimaPendaftaran({ votes: 0, registered: 2, eligible: 3 })).toBe(true);
   });
 });

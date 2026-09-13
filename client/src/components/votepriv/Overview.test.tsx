@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Overview, aktivitasTerbaru, detailAksi, labelAksi, toneAksi } from "./Overview";
 import { ballotUji } from "@/test/fixture-ballot";
 import type { AksiTerbaca, BallotTerbaca, HasilRantai } from "@/lib/chain";
@@ -298,5 +298,24 @@ describe("Overview — Recent activity", () => {
       />,
     );
     expect(container.querySelector(".activity-check")).toBeNull();
+  });
+});
+
+describe("Overview — onRegister", () => {
+  it("meneruskan onRegister apa adanya ke BallotCard unggulan", () => {
+    const onRegister = vi.fn();
+    const bisaDaftar = ballotUji({ id: "e1", votes: 0, registered: 1, eligible: 3, status: "live" });
+    const { getByText } = render(
+      <Overview
+        hasil={hasilUji({ registry: { count: 1, alamat: ["e1"], aksi: [] } })}
+        ballots={[bisaDaftar]}
+        onVote={() => {}}
+        onRegister={onRegister}
+        onCreate={() => {}}
+        onSection={() => {}}
+      />,
+    );
+    getByText(/Register to vote/).closest("button")!.click();
+    expect(onRegister).toHaveBeenCalledWith(bisaDaftar);
   });
 });

@@ -103,4 +103,66 @@ describe("tulisArtefak", () => {
     expect(hasil?.e2e?.options).toEqual(["opsi e2e A", "opsi e2e B", "opsi e2e C"]);
     expect(hasil?.e2e?.credentials).toEqual(["d1".repeat(32), "d2".repeat(32), "d3".repeat(32)]);
   });
+
+  // Regresi kejadian lapangan: VOTEPRIV_TANPA_PENDAFTARAN=1 +
+  // VOTEPRIV_DEPLOY_ULANG=1 men-deploy ballot BARU tanpa credential, tapi
+  // artefak sesudahnya tetap memuat tiga `credentials` milik ballot LAMA —
+  // sidik jarinya identik dengan yang lama, jadi bukan credential baru.
+  // Sebabnya: merge tulisArtefak per-PANGGILAN (di atas) tidak membedakan
+  // "field milik ballot" dari "field lintas-ballot" — tidak menyebut
+  // `credentials` di panggilan baru berarti `credentials` LAMA bertahan.
+  describe("field milik-ballot (credentials/voteDeadline/tallyDeadline/options) saat ballot BERGANTI", () => {
+    it("TIDAK ikut ke ballot baru walau panggilan baru tidak menyebutnya — deteksi via `in`, bukan cuma `undefined`", () => {
+      const dir = dirSementara();
+      tulisArtefak(
+        "preview",
+        {
+          ballot: "aa".repeat(32),
+          voteDeadline: "1000",
+          tallyDeadline: "2000",
+          options: ["opsi lama A", "opsi lama B"],
+          credentials: ["c1".repeat(32), "c2".repeat(32), "c3".repeat(32)],
+        },
+        dir,
+      );
+
+      // Ballot BARU (redeploy), TIDAK menyebut credentials/deadline/options
+      // sama sekali — persis pola VOTEPRIV_TANPA_PENDAFTARAN=1.
+      const hasil = tulisArtefak("preview", { ballot: "bb".repeat(32) }, dir);
+
+      expect(hasil.ballot).toBe("bb".repeat(32));
+      expect("credentials" in hasil).toBe(false);
+      expect("voteDeadline" in hasil).toBe(false);
+      expect("tallyDeadline" in hasil).toBe(false);
+      expect("options" in hasil).toBe(false);
+    });
+
+    it("registry TETAP bertahan lintas pergantian ballot (itu alasan merge ada — perbaikan field milik-ballot tidak boleh merusaknya)", () => {
+      const dir = dirSementara();
+      tulisArtefak("preview", { registry: "aa".repeat(32), ballot: "bb".repeat(32) }, dir);
+
+      const hasil = tulisArtefak("preview", { ballot: "cc".repeat(32) }, dir);
+
+      expect(hasil.registry).toBe("aa".repeat(32));
+      expect(hasil.ballot).toBe("cc".repeat(32));
+    });
+
+    it("ballot SAMA: perilaku merge lama dipertahankan — credentials ballot yang sedang aktif tidak terhapus hanya karena satu panggilan tidak menyebutnya", () => {
+      const dir = dirSementara();
+      tulisArtefak(
+        "preview",
+        {
+          ballot: "aa".repeat(32),
+          credentials: ["c1".repeat(32), "c2".repeat(32), "c3".repeat(32)],
+        },
+        dir,
+      );
+
+      // Ballot SAMA persis — mis. panggilan lain yang cuma memperbarui registry.
+      const hasil = tulisArtefak("preview", { ballot: "aa".repeat(32), registry: "ff".repeat(32) }, dir);
+
+      expect(hasil.credentials).toEqual(["c1".repeat(32), "c2".repeat(32), "c3".repeat(32)]);
+      expect(hasil.registry).toBe("ff".repeat(32));
+    });
+  });
 });

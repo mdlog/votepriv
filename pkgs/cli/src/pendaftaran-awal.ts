@@ -66,13 +66,23 @@ export function siapkanPemilihAwal(
 }
 
 /**
- * Bentuk field `credentials` untuk artefak — objek KOSONG (bukan
- * `{ credentials: undefined }`) ketika argumennya `undefined`, sehingga
- * `"credentials" in artefak` bernilai `false`, bukan sekadar `undefined`
- * (yang JSON.stringify pun sebenarnya sudah menghilangkan — tapi field ini
- * dibuat eksplisit SUPAYA tidak ada jalur yang tidak sengaja membaca
- * `artefak.credentials` sebagai array kosong atau semacamnya pada ballot
- * yang di-deploy lewat VOTEPRIV_TANPA_PENDAFTARAN=1).
+ * Bentuk field `credentials` pada objek `tambahan` yang dikirim ke
+ * `tulisArtefak` — objek KOSONG (bukan `{ credentials: undefined }`) ketika
+ * argumennya `undefined`, sehingga `"credentials" in tambahan` bernilai
+ * `false` PADA OBJEK INI (yang JSON.stringify pun sebenarnya sudah
+ * menghilangkan — tapi field ini dibuat eksplisit SUPAYA tidak ada jalur
+ * yang tidak sengaja membaca `tambahan.credentials` sebagai array kosong
+ * atau semacamnya pada ballot yang di-deploy lewat
+ * VOTEPRIV_TANPA_PENDAFTARAN=1).
+ *
+ * PENTING, batas tanggung jawab: fungsi ini TIDAK menjamin apa pun soal
+ * artefak yang akhirnya tersimpan di berkas — itu tanggung jawab
+ * `tulisArtefak`. Objek kosong dari sini hanya berarti "`credentials` tidak
+ * disebut di panggilan ini"; apakah `credentials` LAMA lantas terhapus atau
+ * bertahan di artefak akhir bergantung sepenuhnya pada apakah `ballot` yang
+ * dikirim berbeda dari yang tersimpan (lihat `FieldMilikBallot` di
+ * artefak.ts). Sebelum guard itu ada, objek kosong ini tetap tertimpa-gabung
+ * dengan `credentials` ballot LAMA oleh merge polos `tulisArtefak`.
  *
  * Dipakai lewat SPREAD (`...bentukFieldCredentials(...)`) tepat di titik
  * `tulisArtefak` pada deploy-ballot.ts, supaya bentuk objek literal

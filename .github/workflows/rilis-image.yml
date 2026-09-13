@@ -136,22 +136,22 @@ jobs:
           # (backtick di bawah SENGAJA literal — format inline-code Markdown
           # untuk catatan rilis, bukan percobaan command substitution.)
           {
-            printf '%s\n' '## Image yang dapat diverifikasi'
+            printf '%s\n' '## Verifiable image'
             printf '\n'
             printf -- '- Image (digest): `%s`\n' "$IMAGE_DIGEST_REF"
-            printf -- '- Commit sumber: `%s`\n' "$GITHUB_SHA"
-            printf -- '- Dibangun oleh run: %s\n' "$RUN_URL"
+            printf -- '- Source commit: `%s`\n' "$GITHUB_SHA"
+            printf -- '- Built by run: %s\n' "$RUN_URL"
             printf '\n'
-            printf '%s\n' 'Unduh `docker-compose.voter.yml` dari Assets di bawah, lalu jalankan:'
+            printf '%s\n' 'Download `docker-compose.voter.yml` from the Assets below, then run:'
             printf '\n'
             printf '%s\n' '```'
             printf '%s\n' 'docker compose -f docker-compose.voter.yml up'
             printf '%s\n' '```'
             printf '\n'
-            printf '%s\n' 'lalu buka http://localhost:5300. Lihat bagian "How to verify what'
-            printf '%s\n' 'you are running" di README-VOTER.md (repo sumber) untuk cara'
-            printf '%s\n' 'mencocokkan digest di atas dengan attestation provenance CI'
-            printf '%s\n' 'sebelum menjalankannya.'
+            printf '%s\n' 'then open http://localhost:5300. See "How to verify what you are'
+            printf '%s\n' 'running" in README-VOTER.md (source repo) for how to match the'
+            printf '%s\n' 'digest above against the CI provenance attestation before'
+            printf '%s\n' 'running it.'
           } > "$CATATAN"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" --notes-file "$CATATAN"

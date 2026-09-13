@@ -83,6 +83,8 @@ import "fake-indexeddb/auto";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { KATA_TERLARANG } from "shared";
+
 import { GalatRantai, bacaRantai } from "@/lib/chain";
 import type { HasilRantai, JaringanAktif, SebabGalatRantai } from "@/lib/chain";
 import { postGraphQL } from "@/lib/chain/graphql";
@@ -170,15 +172,18 @@ afterEach(() => {
 });
 
 // ─── A. Daftar kata Indonesia yang tidak mungkin muncul di UI Inggris ──────
-const KATA_TERLARANG = [
-  "yang", "dan", "atau", "tidak", "bukan", "belum", "sudah", "akan", "juga",
-  "dengan", "untuk", "dari", "pada", "adalah", "dapat", "kembali",
-  "perangkat", "mesin", "pemilih", "suara", "jaringan", "sebab", "kesalahan",
-  "kegagalan", "keberhasilan", "pilihan", "disajikan", "dikirim",
-  "terverifikasi", "terjangkau", "konfigurasi", "tersambung", "terhubung",
-  "kredensial", "menunggu", "hilang", "silakan", "mohon", "peringatan",
-  "menampilkan", "memilih", "coba lagi", "gagal", "berhasil",
-];
+//
+// KATA_TERLARANG sendiri kini hidup di paket `shared`
+// (pkgs/shared/src/bahasa-metadata.ts) — audit-bahasa-metadata memindahkannya
+// ke sana supaya gerbang CLI (validasiBahasaMetadata, dipanggil di dalam
+// deployBallot sebelum metadata masuk rantai) dan berkas uji ini sama-sama
+// mengimpor SATU daftar, bukan dua salinan yang bisa diam-diam menyimpang
+// (persis pelajaran MENIT_VOTE/MENIT_TALLY sebelum jadwal.ts ada di CLI).
+// `client/` tidak ikut menarik kode CLI lewat impor ini: `shared` tidak
+// bergantung pada `pkgs/cli` sama sekali (lihat pkgs/shared/package.json —
+// hanya "contract"), dan berkas ini adalah uji (.test.tsx), bukan kode yang
+// pernah masuk bundel produksi — lihat verifikasi gerbang bundel di
+// .superpowers/audit-bahasa-metadata.md.
 const POLA_INDONESIA = new RegExp(
   `\\b(${KATA_TERLARANG.map((k) => k.replace(/ /g, "\\s+")).join("|")})\\b`,
   "i",

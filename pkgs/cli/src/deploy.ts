@@ -18,7 +18,7 @@ import {
   type BallotPrivateState,
 } from "contract";
 import type { Logger } from "pino";
-import { detikSekarang, type MetadataBallot } from "shared";
+import { detikSekarang, validasiBahasaMetadata, type MetadataBallot } from "shared";
 import { pastikanAlamatKontrak } from "./artefak.ts";
 import { kompilasiBallot, kompilasiRegistry, type BallotC, type RegistryC } from "./kontrak.ts";
 import type { ProvidersBallot, ProvidersRegistry } from "./providers.ts";
@@ -414,6 +414,13 @@ type FungsiDeployBallot = (
  * admin_secret_key dibaca DI DALAM constructor (di bawah alamat dummy
  * 0000...0000), sehingga tidak ada kesempatan memperbaikinya setelah deploy.
  *
+ * Metadata juga digerbang BAHASA di sini (`validasiBahasaMetadata`, paket
+ * shared) sebelum args disusun: title/description/community/options[]/
+ * eligibilityPolicy SEALED selamanya begitu transaksi ini mendarat, jadi
+ * kata Indonesia yang lolos sampai sini permanen dan mahal untuk diperbaiki
+ * (deploy ballot baru, tinggalkan yang lama). Lihat
+ * .superpowers/audit-bahasa-metadata.md.
+ *
  * Retri: parameter terakhir `opsiRetri` (namanya BUKAN `opsi` — nama itu
  * sudah dipakai variabel lokal array label opsi ballot di bawah). Sama
  * seperti `deployRegistry`: dibungkus `kirimDenganRetri`, hanya mengulang
@@ -435,6 +442,7 @@ export async function deployBallot(
   opsiRetri: OpsiRetriDeploy = {},
 ): Promise<HasilDeployBallot> {
   validasiMetadata(meta, jumlahCredential);
+  validasiBahasaMetadata(meta);
   if (rahasiaAdmin.length !== 32) throw new Error("Kunci rahasia admin harus 32 byte.");
   if (nonce.length !== 32) throw new Error("ballotNonce harus 32 byte.");
 

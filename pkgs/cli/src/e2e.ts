@@ -358,16 +358,22 @@ try {
   log.info({ alamatRegistry, dariSesiIni: registryDeploy !== undefined }, "Registry siap");
 
   // ── 2. Ballot ─────────────────────────────────────────────────────────────
+  // SEMUA STRING DI BAWAH INI MASUK RANTAI dan SEALED selamanya — lihat
+  // .superpowers/audit-bahasa-metadata.md. HARUS Inggris: digerbang
+  // validasiBahasaMetadata (paket shared) di dalam deployBallot (deploy.ts).
+  // eligibilityPolicy sama persis dengan cabang bawaan deploy-ballot.ts
+  // (metadata terpisah — dua ballot berbeda, lihat komentar kepala berkas
+  // ini — tapi pola pendaftarannya identik: credential dibuat CLI di sini).
   const metadata: MetadataBallot = {
-    title: "Uji E2E VotePriv",
-    description: "Tiga pemilih, tiga opsi, di jaringan preview.",
+    title: "VotePriv End-to-End Test",
+    description: "Three voters, three options, on the preview network.",
     community: "Midnight Builders",
     options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
     voteDeadline: detikDariSekarang(MENIT_VOTE * MENIT), // DETIK, bukan milidetik
     tallyDeadline: detikDariSekarang(MENIT_TALLY * MENIT), // > voteDeadline
     quorumPercent: 60, // <= 100
     eligibleCount: JUMLAH_PEMILIH, // 1..1024
-    eligibilityPolicy: "Tiga credential uji end-to-end",
+    eligibilityPolicy: "Three test credentials issued by the organiser.",
   };
 
   const rahasiaAdmin = kunciAdmin(ctx); // JANGAN PERNAH di-log

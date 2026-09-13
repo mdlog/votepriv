@@ -80,6 +80,19 @@ FROM node:22.23.1-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Label provenance OCI standar — diisi lewat build-arg dari
+# .github/workflows/rilis-image.yml (VOTEPRIV_GIT_SOURCE/VOTEPRIV_GIT_REVISION),
+# supaya `docker inspect`/`docker buildx imagetools inspect` bisa menunjukkan
+# repo dan commit sumber image ini dibangun — lihat README-VOTER.md bagian
+# "How to verify what you are running". Default string kosong SENGAJA
+# dibiarkan (bukan ARG wajib) supaya `docker build .` / `docker compose up
+# --build` lokal, tanpa build-arg ini sama sekali, tetap berjalan persis
+# seperti sebelumnya — LABEL dengan nilai kosong tidak mengganggu apa pun.
+ARG VOTEPRIV_GIT_SOURCE=""
+ARG VOTEPRIV_GIT_REVISION=""
+LABEL org.opencontainers.image.source="${VOTEPRIV_GIT_SOURCE}"
+LABEL org.opencontainers.image.revision="${VOTEPRIV_GIT_REVISION}"
+
 # package.json minimal, dibuat di tempat — bukan disalin dari repo — supaya
 # stage ini punya tepat satu dependensi produksi dan tidak menyeret "type":
 # "module" dkk dari package.json workspace yang jauh lebih besar. Versi

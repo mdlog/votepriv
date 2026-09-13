@@ -1,0 +1,162 @@
+# .github/workflows/rilis-image.yml — jalur rilis image VotePriv yang dapat
+# diverifikasi.
+#
+# Dipicu oleh tag "v*" (atau manual lewat workflow_dispatch — pilih tag yang
+# sesuai di dropdown "Use workflow from" saat memicu manual; lihat langkah
+# "Pastikan dipicu dari tag" di bawah, yang menolak berjalan dari branch).
+#
+# Alur: build & push image ke GHCR lewat docker/build-push-action (bukan
+# `docker build` biasa) supaya provenance attestation + SBOM bawaan buildx
+# ikut terpasang -> siapkan docker-compose.voter.yml yang sudah terisi
+# digest sungguhan -> UJI image yang BARU DIDORONG itu (ditarik lewat
+# digest, bukan dibangun ulang) memakai scripts/uji-paket-pemilih.sh SEBELUM
+# membuat rilis GitHub. Bila uji itu gagal, job ini gagal dan TIDAK ADA
+# rilis dibuat maupun diperbarui — pemilih tidak akan pernah menerima
+# docker-compose.voter.yml yang menunjuk ke image yang gagal uji
+# "reach: lokal".
+#
+# Semua action di bawah dipatok ke SHA commit (bukan tag mengambang seperti
+# "@v4") — lihat komentar "# vX.Y.Z" di sebelah tiap SHA untuk versi
+# manusiawinya, dan lihat .superpowers/rilis-image-ghcr.md untuk catatan
+# bagaimana SHA itu diambil (GitHub API "commits/{tag}", bukan ditebak). Ini
+# jalur rilis aplikasi voting; rantai pasok (supply chain) adalah bagian
+# dari klaim privasi paket ini — lihat README-VOTER.md bagian "How to
+# verify what you are running".
+
+name: rilis-image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  # Satu-satunya tempat nama image GHCR dirakit di seluruh workflow ini.
+  # "github.repository_owner" terisi OTOMATIS oleh GitHub saat repo (yang
+  # saat berkas ini ditulis belum punya remote) akhirnya dibuat — tidak ada
+  # placeholder untuk diganti manual di sini. Bandingkan dengan
+  # docker-compose.voter.yml, yang MEMANG memuat placeholder "OWNER" karena
+  # itu templat statis yang di-commit sebelum owner diketahui; langkah
+  # "Siapkan docker-compose.voter.yml" di bawah mengisi placeholder itu
+  # dengan nilai env ini secara otomatis di setiap rilis.
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/votepriv-voter-app
+
+jobs:
+  build-push-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pastikan dipicu dari tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::Workflow ini harus berjalan dari sebuah tag (refs/tags/vX.Y.Z), bukan dari branch. Saat memicu manual lewat workflow_dispatch, pilih tag yang sesuai di dropdown 'Use workflow from' pada GitHub UI." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Login ke GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tentukan short SHA
+        id: meta
+        run: echo "sha_pendek=${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build dan push image (provenance + SBOM bawaan buildx)
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+            ${{ env.IMAGE_NAME }}:sha-${{ steps.meta.outputs.sha_pendek }}
+          build-args: |
+            VOTEPRIV_GIT_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            VOTEPRIV_GIT_REVISION=${{ github.sha }}
+
+      - name: Siapkan docker-compose.voter.yml terisi digest
+        id: compose_voter
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DIGEST" ]; then
+            echo "::error::docker/build-push-action tidak menghasilkan output 'digest'." >&2
+            exit 1
+          fi
+          IMAGE_DIGEST_REF="${IMAGE_NAME}@${DIGEST}"
+          echo "Image (digest): $IMAGE_DIGEST_REF"
+          sed -E "s#^([[:space:]]*image:[[:space:]]*).*votepriv-voter-app.*#\1\"${IMAGE_DIGEST_REF}\"#" \
+            docker-compose.voter.yml > docker-compose.voter.filled.yml
+          if ! grep -qF "$IMAGE_DIGEST_REF" docker-compose.voter.filled.yml; then
+            echo "::error::Penggantian baris image 'app' di docker-compose.voter.yml tidak menemukan baris yang cocok." >&2
+            exit 1
+          fi
+          echo "image_digest_ref=$IMAGE_DIGEST_REF" >> "$GITHUB_OUTPUT"
+          cat docker-compose.voter.filled.yml
+
+      - name: Uji paket pemilih terhadap image yang baru didorong (pull by digest, bukan build lokal)
+        env:
+          VOTEPRIV_IMAGE: ${{ steps.compose_voter.outputs.image_digest_ref }}
+        run: ./scripts/uji-paket-pemilih.sh
+
+      - name: Buat atau perbarui rilis GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          IMAGE_DIGEST_REF: ${{ steps.compose_voter.outputs.image_digest_ref }}
+        run: |
+          set -euo pipefail
+          # Catatan rilis dirakit lewat printf baris-demi-baris (bukan
+          # heredoc) SENGAJA: heredoc butuh baris penutup tanpa spasi di
+          # depan, yang akan merusak indentasi blok literal YAML "run: |"
+          # di berkas workflow ini. printf tidak punya batasan itu.
+          CATATAN="$(mktemp)"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # shellcheck disable=SC2016
+          # (backtick di bawah SENGAJA literal — format inline-code Markdown
+          # untuk catatan rilis, bukan percobaan command substitution.)
+          {
+            printf '%s\n' '## Image yang dapat diverifikasi'
+            printf '\n'
+            printf -- '- Image (digest): `%s`\n' "$IMAGE_DIGEST_REF"
+            printf -- '- Commit sumber: `%s`\n' "$GITHUB_SHA"
+            printf -- '- Dibangun oleh run: %s\n' "$RUN_URL"
+            printf '\n'
+            printf '%s\n' 'Unduh `docker-compose.voter.yml` dari Assets di bawah, lalu jalankan:'
+            printf '\n'
+            printf '%s\n' '```'
+            printf '%s\n' 'docker compose -f docker-compose.voter.yml up'
+            printf '%s\n' '```'
+            printf '\n'
+            printf '%s\n' 'lalu buka http://localhost:5300. Lihat bagian "How to verify what'
+            printf '%s\n' 'you are running" di README-VOTER.md (repo sumber) untuk cara'
+            printf '%s\n' 'mencocokkan digest di atas dengan attestation provenance CI'
+            printf '%s\n' 'sebelum menjalankannya.'
+          } > "$CATATAN"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file "$CATATAN"
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file "$CATATAN"
+          fi
+          gh release upload "$TAG" "docker-compose.voter.filled.yml#docker-compose.voter.yml" --clobber
+          gh release view "$TAG"

@@ -1,0 +1,125 @@
+# docker-compose.voter.yml — templat rilis untuk PEMILIH (bukan pengembang).
+#
+# Berkas INI (satu-satunya) yang diunduh pemilih dari halaman rilis GitHub —
+# tanpa clone repo, tanpa `pnpm install`, tanpa `docker build`. Tidak ada
+# `build:` di berkas ini sama sekali: kedua image di bawah HANYA ditarik
+# (pulled) dari registry lewat digest sha256 yang sudah dikunci.
+#
+# Templat yang di-commit ke repo ini MEMANG memuat placeholder
+# "ghcr.io/OWNER/votepriv-voter-app@sha256:DIGEST" pada image "app" — repo
+# ini belum punya remote GitHub, jadi nama pemilik (OWNER) belum diketahui
+# saat berkas ini ditulis. .github/workflows/rilis-image.yml MENGISI
+# placeholder itu secara otomatis (bukan manual) setiap kali tag "v*"
+# dirilis, lalu mengunggah HASILNYA (sudah terisi digest sungguhan) sebagai
+# aset rilis bernama sama, "docker-compose.voter.yml" — itulah berkas yang
+# sungguhan diunduh pemilih, bukan templat placeholder ini. Bila Anda perlu
+# mengisi placeholder ini secara manual (mis. menguji sebelum rilis CI
+# pertama ada), inilah SATU-SATUNYA baris yang perlu diganti — lihat komentar
+# tepat di atas baris "image:" layanan "app" di bawah.
+#
+# Jaringan, healthcheck, dan pemetaan port 5300 di berkas ini SENGAJA identik
+# dengan docker-compose.yml (paket pengembang, yang membangun image sendiri
+# lewat `build:`) — lihat berkas itu dan .superpowers/paket-pemilih.md di
+# repo sumber untuk pembuktian lengkap keputusan jaringannya. Komentar di
+# sini diringkas untuk pemilih yang hanya punya SATU berkas ini, bukan
+# seluruh repo.
+
+services:
+  proof-server:
+    # Dikunci ke digest dengan alasan yang SAMA seperti image "app" di bawah
+    # — lihat komentar di atas baris image "app". Digest ini adalah digest
+    # midnightntwrk/proof-server:8.1.0 yang sungguhan tertarik saat berkas
+    # ini disiapkan, diambil lewat:
+    #   docker inspect --format '{{index .RepoDigests 0}}' midnightntwrk/proof-server:8.1.0
+    image: "midnightntwrk/proof-server@sha256:801bbc0340e9e96f16735f77b523f23c7459e3359842f7c79c2c53f4e994d531"
+    command: ["midnight-proof-server -v"]
+    environment:
+      RUST_BACKTRACE: "full"
+    # Port APLIKASI (bukan port proof server) dipublikasikan di SINI, bukan
+    # di layanan "app" — karena "app" memakai network_mode: "service:proof-server"
+    # di bawah, keduanya berbagi satu network namespace, jadi pemetaan port
+    # di kontainer mana pun dalam namespace itu berlaku untuk keduanya. Port
+    # proof server 6300 SENGAJA TIDAK dipublikasikan ke host sama sekali.
+    ports:
+      - "5300:3000"
+    healthcheck:
+      # Image resmi ini (build Nix) tidak punya curl/wget/nc terjangkau lewat
+      # PATH bawaannya — healthcheck ini HANYA memakai builtin bash (exec,
+      # printf, read, [[ ]]), tidak ada satu pun proses eksternal: buka fd 3
+      # ke socket TCP lokal lewat /dev/tcp, kirim satu baris permintaan
+      # HTTP/1.0 mentah, baca satu baris balasan, cocokkan substring "200".
+      #
+      # PERHATIKAN "$$baris" (dobel dolar): Compose mensubstitusi ${...}/$...
+      # miliknya SENDIRI ke seluruh isi berkas ini SEBELUM healthcheck
+      # dikirim ke container — "$baris" tunggal akan ditelan Compose sendiri
+      # (dianggap variabel Compose yang tidak diset → string kosong →
+      # pemeriksaan SELALU GAGAL walau proof server sehat). "$$" adalah cara
+      # escape Compose untuk "$" literal, supaya bash DI DALAM container yang
+      # benar-benar mengevaluasi "$baris".
+      test:
+        - "CMD"
+        - "/bin/bash"
+        - "-c"
+        - "exec 3<>/dev/tcp/127.0.0.1/6300 && printf 'GET /version HTTP/1.0\r\n\r\n' >&3 && read -r baris <&3 && [[ \"$$baris\" == *200* ]]"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  app:
+    # ---------------------------------------------------------------------
+    # JANGAN GANTI KE TAG — digest inilah yang membuat image ini dapat
+    # diverifikasi.
+    # ---------------------------------------------------------------------
+    # Tag (mis. ":v0.1.0") bisa dipindah diam-diam oleh siapa pun yang punya
+    # akses tulis ke registry, menunjuk ke image lain kapan saja, tanpa Anda
+    # tahu. Digest "@sha256:..." tidak bisa — ia ADALAH isi image itu
+    # sendiri (hash konten), bukan nama yang bisa dipindah. Digest di bawah
+    # dihasilkan oleh .github/workflows/rilis-image.yml, yang membangun image
+    # ini dari sebuah commit yang bisa Anda baca sumbernya, lalu mendorongnya
+    # ke GHCR dengan attestation provenance terlampir (siapa yang membangun,
+    # dari commit apa). JANGAN jalankan compose ini bila baris "image:" di
+    # bawah bukan lagi berbentuk "...@sha256:...", dan cocokkan dulu digest
+    # ini dengan yang tertulis di catatan rilis GitHub SEBELUM menjalankan
+    # `docker compose up` — lihat README-VOTER.md bagian "How to verify what
+    # you are running".
+    image: "ghcr.io/OWNER/votepriv-voter-app@sha256:DIGEST"
+    # ---------------------------------------------------------------------
+    # KEPUTUSAN JARINGAN — JANGAN UBAH "network_mode" DI BAWAH.
+    # ---------------------------------------------------------------------
+    # network_mode: "service:proof-server" (app berbagi network namespace,
+    # termasuk loopback, dengan container proof-server) adalah SATU-SATUNYA
+    # opsi yang membuat proofServerReach() di client/src/lib/proof-server.ts
+    # mengklasifikasikan target sebagai "lokal" — syarat yang dibutuhkan
+    # sebelum UI menampilkan kalimat privasi terkuatnya ("Your choice stays
+    # private..."). Mengganti ini dengan URL layanan Compose (mis.
+    # "http://proof-server:6300") membuat proxy menghubungi host yang BENAR
+    # tapi diklasifikasikan "remote" oleh logika reach — kalimat privasi itu
+    # tidak akan pernah tampil walau witness secara fisik tidak pernah
+    # meninggalkan mesin ini. Konsekuensi teknisnya: layanan ini tidak boleh
+    # (dan Compose menolak bila) punya "ports:"/"networks:" sendiri — itu
+    # sebabnya port 5300 dipetakan di layanan "proof-server" di atas.
+    # Pembuktian penuh (dua opsi ditimbang, bukti end-to-end) ada di
+    # docker-compose.yml dan .superpowers/paket-pemilih.md di repo sumber.
+    network_mode: "service:proof-server"
+    depends_on:
+      proof-server:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+    healthcheck:
+      # Image runtime berbasis Node — dipakai fetch bawaan Node sendiri
+      # (bukan curl/wget) lewat loopback bersama di atas. Rute
+      # runtime-config sama yang didaftarkan sebelum express.static, jadi
+      # 200 di sini berarti proxy /proof-server juga sudah terpasang.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "fetch('http://127.0.0.1:3000/__votepriv/runtime-config.json').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped

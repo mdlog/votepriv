@@ -10,33 +10,40 @@ else's machine ever sees your ballot choice or your voting credential.
   running.
 - **A browser with the [Lace](https://www.lace.io/) wallet extension**
   installed. You'll use it to sign your registration and your vote.
-- The link or files your ballot organizer gave you (this project folder).
+- The GitHub release page link your ballot organizer gave you.
 
-You do **not** need Node.js, pnpm, or anything else installed — Docker builds
-everything for you.
+You do **not** need Node.js, pnpm, git, or a clone of the source repository.
+You need exactly one downloaded file — `docker-compose.voter.yml` — and
+Docker. Docker only ever **downloads** the app and proof server images this
+file points to; nothing is built on your machine, and nothing you didn't
+already have installed gets fetched from anywhere except those two images.
 
 ## Run it
 
-Open a terminal in this folder and run:
+1. Open the release page your organizer linked you to, and download
+   `docker-compose.voter.yml` from its **Assets**.
+2. Open a terminal in the folder where you saved it, and run:
 
-```
-docker compose up
-```
+   ```
+   docker compose -f docker-compose.voter.yml up
+   ```
 
-The first run builds the app image and downloads the proof server image, so
-it can take a few minutes. Leave the terminal window open — this is your
-local voting server, and closing it (or pressing Ctrl+C) shuts it down.
+   The first run downloads the app image and the proof server image by
+   their exact digest, so it can take a few minutes. (See "How to verify
+   what you are running" below if you want to check what those digests mean
+   before this step.) Leave the terminal window open — this is your local
+   voting server, and closing it (or pressing Ctrl+C) shuts it down.
+3. Once it settles, open your browser to:
 
-Once it settles, open your browser to:
+   ```
+   http://localhost:5300
+   ```
 
-```
-http://localhost:5300
-```
+4. Connect your Lace wallet, find your ballot, and vote as usual.
 
-Connect your Lace wallet, find your ballot, and vote as usual.
-
-When you're done for the session, stop everything with `docker compose down`
-(or Ctrl+C, then `docker compose down` to remove the containers cleanly).
+When you're done for the session, stop everything with
+`docker compose -f docker-compose.voter.yml down` (or Ctrl+C, then that same
+command, to remove the containers cleanly).
 
 ## What you'll see, and why it's true here
 
@@ -51,9 +58,50 @@ This is the app's *strongest* privacy claim, and it only ever appears when
 the app can verify that the proof server it's actually talking to is running
 on the same machine as the page you're looking at — never on a shared server
 run by the organizer or anyone else. Running this package with
-`docker compose up` is what makes that condition true. If you ever access
+`docker compose -f docker-compose.voter.yml up` is what makes that condition
+true. If you ever access
 VotePriv a different way (e.g. a link someone else hosts for you), that
 indicator will honestly say less, because the guarantee no longer holds.
+
+## How to verify what you are running
+
+The `image:` lines in `docker-compose.voter.yml` don't name a movable tag —
+they pin each image by **digest** (the `...@sha256:...` part). A tag can be
+quietly repointed at a different image at any time; a digest can't, because
+it *is* a hash of the image's content. The app's digest is produced by a
+GitHub Actions workflow in the source repo
+(`.github/workflows/rilis-image.yml`) that builds the image from a tagged
+commit and pushes it — with a provenance attestation — before any release is
+published; the check below never happens on someone's laptop.
+
+Two checks, both worth doing before you vote:
+
+1. **The digest matches the release.** On the same GitHub release page you
+   downloaded the file from, the release notes list the app image's digest
+   and the commit SHA it was built from. Open `docker-compose.voter.yml` in
+   a text editor and confirm the digest after `ghcr.io/.../votepriv-voter-app@sha256:`
+   is identical to the one in the release notes. If it isn't, this file
+   didn't come from that release — stop and ask your organizer.
+2. **The attestation points at that commit.** With Docker installed, run:
+
+   ```
+   docker buildx imagetools inspect <the image: value from the app service>
+   ```
+
+   This queries the registry for the attestations attached when the image
+   was built, including a provenance record of the source repository and
+   commit SHA the build ran from. That commit SHA should match the one in
+   the release notes — and from there, it's a normal commit in a normal git
+   history you can read.
+
+**What this does and doesn't prove.** This verifies that the image you're
+about to run was built by the project's CI from a specific, publicly
+readable commit — not assembled on somebody's laptop, and not swapped for
+something else after the fact. It does **not** prove that commit is free of
+bugs, or that the app behaves exactly as this README describes. Closing that
+gap means reading the source at that commit (or trusting someone who did) —
+this check only gets you from "an image" to "a specific commit," not from
+"a commit" to "correct."
 
 ## The honest limits — read this before you rely on it
 

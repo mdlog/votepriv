@@ -118,4 +118,4 @@ Diubah: `pkgs/shared/src/index.ts` (ekspor modul baru), `pkgs/cli/src/deploy.ts`
 Tidak disentuh: `pkgs/contract/`, `server/`, `docs/`; tidak menjalankan
 `pnpm cli`; tidak membaca `wallet-cache/`/`private-state/`/`artefak/`.
 
-SHA commit: lihat `git log -1` setelah commit tugas ini.
+SHA commit: `c09a9a948da422d38b5a44a368b552bf0834f32d`.

@@ -22,6 +22,11 @@
 # builder (lihat Dockerfile). Memakai dist/ hasil build host berarti memakai
 # artefak yang bisa basi (lihat jebakan #2 di laporan paket-pemilih.md).
 dist/
+# Semantik .dockerignore BERBEDA dari .gitignore: `dist/` di atas hanya
+# berjangkar ke AKAR konteks, tidak cocok pkgs/*/dist. Tanpa baris berikut,
+# hasil build tsc dari mesin pengembang ikut ke konteks dan menyembunyikan
+# fakta bahwa Dockerfile tidak membangunnya — build lokal sukses, CI gagal.
+**/dist/
 build/
 *.dist
 

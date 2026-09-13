@@ -150,7 +150,7 @@ export function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
   if (!injected || all.length === 0) {
     throw new WalletError(
       "NO_CONNECTOR",
-      "Tidak ada wallet Midnight yang terdeteksi. Pasang ekstensi Lace, lalu muat ulang halaman ini.",
+      "No Midnight wallet detected. Install the Lace extension, then reload this page.",
     );
   }
   const info = all.find((c) => c.rdns === LACE_RDNS) ?? all[0];
@@ -165,7 +165,7 @@ export function pickConnector(): { info: ConnectorInfo; raw: RawConnector } {
   if (typeof raw.connect !== "function") {
     throw new WalletError(
       "NO_CONNECTOR",
-      `Konektor "${info.name}" tidak menyediakan metode connect() yang dibutuhkan.`,
+      `Connector "${info.name}" does not provide the connect() method it needs.`,
     );
   }
   return { info, raw };
@@ -224,7 +224,7 @@ export async function tungguWallet<T>(
             reject(
               new WalletError(
                 "TIMEOUT",
-                `Wallet tidak menjawab dalam ${Math.round(timeoutMs / 1000)} detik. Periksa apakah ada jendela persetujuan yang menunggu, dan pastikan wallet tidak terkunci.`,
+                `The wallet did not respond within ${Math.round(timeoutMs / 1000)} seconds. Check for a pending approval window, and make sure the wallet is unlocked.`,
               ),
             ),
           timeoutMs,
@@ -304,7 +304,7 @@ export async function connectMidnightWallet(
       if (status?.networkId && status.networkId !== net) {
         throw new WalletError(
           "NETWORK_MISMATCH",
-          `Wallet tersambung ke ${status.networkId}, padahal yang diminta ${net}.`,
+          `The wallet is connected to ${status.networkId}, but ${net} was requested.`,
         );
       }
       terpakai = net;
@@ -320,21 +320,21 @@ export async function connectMidnightWallet(
       if (handleBasi(msg)) {
         throw new WalletError(
           "WALLET_STALE",
-          "Ekstensi wallet sempat restart, sehingga halaman ini memegang koneksi yang sudah mati. Muat ulang halaman — dengan wallet dalam keadaan tidak terkunci — lalu sambungkan lagi.",
+          "The wallet extension restarted, so this page is holding a connection that is already dead. Reload the page — with the wallet unlocked — then connect again.",
           error,
         );
       }
       // Apa pun selain itu (pengguna menolak, wallet terkunci) harus menghentikan
       // langkah — melanjutkan hanya akan menumpuk popup.
-      throw new WalletError("CONNECT_REJECTED", msg || "Wallet menolak permintaan koneksi.", error);
+      throw new WalletError("CONNECT_REJECTED", msg || "The wallet rejected the connection request.", error);
     }
   }
 
   if (!terpakai) {
     throw new WalletError(
       "NETWORK_MISMATCH",
-      `Wallet tidak berada di satu pun jaringan yang didukung (dicoba: ${ditolak.join(", ")}). ` +
-        "Kalau Lace sedang di mainnet, pindahkan ke salah satu jaringan testnet.",
+      `The wallet is not on any supported network (tried: ${ditolak.join(", ")}). ` +
+        "If Lace is on mainnet, switch it to one of the testnet networks.",
     );
   }
   if (import.meta.env.DEV) {
@@ -386,7 +386,7 @@ export async function connectMidnightWallet(
   if (!address) {
     throw new WalletError(
       "NO_ADDRESS",
-      "Wallet tersambung tapi tidak mengembalikan alamat. Periksa console untuk bentuk yang dikembalikan.",
+      "The wallet connected but did not return an address. Check the console for the shape it returned.",
     );
   }
 
@@ -418,5 +418,5 @@ export async function connectMidnightWallet(
 export function describeWalletError(error: unknown): string {
   if (error instanceof WalletError) return error.message;
   if (error instanceof Error) return error.message;
-  return "Gagal menyambung ke wallet.";
+  return "Could not connect to the wallet.";
 }

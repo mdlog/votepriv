@@ -135,8 +135,8 @@ export function proofServerHop(
   asal: AsalHalaman | null = asalHalamanSaatIni(),
 ): string {
   if (proofServerReach(target, asal) === "lewat-host-halaman") {
-    const halaman = asal === null ? "host halaman ini" : asal.host;
-    return `browser → ${halaman} → ${target} (loopback mesin itu, bukan perangkat Anda)`;
+    const halaman = asal === null ? "this page's host" : asal.host;
+    return `browser → ${halaman} → ${target} (that machine's loopback, not your device)`;
   }
   return `browser → ${target}`;
 }
@@ -225,18 +225,18 @@ export async function checkProofServer(ambil: typeof fetch = fetch): Promise<Pro
     if (balasanHtml(res.headers.get("content-type"), body)) {
       return {
         reachable: false,
-        error: "/version menjawab HTML, bukan versi — proxy /proof-server tidak terpasang",
+        error: "/version answered with HTML, not a version — the /proof-server proxy is not set up",
         ...jalur,
       };
     }
     if (body === "") {
-      return { reachable: false, error: "/version menjawab kosong", ...jalur };
+      return { reachable: false, error: "/version answered empty", ...jalur };
     }
     return { reachable: true, version: body, ...jalur };
   } catch (error) {
     return {
       reachable: false,
-      error: error instanceof Error ? error.message : "tidak dapat dihubungi",
+      error: error instanceof Error ? error.message : "could not be reached",
       ...jalur,
     };
   }

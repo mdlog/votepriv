@@ -112,7 +112,7 @@ export interface HasilKirimSuara {
 function hexKeBytes(hex: string): Uint8Array {
   const bersih = hex.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(bersih)) {
-    throw new GalatCastVote("Credential harus 64 karakter heksadesimal (32 byte).", "TIDAK_DIKENAL");
+    throw new GalatCastVote("The credential must be 64 hexadecimal characters (32 bytes).", "TIDAK_DIKENAL");
   }
   const keluar = new Uint8Array(32);
   for (let i = 0; i < 32; i++) keluar[i] = Number.parseInt(bersih.slice(i * 2, i * 2 + 2), 16);
@@ -165,7 +165,7 @@ export async function kirimSuara(params: ParamKirimSuara, wallet: WalletConnecti
       await pastikanArtefakZkMurah(zkBaseUrl(), "castVote");
     } catch (e) {
       throw new GalatCastVote(
-        "Artefak ZK untuk castVote tidak terbaca — periksa /zk/ballot/keys/castVote.verifier.",
+        "The ZK artifacts for castVote could not be read — check /zk/ballot/keys/castVote.verifier.",
         "ARTEFAK_ZK",
         e,
       );
@@ -211,7 +211,7 @@ export async function kirimSuara(params: ParamKirimSuara, wallet: WalletConnecti
 
     if (r.public.status !== SucceedEntirely) {
       throw new GalatCastVote(
-        `castVote difinalisasi dengan status ${r.public.status}, bukan ${SucceedEntirely}.`,
+        `castVote finalized with status ${r.public.status}, not ${SucceedEntirely}.`,
         "ON_CHAIN",
       );
     }
@@ -248,9 +248,9 @@ export async function kirimSuara(params: ParamKirimSuara, wallet: WalletConnecti
 export class GalatOpeningHilang extends Error {
   constructor(alamatBallot: string) {
     super(
-      `Tidak ada opening tersimpan untuk ballot ${alamatBallot} di perangkat ini. ` +
-        "Bila Anda pernah mencoblos dari perangkat lain atau membersihkan data situs, " +
-        "pulihkan dari berkas cadangan yang diunduh saat mencoblos (pulihkanOpeningDariCadangan).",
+      `No opening is stored for ballot ${alamatBallot} on this device. ` +
+        "If you voted from a different device, or cleared this site's data, " +
+        "restore it from the backup file downloaded when you voted (pulihkanOpeningDariCadangan).",
     );
     this.name = "GalatOpeningHilang";
   }
@@ -295,7 +295,7 @@ export async function bukaSuara(params: ParamBukaSuara, wallet: WalletConnection
     try {
       await pastikanArtefakZkMurah(zkBaseUrl(), "tallyVote");
     } catch (e) {
-      throw new GalatCastVote("Artefak ZK untuk tallyVote tidak terbaca.", "ARTEFAK_ZK", e);
+      throw new GalatCastVote("The ZK artifacts for tallyVote could not be read.", "ARTEFAK_ZK", e);
     }
 
     const providers = await siapkanProviders(wallet, jaringan);
@@ -349,7 +349,7 @@ export async function bukaSuara(params: ParamBukaSuara, wallet: WalletConnection
 
     if (r.public.status !== SucceedEntirely) {
       throw new GalatCastVote(
-        `tallyVote difinalisasi dengan status ${r.public.status}, bukan ${SucceedEntirely}.`,
+        `tallyVote finalized with status ${r.public.status}, not ${SucceedEntirely}.`,
         "ON_CHAIN",
       );
     }
@@ -457,7 +457,7 @@ export async function pulihkanKredensialDariCadangan(
 ): Promise<HasilRegistrasiMandiri> {
   if (cadangan.alamatBallot !== alamatBallotDiminta) {
     throw new Error(
-      `Berkas cadangan ini untuk ballot ${cadangan.alamatBallot}, bukan ballot yang sedang didaftarkan (${alamatBallotDiminta}).`,
+      `This backup file is for ballot ${cadangan.alamatBallot}, not the ballot currently being registered (${alamatBallotDiminta}).`,
     );
   }
   const kredensial = hexKeBytes(cadangan.credentialHex);

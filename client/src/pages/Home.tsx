@@ -130,35 +130,35 @@ export default function Home() {
   // menahan klaim kuatnya alih-alih menebak — indikator yang menebak lebih buruk
   // daripada indikator yang mengaku tidak tahu.
   const privacy = useMemo(() => {
-    if (!proofStatus) return { label: "Checking…", tone: "", title: "Memeriksa proof server." };
+    if (!proofStatus) return { label: "Checking…", tone: "", title: "Checking the proof server." };
     // Keadaan privasi disampaikan lebih dulu, keterjangkauan menyusul dalam
     // kalimat yang sama: pengguna yang witness-nya menyeberang jaringan perlu
     // tahu hal itu terlepas dari apakah proof server-nya sedang hidup.
     const jangkauan = proofStatus.reachable
-      ? `Proof server menjawab v${proofStatus.version}.`
-      : `Proof server juga tidak dapat dihubungi (${proofStatus.error}).`;
+      ? `The proof server answered v${proofStatus.version}.`
+      : `The proof server could not be reached either (${proofStatus.error}).`;
     // Disematkan ke peringatan yang sudah ada, bukan menggantikannya: kalau target
     // belum dikonfirmasi, nama host yang disebut kalimat di bawah pun belum pasti.
     const catatanTarget = proofStatus.targetTerverifikasi
       ? ""
-      : " Target ini berasal dari nilai build dan belum dikonfirmasi oleh server yang menyajikan halaman ini, jadi tujuan sebenarnya bisa berbeda.";
+      : " This target comes from the build value and has not been confirmed by the server serving this page, so the real destination may differ.";
     if (proofStatus.reach === "remote")
       return {
         label: "Proof server remote",
         tone: "warn",
-        title: `Witness Anda — credential dan pilihan suara — dikirim ke ${proofStatus.target}. Karena proof server menerima witness, operatornya dapat melihat pilihan suara Anda. ${jangkauan}${catatanTarget}`,
+        title: `Your witness — your credential and vote choice — is sent to ${proofStatus.target}. Because the proof server receives the witness, its operator can see your vote choice. ${jangkauan}${catatanTarget}`,
       };
     if (proofStatus.reach === "lewat-host-halaman")
       return {
-        label: "Witness lewat jaringan",
+        label: "Witness crosses the network",
         tone: "warn",
-        title: `Halaman ini disajikan dari ${location.host}, bukan dari perangkat Anda, sehingga ${proofStatus.target} adalah loopback MESIN ITU — bukan loopback Anda. Witness menempuh ${proofStatus.hop}, dan siapa pun yang mengoperasikan mesin itu dapat melihat pilihan suara Anda. ${jangkauan}${catatanTarget}`,
+        title: `This page is served from ${location.host}, not from your device, so ${proofStatus.target} is THAT MACHINE's loopback — not yours. The witness travels ${proofStatus.hop}, and whoever operates that machine can see your vote choice. ${jangkauan}${catatanTarget}`,
       };
     if (!proofStatus.reachable)
       return {
         label: "Proof server offline",
         tone: "off",
-        title: `Proof server lokal tidak dapat dihubungi (${proofStatus.error}). Jalankan: docker compose -f proof-server.yml up`,
+        title: `The local proof server could not be reached (${proofStatus.error}). Run: docker compose -f proof-server.yml up`,
       };
     // Sampai di sini jalurnya lokal DAN proof server hidup. Klaim terkuat aplikasi
     // ini boleh dibuat — tetapi hanya bila target benar-benar dikonfirmasi server.
@@ -166,14 +166,14 @@ export default function Home() {
     // ke tempat lain sementara bundel tetap menyebut 127.0.0.1.
     if (!proofStatus.targetTerverifikasi)
       return {
-        label: "Target belum terverifikasi",
+        label: "Target not verified",
         tone: "warn",
-        title: `Proof server menjawab v${proofStatus.version}, tetapi server yang menyajikan halaman ini tidak melaporkan ke mana /proof-server diteruskan. ${proofStatus.target} hanyalah nilai yang dipanggang saat build. Karena tujuan sebenarnya tidak dapat dipastikan, klaim "witness tidak pernah meninggalkan perangkat ini" tidak dibuat di sini.`,
+        title: `The proof server answered v${proofStatus.version}, but the server serving this page did not report where /proof-server is forwarded to. ${proofStatus.target} is only the value baked in at build time. Because the real destination cannot be confirmed, the claim "the witness never leaves this device" is not made here.`,
       };
     return {
       label: "Always on",
       tone: "",
-      title: `Proof server lokal v${proofStatus.version} di ${proofStatus.target}, diakses dari halaman lokal — witness tidak pernah meninggalkan perangkat ini.`,
+      title: `Local proof server v${proofStatus.version} at ${proofStatus.target}, accessed from a local page — the witness never leaves this device.`,
     };
   }, [proofStatus]);
   const [voteBallot, setVoteBallot] = useState<Ballot | null>(null);
@@ -201,8 +201,8 @@ export default function Home() {
       // belum dijawab tidak bisa dibedakan dari ekstensi yang mati. Setelah
       // beberapa detik, arahkan pengguna ke sana alih-alih membiarkannya menebak.
       const result = await connectMidnightWallet(undefined, () =>
-        toast.info("Menunggu wallet", {
-          description: "Buka Lace dari toolbar Chrome — mungkin ada jendela persetujuan yang menunggu.",
+        toast.info("Waiting on wallet", {
+          description: "Open Lace from the Chrome toolbar — there may be a pending approval window.",
         }),
       );
       setWallet(result.address);
@@ -239,8 +239,8 @@ export default function Home() {
     setOpenConnecting(true);
     try {
       const result = await connectMidnightWallet(undefined, () =>
-        toast.info("Menunggu wallet", {
-          description: "Buka Lace dari toolbar Chrome — mungkin ada jendela persetujuan yang menunggu.",
+        toast.info("Waiting on wallet", {
+          description: "Open Lace from the Chrome toolbar — there may be a pending approval window.",
         }),
       );
       setOpenWalletConn(result);

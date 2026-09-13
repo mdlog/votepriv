@@ -136,7 +136,7 @@ function panggilWajib(api: unknown, method: string): (...args: unknown[]) => Pro
   const fn = (api as Record<string, unknown> | null)?.[method];
   if (typeof fn !== "function") {
     throw new Error(
-      `Wallet tidak menyediakan metode "${method}" yang dibutuhkan jalur tulis. Metode tersedia: ${namaMetodeApi(api).join(", ") || "(tidak terdeteksi)"}.`,
+      `The wallet does not provide the "${method}" method the write path needs. Available methods: ${namaMetodeApi(api).join(", ") || "(none detected)"}.`,
     );
   }
   return (fn as (...args: unknown[]) => Promise<unknown>).bind(api);
@@ -183,7 +183,7 @@ function transaksiDariBytes(bytes: Uint8Array): FinalizedTransaction {
 function bytesDariHex(hex: string): Uint8Array {
   const bersih = hex.trim().replace(/^0x/i, "");
   if (bersih.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(bersih)) {
-    throw new Error("Wallet mengembalikan string yang bukan heksadesimal transaksi yang valid.");
+    throw new Error("The wallet returned a string that is not valid transaction hexadecimal.");
   }
   const keluar = new Uint8Array(bersih.length / 2);
   for (let i = 0; i < keluar.length; i++) keluar[i] = Number.parseInt(bersih.slice(i * 2, i * 2 + 2), 16);
@@ -248,13 +248,13 @@ function normalisasiHasilBalance(hasil: unknown): FinalizedTransaction {
     }
     return hasil as FinalizedTransaction;
   }
-  throw new Error(`balanceTx: wallet mengembalikan bentuk yang tidak dikenali (typeof "${typeof hasil}").`);
+  throw new Error(`balanceTx: the wallet returned an unrecognized shape (typeof "${typeof hasil}").`);
 }
 
 export function buatAdaptorLace(wallet: WalletConnection): AdaptorWallet {
   if (!wallet.coinPublicKey || !wallet.encryptionPublicKey) {
     throw new Error(
-      "Wallet tersambung tapi tidak melaporkan coinPublicKey/encryptionPublicKey — dibutuhkan jalur tulis.",
+      "The wallet is connected but did not report coinPublicKey/encryptionPublicKey — the write path needs them.",
     );
   }
   const api = wallet.api;
@@ -269,7 +269,7 @@ export function buatAdaptorLace(wallet: WalletConnection): AdaptorWallet {
       const ditemukan = cariMetode(api, KANDIDAT_BALANCE);
       if (!ditemukan) {
         throw new Error(
-          `Wallet tidak menyediakan balanceSealedTransaction maupun balanceUnsealedTransaction. Metode tersedia: ${namaMetodeApi(api).join(", ") || "(tidak terdeteksi)"}.`,
+          `The wallet does not provide balanceSealedTransaction or balanceUnsealedTransaction. Available methods: ${namaMetodeApi(api).join(", ") || "(none detected)"}.`,
         );
       }
       if (import.meta.env.DEV) console.log(`[votepriv:tulis] balanceTx via ${ditemukan.nama}`);
@@ -299,7 +299,7 @@ export function buatAdaptorLace(wallet: WalletConnection): AdaptorWallet {
       const ids = tx.identifiers();
       if (ids.length === 0) {
         throw new Error(
-          "submitTransaction tidak mengembalikan id transaksi, dan transaksi yang dikirim tidak punya identifier apa pun untuk diawasi indexer.",
+          "submitTransaction did not return a transaction id, and the submitted transaction has no identifier for the indexer to track.",
         );
       }
       if (import.meta.env.DEV) {

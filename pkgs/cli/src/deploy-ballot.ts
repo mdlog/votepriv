@@ -2,6 +2,12 @@
 // tiga credential, dan mencatat alamatnya ke registry. Skrip tingkat-atas:
 // tidak mengekspor apa pun.
 //
+// VOTEPRIV_TANPA_PENDAFTARAN=1 men-deploy ballot dan mencatatnya ke registry
+// TANPA membuat credential maupun mendaftarkan leaf apa pun (pola BARU —
+// lihat .superpowers/register-leaves-cli.md dan pendaftaran-awal.ts).
+// eligibleCount lalu dibaca dari VOTEPRIV_ELIGIBLE_COUNT (bawaan tetap 3).
+// TANPA kedua env var itu, perilakunya PERSIS seperti sebelumnya.
+//
 // Ballot yang di-deploy di sini BERDIRI SENDIRI: `pnpm cli e2e` men-deploy
 // ballotnya SENDIRI (lihat e2e.ts bagian 2) dan tidak pernah membaca alamat
 // atau deadline ballot ini — keduanya dua ballot berbeda di chain, dicatat
@@ -27,17 +33,31 @@ import {
   bacaLedgerBallot,
   bacaLedgerRegistry,
   catatKeRegistry,
-  daftarkanVoter,
   deployBallot,
   kunciAdmin,
   temukanRegistry,
 } from "./deploy.ts";
 import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
+import {
+  bentukFieldCredentials,
+  daftarkanVoterJikaPerlu,
+  eligibleCountDariEnv,
+  modeTanpaPendaftaranAktif,
+  siapkanPemilihAwal,
+} from "./pendaftaran-awal.ts";
 import { rakitProvidersBallot, rakitProvidersRegistry } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
 import { bacaDustSaatIni } from "./wallet.ts";
 
-const JUMLAH_PEMILIH = 3;
+// Pola BARU (lihat .superpowers/register-leaves-cli.md): VOTEPRIV_TANPA_PENDAFTARAN=1
+// men-deploy ballot ini TANPA membuat credential dan TANPA memanggil
+// daftarkanVoter — pemilih membuat credential sendiri dan mengirim leaf-nya
+// lewat `pnpm cli register-leaves`. Bawaan (env TIDAK disetel) adalah
+// PERILAKU LAMA yang tidak berubah: tiga credential uji dibuat dan
+// didaftarkan langsung di sini, seperti sebelumnya — e2e dan pengujian yang
+// ada bergantung padanya.
+const tanpaPendaftaran = modeTanpaPendaftaranAktif();
+const eligibleCount = eligibleCountDariEnv(); // VOTEPRIV_ELIGIBLE_COUNT, bawaan 3 (batas kontrak 1..1024 — validasiMetadata)
 
 const sesi = await siapkanSesi();
 const { config, log, ctx, kp } = sesi;
@@ -75,14 +95,17 @@ const metadata: MetadataBallot = {
   voteDeadline: detikDariSekarang(MENIT_VOTE * MENIT),
   tallyDeadline: detikDariSekarang(MENIT_TALLY * MENIT),
   quorumPercent: 60, // <= 100. Metadata saja: TIDAK ditegakkan circuit mana pun.
-  eligibleCount: JUMLAH_PEMILIH, // 1..1024
-  eligibilityPolicy: "Tiga credential uji end-to-end",
+  eligibleCount, // 1..1024, bawaan 3 — lihat VOTEPRIV_ELIGIBLE_COUNT di atas
+  eligibilityPolicy: tanpaPendaftaran
+    ? "Pemilih mendaftarkan leaf-nya sendiri lewat `pnpm cli register-leaves`"
+    : "Tiga credential uji end-to-end",
 };
 
 // Credential adalah 32 byte acak CSPRNG; daunnya dihitung circuit kontrak
-// sendiri, bukan hash tandingan di TypeScript.
-const credentials = Array.from({ length: JUMLAH_PEMILIH }, () => buatCredential());
-const daun = credentials.map(daunEligibility);
+// sendiri, bukan hash tandingan di TypeScript. TIDAK DIBUAT SAMA SEKALI bila
+// tanpaPendaftaran (lihat siapkanPemilihAwal, pendaftaran-awal.ts) — inilah
+// inti pola baru: penyelenggara tidak pernah memegang rahasia pemilih.
+const { credentials, daun } = siapkanPemilihAwal(tanpaPendaftaran, eligibleCount, buatCredential, daunEligibility);
 
 const rahasiaAdmin = kunciAdmin(ctx); // JANGAN PERNAH di-log
 const nonce = crypto.getRandomValues(new Uint8Array(32));
@@ -102,7 +125,7 @@ const { alamat: alamatBallot, kontrak: ballot } = await deployBallot(
   rahasiaAdmin,
   nonce,
   log,
-  JUMLAH_PEMILIH,
+  tanpaPendaftaran ? undefined : eligibleCount,
   undefined, // deployFn bawaan (deployContract asli) — lihat deploy.test.ts untuk seam ini
   { bacaDust: () => bacaDustSaatIni(ctx.wallet) },
 );
@@ -123,11 +146,13 @@ const artefak = tulisArtefak(config.networkId, {
   voteDeadline: metadata.voteDeadline.toString(),
   tallyDeadline: metadata.tallyDeadline.toString(),
   options: metadata.options,
-  credentials: credentials.map((c) => Buffer.from(c).toString("hex")),
+  ...bentukFieldCredentials(credentials), // TIDAK ADA field `credentials` sama sekali bila tanpaPendaftaran
 });
 log.info(
-  { berkas: `pkgs/cli/artefak/${config.networkId}.json`, ballot: artefak.ballot },
-  "Alamat ballot dan credential tersimpan (berkas ini di-gitignore — credential adalah bahan uji)",
+  { berkas: `pkgs/cli/artefak/${config.networkId}.json`, ballot: artefak.ballot, tanpaPendaftaran },
+  tanpaPendaftaran
+    ? "Alamat ballot tersimpan (TANPA credential — mode VOTEPRIV_TANPA_PENDAFTARAN=1)"
+    : "Alamat ballot dan credential tersimpan (berkas ini di-gitignore — credential adalah bahan uji)",
 );
 
 // `ballot` datang langsung dari deployContract — private state awal (kunci
@@ -137,7 +162,10 @@ log.info(
 // publicDataProvider + alamatBallot diwariskan supaya retri putus koneksi
 // bisa memeriksa registeredCount (pemeriksaan PASTI, bukan sinyal DUST —
 // alamat ballot di sini SUDAH diketahui, beda dari deployBallot di atas).
-await daftarkanVoter(ballot, daun, log, { publicDataProvider: kp.publicDataProvider, alamatBallot });
+await daftarkanVoterJikaPerlu(tanpaPendaftaran, ballot, daun, log, {
+  publicDataProvider: kp.publicDataProvider,
+  alamatBallot,
+});
 
 // Sama seperti di atas: berurutan dengan rakitProvidersBallot, tidak boleh
 // tumpang tindih dengannya (LEVEL_LOCKED pada direktori "admin" yang sama).
@@ -145,29 +173,10 @@ const providersRegistry = await rakitProvidersRegistry(kp, "admin");
 const registry = await temukanRegistry(providersRegistry, alamatRegistry);
 await catatKeRegistry(registry, alamatBallot, log, { publicDataProvider: kp.publicDataProvider, alamatRegistry });
 
-// Indexer tertinggal node beberapa detik. Membaca registeredCount tepat setelah
-// registerVoters sukses bisa mengembalikan 0 — itu keterlambatan, bukan
-// kegagalan. Baca ulang sampai tenang, dengan batas.
-const { nilai: lb, cocok, galatTerakhir, percobaan } = await ulangiSampai(
-  () => bacaLedgerBallot(kp.publicDataProvider, alamatBallot),
-  (x) => x.registeredCount === BigInt(JUMLAH_PEMILIH),
-  log,
-  `registeredCount === ${JUMLAH_PEMILIH}`,
-);
-
-if (!cocok || lb === undefined) {
-  log.error(
-    { registeredCount: lb?.registeredCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
-    `registeredCount tidak pernah mencapai ${JUMLAH_PEMILIH} setelah ${percobaan} pembacaan. Alamat ballot dan credential SUDAH tersimpan di artefak (ditulis segera setelah deploy), jadi keadaan ini tetap bisa diperiksa.`,
-  );
-  await hentikanWallet(ctx, log);
-  process.exit(1);
-}
-
 // registryCount di sini murni kosmetik — hanya mengisi satu field log di
-// bawah. Ballot dan credential SUDAH aman tersimpan (tulisArtefak di atas),
-// jadi kegagalan baca ini TIDAK BOLEH menggagalkan proses: degradasi baris
-// log, bukan throw yang membunuh sisa skrip.
+// bawah. Ballot (dan credential, bila ada) SUDAH aman tersimpan (tulisArtefak
+// di atas), jadi kegagalan baca ini TIDAK BOLEH menggagalkan proses:
+// degradasi baris log, bukan throw yang membunuh sisa skrip.
 let registryCount = "(tidak terbaca)";
 try {
   const lr = await bacaLedgerRegistry(kp.publicDataProvider, alamatRegistry);
@@ -179,15 +188,56 @@ try {
   );
 }
 
-log.info(
-  {
-    registeredCount: lb.registeredCount.toString(),
-    eligibleCount: lb.eligibleCount.toString(),
-    voteCount: lb.voteCount.toString(),
-    phase: lb.phase,
-    registryCount,
-  },
-  "Ballot siap menerima suara",
-);
+if (tanpaPendaftaran) {
+  // TIDAK ADA leaf yang didaftarkan di jalur ini (lihat daftarkanVoterJikaPerlu
+  // di atas) — menunggu registeredCount mencapai eligibleCount di sini akan
+  // menunggu SELAMANYA. Baca ledger sekali, terbaik-upaya, murni untuk log:
+  // kegagalan baca TIDAK BOLEH menggagalkan proses (alamat sudah tersimpan).
+  let ringkasanLedger = "(tidak terbaca)";
+  try {
+    const lb = await bacaLedgerBallot(kp.publicDataProvider, alamatBallot);
+    ringkasanLedger = `registeredCount=${lb.registeredCount}, eligibleCount=${lb.eligibleCount}, voteCount=${lb.voteCount}, phase=${lb.phase}`;
+  } catch (e) {
+    log.warn(
+      { err: (e as Error).message },
+      "Gagal membaca ledger ballot untuk log (tidak fatal — artefak ballot sudah tersimpan)",
+    );
+  }
+  log.info(
+    { alamat: alamatBallot, ledger: ringkasanLedger, registryCount },
+    "Ballot ter-deploy TANPA pendaftaran leaf apa pun. Daftarkan pemilih lewat `pnpm cli register-leaves` " +
+      "setelah pemilih mengirim leaf-nya.",
+  );
+} else {
+  // Indexer tertinggal node beberapa detik. Membaca registeredCount tepat setelah
+  // registerVoters sukses bisa mengembalikan 0 — itu keterlambatan, bukan
+  // kegagalan. Baca ulang sampai tenang, dengan batas.
+  const { nilai: lb, cocok, galatTerakhir, percobaan } = await ulangiSampai(
+    () => bacaLedgerBallot(kp.publicDataProvider, alamatBallot),
+    (x) => x.registeredCount === BigInt(eligibleCount),
+    log,
+    `registeredCount === ${eligibleCount}`,
+  );
+
+  if (!cocok || lb === undefined) {
+    log.error(
+      { registeredCount: lb?.registeredCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
+      `registeredCount tidak pernah mencapai ${eligibleCount} setelah ${percobaan} pembacaan. Alamat ballot dan credential SUDAH tersimpan di artefak (ditulis segera setelah deploy), jadi keadaan ini tetap bisa diperiksa.`,
+    );
+    await hentikanWallet(ctx, log);
+    process.exit(1);
+  }
+
+  log.info(
+    {
+      registeredCount: lb.registeredCount.toString(),
+      eligibleCount: lb.eligibleCount.toString(),
+      voteCount: lb.voteCount.toString(),
+      phase: lb.phase,
+      registryCount,
+    },
+    "Ballot siap menerima suara",
+  );
+}
 
 await tutupSesi(sesi, 0);

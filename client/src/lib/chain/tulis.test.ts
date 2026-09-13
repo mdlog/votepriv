@@ -57,8 +57,15 @@ const { buatAdaptorLaceMock } = vi.hoisted(() => ({
 }));
 vi.mock("./adaptor-lace", () => ({ buatAdaptorLace: buatAdaptorLaceMock }));
 
-const { kirimSuara, GalatCastVote, bukaSuara, pulihkanOpeningDariCadangan, GalatOpeningHilang } =
-  await import("./tulis");
+const {
+  kirimSuara,
+  GalatCastVote,
+  bukaSuara,
+  pulihkanOpeningDariCadangan,
+  GalatOpeningHilang,
+  daftarkanDiriSendiri,
+  pulihkanKredensialDariCadangan,
+} = await import("./tulis");
 
 /**
  * Ledger sintetis LENGKAP (pola sama dengan eligibility-tulis.test.ts Task 3
@@ -362,5 +369,81 @@ describe("bukaSuara", () => {
     // masukan yang sama — kedua nilai TIDAK BOLEH pernah kebetulan sama.
     const nfCastVoteStyle = bytesKeHexUji(Ballot.pureCircuits.vote_nullifier(salt, salt));
     expect(hasil.nullifierHex).not.toBe(nfCastVoteStyle);
+  });
+});
+
+describe("daftarkanDiriSendiri", () => {
+  // "1"/"2"/"3".repeat(64): keluarga alamat baru, tidak dipakai describe
+  // manapun di atas — privateStateProvider IndexedDB (fake-indexeddb)
+  // bertahan sepanjang proses uji ini, dan store kredensial (kredensial-idb.ts)
+  // sama-sama IndexedDB SUNGGUHAN yang tidak di-reset per `it`.
+
+  it("membuat credential baru (kredensialBaru: true) ketika belum ada apa pun tersimpan", async () => {
+    const hasil = await daftarkanDiriSendiri("1".repeat(64));
+    expect(hasil.kredensialBaru).toBe(true);
+    expect(hasil.credentialHex).toMatch(/^[0-9a-f]{64}$/);
+    expect(hasil.leafHex).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("leafHex dihitung lewat Ballot.pureCircuits.cred_leaf sungguhan, bukan hash tandingan", async () => {
+    const hasil = await daftarkanDiriSendiri("2".repeat(64));
+    const kredensial = Uint8Array.from(Buffer.from(hasil.credentialHex, "hex"));
+    const leafDiharapkan = bytesKeHexUji(Ballot.pureCircuits.cred_leaf(kredensial));
+    expect(hasil.leafHex).toBe(leafDiharapkan);
+  });
+
+  it("GUARD MUTASI WAJIB #1 — panggilan KEDUA pada ballot yang SAMA mengembalikan credential/leaf YANG SAMA, kredensialBaru: false", async () => {
+    const alamat = "3".repeat(64);
+    const pertama = await daftarkanDiriSendiri(alamat);
+    expect(pertama.kredensialBaru).toBe(true);
+    const kedua = await daftarkanDiriSendiri(alamat);
+    expect(kedua.kredensialBaru).toBe(false);
+    expect(kedua.credentialHex).toBe(pertama.credentialHex);
+    expect(kedua.leafHex).toBe(pertama.leafHex);
+  });
+
+  it("dua ballot BERBEDA mendapat credential BERBEDA (tidak dibagikan lintas ballot)", async () => {
+    const hasilA = await daftarkanDiriSendiri("4".repeat(64));
+    const hasilB = await daftarkanDiriSendiri("5".repeat(64));
+    expect(hasilA.credentialHex).not.toBe(hasilB.credentialHex);
+    expect(hasilA.leafHex).not.toBe(hasilB.leafHex);
+  });
+});
+
+describe("pulihkanKredensialDariCadangan", () => {
+  it("menyimpan credential dari cadangan dan mengembalikan leaf-nya, kredensialBaru: false", async () => {
+    const alamat = "6".repeat(64);
+    const credentialHex = "c".repeat(64);
+    const hasil = await pulihkanKredensialDariCadangan(alamat, { alamatBallot: alamat, credentialHex });
+    expect(hasil.kredensialBaru).toBe(false);
+    expect(hasil.credentialHex).toBe(credentialHex);
+    const leafDiharapkan = bytesKeHexUji(Ballot.pureCircuits.cred_leaf(Uint8Array.from(Buffer.from(credentialHex, "hex"))));
+    expect(hasil.leafHex).toBe(leafDiharapkan);
+  });
+
+  it("daftarkanDiriSendiri SESUDAH pemulihan memakai credential yang DIPULIHKAN, bukan membuat baru", async () => {
+    const alamat = "7".repeat(64);
+    const credentialHex = "d".repeat(64);
+    const dipulihkan = await pulihkanKredensialDariCadangan(alamat, { alamatBallot: alamat, credentialHex });
+    const hasil = await daftarkanDiriSendiri(alamat);
+    expect(hasil.kredensialBaru).toBe(false);
+    expect(hasil.credentialHex).toBe(dipulihkan.credentialHex);
+  });
+
+  it("menolak berkas cadangan untuk ballot LAIN — tidak diam-diam tersimpan di bawah alamat yang diminta", async () => {
+    const alamatDiminta = "8".repeat(64);
+    const alamatLain = "9".repeat(64);
+    await expect(
+      pulihkanKredensialDariCadangan(alamatDiminta, { alamatBallot: alamatLain, credentialHex: "e".repeat(64) }),
+    ).rejects.toThrow(/bukan ballot yang sedang didaftarkan/);
+    // Efek samping negatif: alamat yang DIMINTA tidak menerima apa pun.
+    await expect(daftarkanDiriSendiri(alamatDiminta)).resolves.toMatchObject({ kredensialBaru: true });
+  });
+
+  it("menolak hex credential yang bukan 64 karakter heksadesimal", async () => {
+    const alamat = "0".repeat(64);
+    await expect(
+      pulihkanKredensialDariCadangan(alamat, { alamatBallot: alamat, credentialHex: "tidak-hex" }),
+    ).rejects.toThrow();
   });
 });

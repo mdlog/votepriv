@@ -7,11 +7,14 @@ import type { Ballot } from "./types";
 export function LiveBallots({
   ballots,
   onVote,
+  onRegister,
   onCreate,
   atas,
 }: {
   ballots: Ballot[];
   onVote: (ballot: Ballot) => void;
+  /** Opsional — lihat komentar prop yang sama di BallotCard.tsx. */
+  onRegister?: (ballot: Ballot) => void;
   onCreate: () => void;
   /** Permukaan memuat / gagal / spanduk sebagian, disuntikkan shell. */
   atas?: React.ReactNode;
@@ -50,7 +53,7 @@ export function LiveBallots({
       </div>
       {atas}
       <div className="ballots-grid">
-        {filtered.map(b => <BallotCard key={b.id} ballot={b} onVote={onVote} />)}
+        {filtered.map(b => <BallotCard key={b.id} ballot={b} onVote={onVote} onRegister={onRegister} />)}
       </div>
       {/* Keadaan kosong HANYA muncul ketika daftar memang kosong setelah
           pembacaan BERHASIL. Shell tidak pernah merender komponen ini pada fase

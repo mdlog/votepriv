@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowUpRight,
@@ -14,6 +14,7 @@ import {
 import { menerimaSuara, statusLabel } from "./ballot-status";
 import { labelNomor } from "@/lib/chain/ke-ballot";
 import { muatJalurTulis } from "@/lib/chain/jalur-tulis";
+import { buatKredensialStoreIdb, kredensialKeHex, NAMA_DB_KREDENSIAL } from "@/lib/chain/kredensial-idb";
 import type { WalletConnection } from "@/lib/midnight-wallet";
 import type { MidnightNetworkId } from "@pkgs/shared/src/network-config";
 import type { Ballot, Receipt } from "./types";
@@ -245,6 +246,7 @@ export function VoteModal({
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [credentialHex, setCredentialHex] = useState("");
+  const [credentialDariPerangkat, setCredentialDariPerangkat] = useState(false);
   const [stage, setStage] = useState<"select" | "proving" | "success" | "gagal">("select");
   const [tahap, setTahap] = useState<TahapKirimSuara | null>(null);
   const [cadangan, setCadangan] = useState<CadanganOpening | null>(null);
@@ -260,6 +262,38 @@ export function VoteModal({
   const [openTahap, setOpenTahap] = useState<TahapKirimSuara | null>(null);
   const [openGalat, setOpenGalat] = useState<string | null>(null);
   const [openingHilang, setOpeningHilang] = useState(false);
+
+  // true begitu pemilih MENGETIK/menempel sendiri ke kolom credential —
+  // dijaga lewat ref (bukan bergantung pada `credentialHex === ""` di dalam
+  // effect di bawah) karena closure useEffect menutup nilai state PADA SAAT
+  // effect dibuat (mount), bukan nilai TERBARU: memeriksa `credentialHex`
+  // langsung di dalam .then() akan selalu melihat string kosong dari render
+  // pertama, walau pemilih sudah mulai mengetik sebelum pembacaan IndexedDB
+  // selesai.
+  const dieditManualRef = useRef(false);
+
+  // Auto-isi dari store IndexedDB milik kita sendiri (kredensial-idb.ts) —
+  // BUKAN lewat muatJalurTulis(): membaca credential mentah tidak butuh WASM
+  // (leaf-lah yang butuh, lihat tulis.ts), jadi effect ini TIDAK memicu
+  // unduhan belasan megabyte jalur tulis hanya untuk membuka modal ini.
+  // Kegagalan baca (storage diblokir, dst.) sengaja DITELAN di sini — ini
+  // murni kemudahan pengisian otomatis, jalur tempel manual tetap tersedia
+  // sebagai cadangan (lihat input di bawah), berbeda dari kegagalan
+  // PENDAFTARAN di tulis.ts yang WAJIB melempar.
+  useEffect(() => {
+    let dibatalkan = false;
+    buatKredensialStoreIdb(NAMA_DB_KREDENSIAL)
+      .ambilKredensial(ballot.id)
+      .then((kredensial) => {
+        if (dibatalkan || !kredensial || dieditManualRef.current) return;
+        setCredentialHex(kredensialKeHex(kredensial));
+        setCredentialDariPerangkat(true);
+      })
+      .catch(() => {});
+    return () => {
+      dibatalkan = true;
+    };
+  }, [ballot.id]);
 
   const submit = async () => {
     if (!connected || !wallet) {
@@ -414,12 +448,19 @@ export function VoteModal({
             )}
             {menerimaSuara(ballot.status) && (
               <label className="credential-field">
-                <span>Your voting credential</span>
+                <span>
+                  Your voting credential
+                  {credentialDariPerangkat && <em className="found-badge"> · found on this device</em>}
+                </span>
                 <input
                   type="password"
                   autoComplete="off"
                   value={credentialHex}
-                  onChange={(event) => setCredentialHex(event.target.value)}
+                  onChange={(event) => {
+                    dieditManualRef.current = true;
+                    setCredentialDariPerangkat(false);
+                    setCredentialHex(event.target.value);
+                  }}
                   placeholder="64-character credential from registration"
                 />
               </label>

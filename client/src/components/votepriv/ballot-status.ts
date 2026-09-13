@@ -241,3 +241,23 @@ export function statusTag(status: BallotStatus): string {
 export function menerimaSuara(status: BallotStatus): boolean {
   return status === "live" || status === "closing-soon";
 }
+
+/**
+ * Benar hanya ketika kontrak masih akan MENERIMA registerVoters untuk ballot
+ * ini — DUA syarat yang ballot.compact tegakkan (identik dengan
+ * validasiKuotaPendaftaran, pkgs/cli/src/leaf-file.ts, yang menegakkan
+ * pasangan syarat yang SAMA sebelum menyentuh rantai):
+ *
+ *   1. votes === 0 — pendaftaran menutup PERMANEN begitu suara pertama masuk.
+ *      Tidak ada cara memperbaikinya selain ballot baru.
+ *   2. registered < eligible — kuota yang di-seal saat deploy, tidak bisa
+ *      diperbesar.
+ *
+ * Parameter berbentuk struktural (bukan `Ballot` penuh) dengan sengaja —
+ * pola yang sama dengan `LedgerKuota` di leaf-file.ts — supaya uji bisa
+ * memberi objek literal `{ votes, registered, eligible }` apa adanya tanpa
+ * membangun fixture `Ballot` lengkap untuk satu pemeriksaan murni ini.
+ */
+export function menerimaPendaftaran(ballot: { votes: number; registered: number; eligible: number }): boolean {
+  return ballot.votes === 0 && ballot.registered < ballot.eligible;
+}

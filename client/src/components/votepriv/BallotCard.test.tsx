@@ -114,4 +114,54 @@ describe("BallotCard", () => {
     container.querySelector<HTMLButtonElement>(".text-button")!.click();
     expect(onVote).toHaveBeenCalledWith(BALLOT);
   });
+
+  describe("tombol pendaftaran (Register to vote)", () => {
+    // BALLOT dasar (votes: 250) TIDAK menerima pendaftaran — dipakai di semua
+    // uji lama di atas TANPA satu pun terpengaruh oleh describe ini.
+    const BALLOT_BISA_DAFTAR = { ...BALLOT, votes: 0, registered: 2, eligible: 3 };
+
+    it("TIDAK dirender ketika onRegister tidak diberikan, walau ballot memenuhi syarat", () => {
+      const { queryByText } = render(<BallotCard ballot={BALLOT_BISA_DAFTAR} onVote={() => {}} />);
+      expect(queryByText(/Register to vote/)).toBeNull();
+    });
+
+    it("TIDAK dirender ketika ballot tidak lagi menerima pendaftaran (votes bukan 0)", () => {
+      const onRegister = vi.fn();
+      const { queryByText } = render(
+        <BallotCard ballot={{ ...BALLOT_BISA_DAFTAR, votes: 1 }} onVote={() => {}} onRegister={onRegister} />,
+      );
+      expect(queryByText(/Register to vote/)).toBeNull();
+    });
+
+    it("TIDAK dirender ketika kuota pendaftaran sudah penuh (registered === eligible)", () => {
+      const onRegister = vi.fn();
+      const { queryByText } = render(
+        <BallotCard
+          ballot={{ ...BALLOT_BISA_DAFTAR, registered: BALLOT_BISA_DAFTAR.eligible }}
+          onVote={() => {}}
+          onRegister={onRegister}
+        />,
+      );
+      expect(queryByText(/Register to vote/)).toBeNull();
+    });
+
+    it("DIRENDER dan mengoper ballot yang sama ke onRegister ketika keduanya terpenuhi", () => {
+      const onRegister = vi.fn();
+      const { getByText } = render(
+        <BallotCard ballot={BALLOT_BISA_DAFTAR} onVote={() => {}} onRegister={onRegister} />,
+      );
+      const tombol = getByText(/Register to vote/).closest("button")!;
+      tombol.click();
+      expect(onRegister).toHaveBeenCalledWith(BALLOT_BISA_DAFTAR);
+    });
+
+    it("tampil BERDAMPINGAN dengan 'Vote privately' pada ballot baru (votes 0, status live)", () => {
+      const onRegister = vi.fn();
+      const { getByText } = render(
+        <BallotCard ballot={{ ...BALLOT_BISA_DAFTAR, status: "live" }} onVote={() => {}} onRegister={onRegister} />,
+      );
+      expect(getByText(/Register to vote/)).toBeTruthy();
+      expect(getByText(/Vote privately/)).toBeTruthy();
+    });
+  });
 });

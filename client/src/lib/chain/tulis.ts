@@ -43,12 +43,14 @@ import {
   type BallotPrivateState,
 } from "@pkgs/contract/src/ballot-witnesses.js";
 import * as Ballot from "@pkgs/contract/src/managed/ballot/contract/index.js";
+import { buatCredential, daunEligibility } from "@pkgs/shared/src/credentials";
 import { MIDNIGHT_NETWORK_ENDPOINTS, type MidnightNetworkId } from "@pkgs/shared/src/network-config";
 import type { WalletConnection } from "@/lib/midnight-wallet";
 import { PROOF_SERVER_PATH } from "@/lib/proof-server";
 import { buatAdaptorLace } from "./adaptor-lace";
 import { ambilJalurCommitment, ambilJalurEligibility, bacaLedgerBallotTulis } from "./eligibility-tulis";
 import { kompilasiBallotBrowser } from "./kontrak-tulis";
+import { buatKredensialStoreIdb, NAMA_DB_KREDENSIAL } from "./kredensial-idb";
 import { buatPrivateStateProviderIdb } from "./private-state-idb";
 import { rakitProvidersBallotBrowser, type ProvidersBallotBrowser } from "./providers-tulis";
 import { pastikanArtefakZkMurah } from "./zk-config-fetch";
@@ -366,4 +368,99 @@ export async function bukaSuara(params: ParamBukaSuara, wallet: WalletConnection
     if (e instanceof GalatCastVote) throw e;
     throw new GalatCastVote(e instanceof Error ? e.message : String(e), "TIDAK_DIKENAL", e);
   }
+}
+
+// ─── Pendaftaran mandiri: pemilih membuat credential-nya sendiri ───────────
+//
+// Pola BARU (lihat .superpowers/register-leaves-cli.md dan
+// .superpowers/signdata-determinisme.md untuk latar lengkapnya): kontrak
+// registerVoters HANYA menerima leaf (cred_leaf(credential)), bukan
+// credential itu sendiri — jadi penyelenggara tidak perlu lagi memegang
+// rahasia siapa pun, ASALKAN pemilih dapat membuat credential-nya sendiri
+// dan menyerahkan leaf-nya. Fungsi di bawah mewujudkan sisi pemilih dari pola
+// itu, dan hidup DI SINI — bukan di modul yang terjangkau statis dari entri —
+// semata-mata karena menghitung leaf memanggil Ballot.pureCircuits.cred_leaf
+// (lewat daunEligibility), yang menarik compact-runtime persis seperti
+// castVote/tallyVote di atas.
+//
+// Credential TIDAK PERNAH menyentuh rantai atau jaringan apa pun di sini —
+// hanya disimpan lokal (kredensial-idb.ts, database TERPISAH dari private
+// state midnight-js; lihat komentar di kepala berkas itu untuk alasannya) dan
+// dikembalikan ke pemanggil (UI) untuk ditampilkan sebagai cadangan yang
+// BOLEH diunduh pemiliknya. Leaf-nya publik dengan sengaja: pemilih
+// mengirimkannya ke penyelenggara DI LUAR sistem ini, dan penyelenggara
+// menjalankan `pnpm cli register-leaves` (lihat pkgs/cli/src/register-leaves.ts).
+
+export interface HasilRegistrasiMandiri {
+  /** SATU-SATUNYA rahasia di objek ini — jangan pernah di-log, dikirim ke jaringan, atau ditampilkan apa adanya di layar. */
+  credentialHex: string;
+  /** Publik — aman dikirim ke penyelenggara. */
+  leafHex: string;
+  /** false ketika credential yang dipakai SUDAH ADA sebelumnya di perangkat ini untuk ballot ini (bukan baru dibuat). */
+  kredensialBaru: boolean;
+}
+
+function hasilRegistrasiDari(kredensial: Uint8Array, kredensialBaru: boolean): HasilRegistrasiMandiri {
+  return {
+    credentialHex: bytesKeHex(kredensial),
+    leafHex: bytesKeHex(daunEligibility(kredensial)),
+    kredensialBaru,
+  };
+}
+
+/**
+ * Mendaftarkan diri sendiri untuk SATU ballot: memakai credential yang SUDAH
+ * ADA di perangkat ini untuk ballot ini bila ada (kredensialBaru: false), dan
+ * HANYA membuat yang baru — lewat buatCredential(), CSPRNG 32 byte dipakai
+ * apa adanya (pkgs/shared/src/credentials.ts) — ketika benar-benar belum ada
+ * satu pun tersimpan.
+ *
+ * GUARD INI MENGIKAT: membuat credential baru padahal sudah ada satu
+ * tersimpan akan menghasilkan LEAF BERBEDA dari yang mungkin sudah diserahkan
+ * ke penyelenggara — credential-nya acak (buatCredential), jadi leaf turunan
+ * cred_leaf-nya juga tidak akan pernah sama antara dua panggilan. Penyelenggara
+ * yang sudah menjalankan register-leaves dengan leaf LAMA tidak akan pernah
+ * mendaftarkan leaf BARU ini, dan castVote pemilih akan ditolak tanpa satu
+ * pun petunjuk mengapa (lihat eligibility-tulis.ts, ambilJalurEligibility,
+ * yang melempar persis pada leaf yang tidak ditemukan di pohon).
+ */
+export async function daftarkanDiriSendiri(alamatBallot: string): Promise<HasilRegistrasiMandiri> {
+  const store = buatKredensialStoreIdb(NAMA_DB_KREDENSIAL);
+  const tersimpan = await store.ambilKredensial(alamatBallot);
+  if (tersimpan) return hasilRegistrasiDari(tersimpan, false);
+  const kredensial = buatCredential();
+  await store.simpanKredensial(alamatBallot, kredensial);
+  return hasilRegistrasiDari(kredensial, true);
+}
+
+/** Bentuk berkas cadangan credential — SAMA PERSIS dengan yang RegisterModal.tsx unduh (lihat komentar salinan strukturalnya di sana). */
+export interface CadanganKredensial {
+  alamatBallot: string;
+  credentialHex: string;
+}
+
+/**
+ * Menulis ulang credential dari berkas cadangan ke store lokal — untuk
+ * perangkat yang belum pernah menyimpan credential ballot ini (pemilih
+ * berpindah browser/perangkat, atau membersihkan data situs sejak mendaftar).
+ *
+ * `alamatBallotDiminta` WAJIB cocok dengan `cadangan.alamatBallot`: tanpa
+ * pemeriksaan ini, mengunggah berkas cadangan MILIK BALLOT LAIN akan diam-diam
+ * tersimpan di bawah alamat ballot lain itu (bukan ballot yang sedang dibuka
+ * pemilih) lalu menampilkan leaf yang tidak berhubungan dengan ballot yang
+ * sedang ia lihat — pemilih bisa mengira itu leaf ballot ini dan
+ * mengirimkannya ke penyelenggara yang salah.
+ */
+export async function pulihkanKredensialDariCadangan(
+  alamatBallotDiminta: string,
+  cadangan: CadanganKredensial,
+): Promise<HasilRegistrasiMandiri> {
+  if (cadangan.alamatBallot !== alamatBallotDiminta) {
+    throw new Error(
+      `Berkas cadangan ini untuk ballot ${cadangan.alamatBallot}, bukan ballot yang sedang didaftarkan (${alamatBallotDiminta}).`,
+    );
+  }
+  const kredensial = hexKeBytes(cadangan.credentialHex);
+  await buatKredensialStoreIdb(NAMA_DB_KREDENSIAL).simpanKredensial(alamatBallotDiminta, kredensial);
+  return hasilRegistrasiDari(kredensial, false);
 }

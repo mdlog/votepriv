@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LiveBallots } from "./LiveBallots";
 import { ballotUji } from "@/test/fixture-ballot";
 
@@ -80,5 +80,15 @@ describe("LiveBallots", () => {
       />,
     );
     expect(container.querySelector("[data-testid='spanduk-uji']")).not.toBeNull();
+  });
+
+  it("meneruskan onRegister apa adanya ke BallotCard", () => {
+    const onRegister = vi.fn();
+    const bisaDaftar = ballotUji({ id: "d1", votes: 0, registered: 1, eligible: 3, status: "live" });
+    const { getByText } = render(
+      <LiveBallots ballots={[bisaDaftar]} onVote={() => {}} onRegister={onRegister} onCreate={() => {}} />,
+    );
+    fireEvent.click(getByText(/Register to vote/));
+    expect(onRegister).toHaveBeenCalledWith(bisaDaftar);
   });
 });

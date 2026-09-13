@@ -132,16 +132,23 @@ function galatPutusKoneksi(): Error {
 
 const daun = (isi: number) => new Uint8Array(32).fill(isi);
 
+// Bahasa Inggris dengan sengaja (bukan sekadar "metadata sah"): sejak
+// deployBallot memanggil validasiBahasaMetadata (gerbang bahasa, paket
+// shared — lihat .superpowers/audit-bahasa-metadata.md), fixture yang dulu
+// Indonesia di sini akan ditolak gerbang itu SEBELUM sempat mencapai
+// perilaku yang sesungguhnya diuji tiap `it` di bawah (timeout, retri, dst.)
+// — persis kelas kebocoran bahasa yang audit itu tutup, hanya kali ini di
+// fixture uji, bukan di ballot yang benar-benar ter-deploy.
 const metaSah = () => ({
   title: "Q4 Community Treasury",
-  description: "Pilih arah dukungan treasury pada Q4.",
+  description: "Choose the treasury's direction of support for Q4.",
   community: "Midnight Builders",
   options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
   voteDeadline: 1_800_000_000n,
   tallyDeadline: 1_800_001_200n,
   quorumPercent: 60,
   eligibleCount: 3,
-  eligibilityPolicy: "Tiga credential uji end-to-end",
+  eligibilityPolicy: "Three test credentials issued by the organiser.",
 });
 
 describe("validasiMetadata", () => {
@@ -235,6 +242,25 @@ describe("batchDaun", () => {
 });
 
 describe("deployBallot", () => {
+  // Bukti PENGKABELAN gerbang bahasa (audit-bahasa-metadata): validasiBahasaMetadata
+  // (paket shared) sungguh dipanggil DI DALAM deployBallot, bukan cuma
+  // didefinisikan dan tidak pernah dipakai. Uji field+kata secara MENYELURUH
+  // (setiap field, setiap indeks options[]) ada di
+  // pkgs/shared/src/bahasa-metadata.test.ts — uji di sini hanya membuktikan
+  // deployBallot benar-benar menegakkannya, sebelum providers disentuh sama
+  // sekali (pola sama seperti dua uji rahasiaAdmin/nonce di bawah).
+  it("menolak metadata berbahasa Indonesia sebelum menyentuh providers (gerbang bahasa)", async () => {
+    await expect(
+      deployBallot(
+        {} as unknown as ProvidersBallot,
+        { ...metaSah(), description: "Pilih arah dukungan treasury pada Q4." },
+        new Uint8Array(32),
+        new Uint8Array(32),
+        logPalsu,
+      ),
+    ).rejects.toThrow(/field "description".+"pada"/);
+  });
+
   // Kedua uji ini bergantung pada urutan pemeriksaan di dalam deployBallot:
   // panjang rahasiaAdmin/nonce diperiksa SEBELUM providers pernah disentuh,
   // sehingga providers palsu ({}) cukup — kegagalan tidak pernah sampai ke

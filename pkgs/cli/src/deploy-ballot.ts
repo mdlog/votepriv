@@ -86,9 +86,19 @@ if (ballotSudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
   await tutupSesi(sesi, 0);
 }
 
+// SEMUA STRING DI BAWAH INI MASUK RANTAI (args deployBallot) dan SEALED
+// selamanya begitu transaksi mendarat — lihat .superpowers/audit-bahasa-metadata.md.
+// HARUS Inggris: digerbang validasiBahasaMetadata (paket shared, dipanggil
+// di dalam deployBallot, deploy.ts) sebelum args disusun.
+// eligibilityPolicy bercabang dua: cabang tanpaPendaftaran adalah kalimat
+// RAMAH PEMILIH, BUKAN instruksi CLI — pemilih membaca ini di kartu ballot,
+// dan pemilih tidak menjalankan `pnpm cli register-leaves` (itu perintah
+// OPERATOR, lihat register-leaves.ts). Cabang bawaan (credential dibuat CLI)
+// memakai kalimat yang SAMA PERSIS dengan e2e.ts (metadata terpisah, pola
+// pendaftaran identik pada cabang ini).
 const metadata: MetadataBallot = {
   title: "Q4 Community Treasury",
-  description: "Pilih arah dukungan treasury pada Q4.",
+  description: "Choose the treasury's direction of support for Q4.",
   community: "Midnight Builders",
   options: ["Fund developer grants", "Host local meetups", "Open-source tooling"],
   // DETIK sejak epoch, lewat helper shared — bukan Date.now().
@@ -97,8 +107,8 @@ const metadata: MetadataBallot = {
   quorumPercent: 60, // <= 100. Metadata saja: TIDAK ditegakkan circuit mana pun.
   eligibleCount, // 1..1024, bawaan 3 — lihat VOTEPRIV_ELIGIBLE_COUNT di atas
   eligibilityPolicy: tanpaPendaftaran
-    ? "Pemilih mendaftarkan leaf-nya sendiri lewat `pnpm cli register-leaves`"
-    : "Tiga credential uji end-to-end",
+    ? "Voters register their own credential leaf; the organiser only ever holds the hash."
+    : "Three test credentials issued by the organiser.",
 };
 
 // Credential adalah 32 byte acak CSPRNG; daunnya dihitung circuit kontrak

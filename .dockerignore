@@ -1,0 +1,131 @@
+# .dockerignore — cermin dari .gitignore.
+#
+# Alasan berkas ini WAJIB ada (lihat .superpowers/paket-pemilih.md untuk audit
+# lengkap): tanpa berkas ini, `docker build .` menyalin SELURUH direktori kerja
+# sebagai konteks build, termasuk pkgs/cli/wallet-cache/ dan
+# pkgs/cli/private-state/ — kredensial dompet dan private state pemilih.
+# Image yang lalu didistribusikan ke pemilih lain akan membawa itu semua di
+# dalam layer-nya, terbaca oleh siapa pun yang punya image-nya, SELAMANYA
+# (COPY yang dihapus di layer berikutnya tetap ada di layer sebelumnya).
+#
+# Aturan main: apa pun yang tidak masuk git (lihat .gitignore) juga tidak
+# masuk konteks build image. Daftar di bawah sengaja disalin sinkron dari
+# .gitignore, ditambah beberapa baris yang relevan khusus untuk Docker.
+
+# Dependencies — dipasang ulang di dalam image lewat `pnpm install`, bukan
+# disalin dari host (binari native seperti lightningcss/tailwindcss-oxide
+# bisa tidak cocok dengan platform base image).
+**/node_modules
+.pnpm-store/
+
+# Build outputs — WAJIB dikeluarkan: image membangun dist/ sendiri di stage
+# builder (lihat Dockerfile). Memakai dist/ hasil build host berarti memakai
+# artefak yang bisa basi (lihat jebakan #2 di laporan paket-pemilih.md).
+dist/
+build/
+*.dist
+
+# Environment variables — bisa memuat rahasia lokal (URL proof server pihak
+# lain, token, dll). Nilai yang dipakai image diatur lewat docker-compose.yml.
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# Dependency dirs lain
+jspm_packages/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Cache perkakas lain
+.npm
+.eslintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+.node_repl_history
+*.tgz
+.yarn-integrity
+.cache
+.parcel-cache
+.next
+.nuxt
+.out
+.storybook-out
+tmp/
+temp/
+
+# Database lokal
+*.db
+*.sqlite
+*.sqlite3
+
+# Webdev / Manus platform
+.webdev/
+client/public/__manus__/version.json
+.project-config.json
+
+# Rahasia wallet, credential pemilih, dan state privat — INI BAGIAN PALING
+# PENTING dari berkas ini. Tidak ada jalan bagi kredensial dompet, private
+# state, atau artefak deploy pemilih untuk sampai ke image yang dibagikan.
+pkgs/cli/wallet-cache/
+pkgs/cli/logs/
+pkgs/cli/private-state/
+pkgs/cli/artefak/
+# pkgs/cli/leaves/ belum ada di .gitignore saat berkas ini ditulis, tapi
+# isinya adalah data leaf registrasi pemilih hasil `pnpm cli register-leaves`
+# — sama sekali tidak relevan untuk image runtime pemilih, jadi ikut ditolak
+# di sini sebagai langkah kehati-hatian tambahan (lihat laporan untuk detail).
+pkgs/cli/leaves/
+*.seed
+.seed
+
+# Rekaman interaksi debug collector (teks elemen yang diklik, isi input,
+# badan permintaan) — lihat juga blokir NODE_ENV=production di Dockerfile
+# yang mencegah collector-nya sendiri ikut ke bundel produksi.
+.manus-logs/
+
+# Kontrol versi, catatan kerja/riset internal, dan dokumentasi — tidak
+# relevan bagi runtime pemilih dan tidak boleh ikut ke image sama sekali.
+.git
+.superpowers
+docs

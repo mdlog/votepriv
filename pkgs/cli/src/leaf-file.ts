@@ -13,6 +13,7 @@
 // hanya leaf (Uint8Array 32 byte publik) dan bilangan (registeredCount dkk,
 // juga publik).
 import fs from "node:fs";
+import path from "node:path";
 import type { FoundContract } from "@midnight-ntwrk/midnight-js-contracts";
 import type { PublicDataProvider } from "@midnight-ntwrk/midnight-js-types";
 import type { Logger } from "pino";
@@ -90,13 +91,31 @@ export function uraiBerkasLeaf(isi: string): LeafEntry[] {
   return hasil;
 }
 
-/** `uraiBerkasLeaf` dari sebuah jalur berkas. Galat baca berkas dibungkus dengan jalurnya. */
+/**
+ * `uraiBerkasLeaf` dari sebuah jalur berkas. Galat baca berkas dibungkus
+ * dengan jalurnya — dan pada ENOENT khususnya, dengan cwd + jalur absolut.
+ *
+ * Kejadian lapangan: `pnpm cli register-leaves pkgs/cli/leaves/x.txt`
+ * gagal ENOENT karena `pnpm --filter cli run` menjalankan skrip dengan cwd
+ * `pkgs/cli/`, sehingga jalur relatif (ditulis relatif terhadap ROOT repo,
+ * kebiasaan alami) diam-diam diresolusi jadi `pkgs/cli/pkgs/cli/leaves/x.txt`.
+ * Pesan LAMA hanya mengulang `jalur` mentah apa adanya — sama sekali tidak
+ * membantu menebak KENAPA berkas yang "jelas ada" tidak ditemukan. Pesan ini
+ * sengaja hanya MENUNJUKKAN di mana ia mencari (cwd + jalur absolut hasil
+ * `path.resolve`), TIDAK menebak-nebak lokasi yang "benar" untuk pengguna.
+ */
 export function bacaBerkasLeaf(jalur: string): LeafEntry[] {
   let isi: string;
   try {
     isi = fs.readFileSync(jalur, "utf8");
   } catch (e) {
-    throw new Error(`Tidak bisa membaca berkas leaf di "${jalur}": ${(e as Error).message}`);
+    const err = e as NodeJS.ErrnoException;
+    const petunjukCwd =
+      err.code === "ENOENT"
+        ? ` Dicari di: ${path.resolve(jalur)} (cwd: ${process.cwd()}). ` +
+          "Skrip ini berjalan dari pkgs/cli — pakai jalur absolut, atau relatif terhadap direktori itu."
+        : "";
+    throw new Error(`Tidak bisa membaca berkas leaf di "${jalur}": ${err.message}.${petunjukCwd}`);
   }
   return uraiBerkasLeaf(isi);
 }
@@ -115,6 +134,57 @@ export function jalurBerkasLeafDariArgv(argv: readonly string[] = process.argv.s
     );
   }
   return jalur;
+}
+
+/**
+ * Menjalankan `validasiLokalFn` (SINKRON) DULU, baru memanggil `mulaiSesiFn`
+ * — dan HANYA bila `validasiLokalFn` tidak melempar. register-leaves.ts
+ * (skrip tingkat-atas) memanggilnya persis begini, DI ATAS baris lain mana
+ * pun:
+ *
+ * ```ts
+ * const jalurBerkas = jalurBerkasLeafDariArgv();
+ * const { daftar, sesi } = await validasiLokalLaluSesi(
+ *   () => bacaBerkasLeaf(jalurBerkas),
+ *   () => siapkanSesi(),
+ * );
+ * ```
+ *
+ * `bacaBerkasLeaf(jalurBerkas)` di atas TETAP pemanggilan langsung yang
+ * sungguhan dijalankan register-leaves.ts sendiri (dibungkus closure murni
+ * supaya bisa ditunda) — bukan disalin ulang di sini — jadi uji terhadap
+ * fungsi ini adalah uji terhadap PERILAKU SUNGGUHAN skrip itu, bukan
+ * reimplementasi paralel. `S` (tipe sesi) generik SUPAYA leaf-file.ts tidak
+ * perlu mengimpor `Sesi`/`siapkanSesi` dari bootstrap.ts.
+ *
+ * KENAPA URUTAN INI PENTING (kejadian lapangan): sebelum perbaikan ini,
+ * register-leaves.ts memanggil `siapkanSesi()` (prompt 24 kata seed +
+ * sinkronisasi wallet — MAHAL dan interaktif) SEBELUM membaca berkas leaf
+ * sama sekali. Jalur berkas yang salah (lihat komentar `bacaBerkasLeaf` di
+ * atas) baru ketahuan SETELAH pengguna selesai mengetik seed dan menunggu
+ * wallet sinkron — padahal validasi berkas ini sama sekali tidak butuh
+ * keduanya. Fungsi ini menegakkan urutan itu secara STRUKTURAL (bukan
+ * sekadar konvensi penulisan): `validasiLokalFn` dipanggil DULU, dan
+ * `mulaiSesiFn` TIDAK PERNAH tereksekusi bila `validasiLokalFn` melempar —
+ * itu semantik `await` biasa, bukan logika tambahan di sini.
+ *
+ * Validasi yang BUTUH rantai (voteCount, kuota, leaf yang sudah terdaftar —
+ * `validasiKuotaPendaftaran`/`periksaLeafSudahTerdaftar`) SENGAJA TIDAK di
+ * sini: keduanya baru bisa jalan SETELAH sesi ada (perlu `kp.publicDataProvider`),
+ * dan tetap dipanggil register-leaves.ts sesudah fungsi ini kembali.
+ *
+ * `mulaiSesiFn` (dan `validasiLokalFn`) disuntikkan sebagai closure SUPAYA
+ * uji unit bisa membuktikan URUTAN pemanggilan (mock yang mencatat kapan
+ * masing-masing dipanggil) tanpa pernah benar-benar meminta seed atau
+ * membuka wallet.
+ */
+export async function validasiLokalLaluSesi<S>(
+  validasiLokalFn: () => LeafEntry[],
+  mulaiSesiFn: () => Promise<S>,
+): Promise<{ daftar: LeafEntry[]; sesi: S }> {
+  const daftar = validasiLokalFn();
+  const sesi = await mulaiSesiFn();
+  return { daftar, sesi };
 }
 
 // ─── Bagian 2: validasi terhadap ledger ─────────────────────────────────────

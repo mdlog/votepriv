@@ -28,6 +28,24 @@
 #
 # Port yang dipakai: 5300 (app, lihat docker-compose.yml). Skrip ini TIDAK
 # menyentuh 5180/5250/5173/3000/6300 di host.
+#
+# VOTEPRIV_IMAGE (env, opsional) — dipakai .github/workflows/rilis-image.yml
+# untuk menguji image yang BARU DIDORONG ke GHCR (ditarik lewat digest,
+# BUKAN dibangun ulang) sebelum rilis GitHub dibuat:
+#
+#   VOTEPRIV_IMAGE=ghcr.io/OWNER/votepriv-voter-app@sha256:... ./scripts/uji-paket-pemilih.sh
+#
+# Juga bisa dipakai manual/lokal untuk membuktikan jalur "pull by reference"
+# (tanpa `build:` sama sekali) bekerja, memakai tag lokal yang sudah ada:
+#
+#   VOTEPRIV_IMAGE=votepriv-voter-app:local ./scripts/uji-paket-pemilih.sh
+#
+# Bila diisi, skrip memakai docker-compose.voter.yml (paket pemilih, TANPA
+# `build:`) alih-alih docker-compose.yml (paket pengembang, dengan `build:
+# context: .`), dengan baris image layanan "app" digantikan nilai ini lewat
+# sed ke berkas sementara. TIDAK diisi (bawaan): perilaku PERSIS seperti
+# sebelum kemampuan ini ditambahkan — docker-compose.yml, tanpa berkas
+# sementara, tanpa langkah tambahan apa pun.
 
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -37,20 +55,41 @@ GAGAL=0
 
 jejak() { printf '\n=== %s ===\n' "$1"; }
 
+# Lihat blok komentar VOTEPRIV_IMAGE di atas. COMPOSE_ARGS kosong (bawaan)
+# berarti setiap "docker compose ..." di bawah berjalan tanpa "-f" —
+# persis seperti sebelum kemampuan ini ada, dipakai docker-compose.yml.
+COMPOSE_ARGS=()
+COMPOSE_FILE_SEMENTARA=""
+if [ -n "${VOTEPRIV_IMAGE:-}" ]; then
+  jejak "0. VOTEPRIV_IMAGE=$VOTEPRIV_IMAGE — pakai docker-compose.voter.yml (tanpa build:), ganti image \"app\""
+  COMPOSE_FILE_SEMENTARA="$(mktemp --suffix=.yml)"
+  sed -E "s#^([[:space:]]*image:[[:space:]]*).*votepriv-voter-app.*#\1\"${VOTEPRIV_IMAGE}\"#" \
+    docker-compose.voter.yml >"$COMPOSE_FILE_SEMENTARA"
+  if ! grep -qF "$VOTEPRIV_IMAGE" "$COMPOSE_FILE_SEMENTARA"; then
+    echo "GAGAL: penggantian baris image \"app\" di docker-compose.voter.yml tidak menemukan baris yang cocok."
+    exit 1
+  fi
+  COMPOSE_ARGS=(-f "$COMPOSE_FILE_SEMENTARA")
+  echo "Berkas compose sementara (dipakai, bukan docker-compose.yml): $COMPOSE_FILE_SEMENTARA"
+fi
+
 cleanup() {
   jejak "Beres-beres: docker compose down"
-  docker compose down
+  docker compose "${COMPOSE_ARGS[@]}" down
+  if [ -n "$COMPOSE_FILE_SEMENTARA" ]; then
+    rm -f "$COMPOSE_FILE_SEMENTARA"
+  fi
 }
 trap cleanup EXIT
 
 jejak "1. docker compose up -d --wait (naikkan proof-server + app, tunggu keduanya healthy)"
-if ! docker compose up -d --wait --wait-timeout 180; then
+if ! docker compose "${COMPOSE_ARGS[@]}" up -d --wait --wait-timeout 180; then
   echo "GAGAL: layanan tidak sehat dalam batas waktu."
-  docker compose ps
-  docker compose logs --tail 50
+  docker compose "${COMPOSE_ARGS[@]}" ps
+  docker compose "${COMPOSE_ARGS[@]}" logs --tail 50
   exit 1
 fi
-docker compose ps
+docker compose "${COMPOSE_ARGS[@]}" ps
 
 jejak "2. GET /__votepriv/runtime-config.json"
 RUNTIME_CONFIG_JSON="$(curl -sS -m 10 "$BASE_URL/__votepriv/runtime-config.json")"

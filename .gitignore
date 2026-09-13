@@ -124,3 +124,7 @@ pkgs/cli/artefak/
 
 # Rekaman interaksi debug collector (teks elemen yang diklik, isi input, badan permintaan)
 .manus-logs/
+
+# Catatan kerja internal (ledger SDD, laporan review, hasil mutasi). Bukan
+# bagian repo: memuat jalur mesin pengembang dan detail sesi.
+.superpowers/

@@ -69,7 +69,7 @@ function bukaDb(namaDb: string): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_SIGNING)) db.createObjectStore(STORE_SIGNING);
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error(`Gagal membuka IndexedDB "${namaDb}"`));
+    req.onerror = () => reject(req.error ?? new Error(`Could not open IndexedDB "${namaDb}"`));
   });
 }
 
@@ -78,7 +78,7 @@ function idbPut(db: IDBDatabase, store: string, key: string, value: unknown): Pr
     const tx = db.transaction(store, "readwrite");
     tx.objectStore(store).put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error(`Gagal menulis "${key}" ke ${store}`));
+    tx.onerror = () => reject(tx.error ?? new Error(`Could not write "${key}" to ${store}`));
   });
 }
 
@@ -87,7 +87,7 @@ function idbGet<T>(db: IDBDatabase, store: string, key: string): Promise<T | und
     const tx = db.transaction(store, "readonly");
     const req = tx.objectStore(store).get(key);
     req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error ?? new Error(`Gagal membaca "${key}" dari ${store}`));
+    req.onerror = () => reject(req.error ?? new Error(`Could not read "${key}" from ${store}`));
   });
 }
 

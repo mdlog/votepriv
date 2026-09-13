@@ -41,7 +41,7 @@ function bukaDb(namaDb: string): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_KREDENSIAL)) db.createObjectStore(STORE_KREDENSIAL);
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error(`Gagal membuka IndexedDB "${namaDb}"`));
+    req.onerror = () => reject(req.error ?? new Error(`Could not open IndexedDB "${namaDb}"`));
   });
 }
 
@@ -50,7 +50,7 @@ function idbPut(db: IDBDatabase, key: string, value: Uint8Array): Promise<void> 
     const tx = db.transaction(STORE_KREDENSIAL, "readwrite");
     tx.objectStore(STORE_KREDENSIAL).put(value, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error(`Gagal menulis credential untuk "${key}"`));
+    tx.onerror = () => reject(tx.error ?? new Error(`Could not write the credential for "${key}"`));
   });
 }
 
@@ -59,7 +59,7 @@ function idbGet(db: IDBDatabase, key: string): Promise<Uint8Array | undefined> {
     const tx = db.transaction(STORE_KREDENSIAL, "readonly");
     const req = tx.objectStore(STORE_KREDENSIAL).get(key);
     req.onsuccess = () => resolve(req.result as Uint8Array | undefined);
-    req.onerror = () => reject(req.error ?? new Error(`Gagal membaca credential untuk "${key}"`));
+    req.onerror = () => reject(req.error ?? new Error(`Could not read the credential for "${key}"`));
   });
 }
 

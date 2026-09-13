@@ -39,7 +39,7 @@ vi.mock("@/lib/chain/jalur-tulis", () => ({
     },
     GalatOpeningHilang: class GalatOpeningHilang extends Error {
       constructor(alamatBallot: string) {
-        super(`Tidak ada opening tersimpan untuk ballot ${alamatBallot} di perangkat ini.`);
+        super(`No opening is stored for ballot ${alamatBallot} on this device.`);
         this.name = "GalatOpeningHilang";
       }
     },
@@ -128,7 +128,7 @@ const LEWAT_HOST: ProofServerStatus = {
   target: "http://127.0.0.1:6300",
   targetTerverifikasi: true,
   reach: "lewat-host-halaman",
-  hop: "browser → votepriv.mdloglabs.org → http://127.0.0.1:6300 (loopback mesin itu, bukan perangkat Anda)",
+  hop: "browser → votepriv.mdloglabs.org → http://127.0.0.1:6300 (that machine's loopback, not your device)",
 };
 const REMOTE: ProofServerStatus = {
   reachable: true,
@@ -713,7 +713,7 @@ describe("VoteModal — membuka suara (bukaSuara), wallet SENGAJA terpisah dari 
 
   it("kegagalan GalatOpeningHilang menampilkan 'No opening found on this device', BUKAN pesan kegagalan generik", async () => {
     bukaSuaraMock.mockImplementation(async () => {
-      const e = new Error(`Tidak ada opening tersimpan untuk ballot ${BALLOT.id} di perangkat ini.`);
+      const e = new Error(`No opening is stored for ballot ${BALLOT.id} on this device.`);
       e.name = "GalatOpeningHilang";
       throw e;
     });

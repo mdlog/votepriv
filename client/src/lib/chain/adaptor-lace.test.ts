@@ -167,7 +167,7 @@ describe("buatAdaptorLace", () => {
       const dompet = buatAdaptorLace(walletContoh({ balanceSealedTransaction }));
       const tx = { serialize: () => new Uint8Array([6]), identifiers: () => [] };
 
-      await expect(dompet.balanceTx(tx as never)).rejects.toThrow(/bentuk yang tidak dikenali/);
+      await expect(dompet.balanceTx(tx as never)).rejects.toThrow(/unrecognized shape/);
     });
 
     it("bentuk '{ tx: hex }' (bentuk NYATA Lace 2.3.2 — kedua jalur balance di js/119.js berakhir identik, lihat komentar kepala berkas): unwrap .tx lalu deserialisasi dengan marker 'binding' (hasil SUDAH bound — signRecipe+finalizeRecipe sudah jalan), BUKAN 'pre-binding', dan BUKAN dikembalikan apa adanya sebagai objek pembungkus", async () => {
@@ -219,7 +219,7 @@ describe("buatAdaptorLace", () => {
       const submitTransaction = vi.fn(async () => undefined);
       const dompet = buatAdaptorLace(walletContoh({ submitTransaction }));
       const tx = { identifiers: () => [], serialize: () => new Uint8Array([12]) };
-      await expect(dompet.submitTx(tx as never)).rejects.toThrow(/tidak punya identifier/);
+      await expect(dompet.submitTx(tx as never)).rejects.toThrow(/no identifier/);
     });
 
     it("melempar galat yang jelas bila wallet tidak punya submitTransaction sama sekali", async () => {

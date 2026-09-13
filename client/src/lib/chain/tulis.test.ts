@@ -194,7 +194,7 @@ describe("kirimSuara", () => {
 
   it("melempar bila credentialHex bukan 64 hex", async () => {
     await expect(kirimSuara({ ...paramDasar, credentialHex: "bukan-hex" }, walletContoh())).rejects.toThrow(
-      /64 karakter heksadesimal/,
+      /64 hexadecimal characters/,
     );
   });
 
@@ -319,7 +319,7 @@ describe("bukaSuara", () => {
     );
     expect(galat).toBeInstanceOf(GalatOpeningHilang);
     expect(galat.name).toBe("GalatOpeningHilang");
-    expect(galat.message).toMatch(/pulihkan dari berkas cadangan/);
+    expect(galat.message).toMatch(/restore it from the backup file/);
   });
 
   it("pulihkanOpeningDariCadangan menulis opening yang lalu terbaca bukaSuara", async () => {
@@ -435,7 +435,7 @@ describe("pulihkanKredensialDariCadangan", () => {
     const alamatLain = "9".repeat(64);
     await expect(
       pulihkanKredensialDariCadangan(alamatDiminta, { alamatBallot: alamatLain, credentialHex: "e".repeat(64) }),
-    ).rejects.toThrow(/bukan ballot yang sedang didaftarkan/);
+    ).rejects.toThrow(/not the ballot currently being registered/);
     // Efek samping negatif: alamat yang DIMINTA tidak menerima apa pun.
     await expect(daftarkanDiriSendiri(alamatDiminta)).resolves.toMatchObject({ kredensialBaru: true });
   });

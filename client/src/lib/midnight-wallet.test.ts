@@ -107,7 +107,7 @@ describe("pickConnector — penemuan konektor berbasis UUID (Task 5, fix round 1
     } catch (error) {
       expect(error).toBeInstanceOf(WalletError);
       expect((error as WalletError).code).toBe("NO_CONNECTOR");
-      expect((error as Error).message).toMatch(/tidak ada wallet midnight/i);
+      expect((error as Error).message).toMatch(/no midnight wallet/i);
     }
   });
 
@@ -119,7 +119,7 @@ describe("pickConnector — penemuan konektor berbasis UUID (Task 5, fix round 1
     } catch (error) {
       expect(error).toBeInstanceOf(WalletError);
       expect((error as WalletError).code).toBe("NO_CONNECTOR");
-      expect((error as Error).message).toMatch(/tidak ada wallet midnight/i);
+      expect((error as Error).message).toMatch(/no midnight wallet/i);
     }
   });
 
@@ -252,7 +252,7 @@ describe("connectMidnightWallet — enam penjaga (Task 9, dibawa dari Task 5)", 
     const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(WalletError);
     expect((err as WalletError).code).toBe("WALLET_STALE");
-    expect((err as Error).message).toMatch(/muat ulang halaman/i);
+    expect((err as Error).message).toMatch(/reload the page/i);
     expect((err as WalletError).cause).toBeInstanceOf(Error);
     expect(((err as WalletError).cause as Error).message).toBe("Extension context invalidated.");
   });
@@ -279,7 +279,7 @@ describe("connectMidnightWallet — enam penjaga (Task 9, dibawa dari Task 5)", 
 
     const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
     expect((err as WalletError).code).toBe("CONNECT_REJECTED");
-    expect((err as Error).message).toBe("Wallet menolak permintaan koneksi.");
+    expect((err as Error).message).toBe("The wallet rejected the connection request.");
   });
 
   it("Penjaga 5/6 — NO_ADDRESS: connect berhasil tapi getShieldedAddresses/getUnshieldedAddress sama-sama tidak membawa alamat", async () => {
@@ -294,7 +294,7 @@ describe("connectMidnightWallet — enam penjaga (Task 9, dibawa dari Task 5)", 
     const err = await connectMidnightWallet("preview").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(WalletError);
     expect((err as WalletError).code).toBe("NO_ADDRESS");
-    expect((err as Error).message).toMatch(/tidak mengembalikan alamat/i);
+    expect((err as Error).message).toMatch(/did not return an address/i);
   });
 });
 

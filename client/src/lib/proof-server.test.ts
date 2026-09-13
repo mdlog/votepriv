@@ -124,7 +124,7 @@ describe("proofServerReach", () => {
 describe("proofServerHop", () => {
   it("menyebut host halaman sebagai hop perantara pada kasus tunnel", () => {
     expect(proofServerHop("http://127.0.0.1:6300", TUNNEL)).toBe(
-      "browser → votepriv.mdloglabs.org → http://127.0.0.1:6300 (loopback mesin itu, bukan perangkat Anda)",
+      "browser → votepriv.mdloglabs.org → http://127.0.0.1:6300 (that machine's loopback, not your device)",
     );
   });
 

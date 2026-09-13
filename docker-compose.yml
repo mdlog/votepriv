@@ -1,0 +1,146 @@
+# docker-compose.yml — paket distribusi pemilih VotePriv.
+#
+# Satu `docker compose up` menjalankan proof server DAN aplikasi di mesin yang
+# sama, supaya klaim privasi terkuat UI ("Your choice stays private. The proof
+# is built on this device…" — VoteModal.tsx, tampil hanya bila reach ===
+# "lokal") benar tanpa syarat: proof server yang menerima witness (credential +
+# pilihan suara) berjalan di mesin pemilih sendiri, bukan di infrastruktur
+# penyelenggara. Lihat pkgs/cli/proof-server.yml untuk topologi dev/CLI yang
+# terpisah — berkas ini khusus untuk distribusi ke pemilih dan TIDAK
+# menggantikannya.
+#
+# Keputusan jaringan (network_mode vs VITE_PROOF_SERVER_URL) dijelaskan penuh
+# di komentar service "app" di bawah, dengan bukti di
+# .superpowers/paket-pemilih.md.
+
+services:
+  proof-server:
+    image: "midnightntwrk/proof-server:8.1.0"
+    command: ["midnight-proof-server -v"]
+    environment:
+      RUST_BACKTRACE: "full"
+    # Port APLIKASI (bukan port proof server) dipublikasikan lewat service ini
+    # — lihat penjelasan network_mode di service "app". Port proof server 6300
+    # SENGAJA TIDAK dipublikasikan ke host sama sekali: pemilih tidak perlu itu
+    # terbuka, hanya "app" yang menjangkaunya, lewat loopback bersama, bukan
+    # lewat port host. Ini juga yang membuat compose ini aman dijalankan
+    # berdampingan dengan proof server host lain di :6300 (mis. milik
+    # pengembang) — tidak ada rebutan port 6300.
+    ports:
+      - "5300:3000"
+    healthcheck:
+      # Image resmi midnightntwrk/proof-server (build Nix) tidak punya
+      # curl/wget/nc — dan ternyata PATH bawaannya SENGAJA dipersempit hanya
+      # ke direktori binary proof-server sendiri (lihat `docker inspect`:
+      # PATH=/nix/store/.../ledger-8.1.0/bin), jadi bahkan coreutils yang
+      # SECARA FISIK ada di image (head, grep, dst, di /bin) tidak terjangkau
+      # lewat nama biasa — baru ketahuan setelah percobaan pertama gagal
+      # dengan "command not found" (lihat laporan). /bin/bash sendiri ADA
+      # (dibuktikan lewat `docker export`) dan dipanggil lewat path absolut.
+      #
+      # Karena itu pemeriksaan di bawah HANYA memakai builtin bash (exec,
+      # printf, read, [[ ]]) — tidak ada satu pun proses eksternal — supaya
+      # tidak bergantung lagi pada isi PATH image ini: buka fd 3 ke socket
+      # TCP lokal lewat /dev/tcp, kirim baris permintaan HTTP/1.0 mentah, baca
+      # satu baris balasan, cocokkan substring "200". Diverifikasi manual
+      # terhadap container ini sebelum dipakai di sini: proof server membalas
+      # "HTTP/1.0 200 OK" + body "8.1.0" untuk GET /version (transkrip
+      # lengkap ada di laporan).
+      #
+      # PERHATIKAN "$$baris" (bukan "$baris"): Compose melakukan substitusi
+      # variabel ${...}/$... miliknya SENDIRI terhadap seluruh isi berkas ini
+      # SEBELUM healthcheck dikirim ke container — "$baris" tunggal akan
+      # ditelan Compose sendiri (dianggap variabel Compose "baris" yang tidak
+      # diset, jadi berakhir string kosong, dan pemeriksaan JADI SELALU GAGAL
+      # walau proof server sehat — persis yang terjadi pada percobaan
+      # pertama). "$$" adalah cara escape Compose untuk "$" literal, supaya
+      # bash DI DALAM container yang benar-benar mengevaluasi "$baris".
+      test:
+        - "CMD"
+        - "/bin/bash"
+        - "-c"
+        - "exec 3<>/dev/tcp/127.0.0.1/6300 && printf 'GET /version HTTP/1.0\r\n\r\n' >&3 && read -r baris <&3 && [[ \"$$baris\" == *200* ]]"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: "votepriv-voter-app:local"
+    # ---------------------------------------------------------------------
+    # KEPUTUSAN JARINGAN INTI PAKET INI — baca sebelum mengubah baris ini.
+    # ---------------------------------------------------------------------
+    # Bukan VITE_PROOF_SERVER_URL. Nilai bawaan yang dipanggang ke bundel
+    # browser SAAT BUILD (client/src/lib/proof-server.ts:56) dan yang dibaca
+    # proxy server SAAT START (server/index.ts:19) adalah string yang SAMA:
+    # "http://127.0.0.1:6300". Selama VITE_PROOF_SERVER_URL tidak diisi di
+    # KEDUA fase itu (lihat Dockerfile — build stage sengaja tidak
+    # menyetelnya, dan baris "environment" di bawah juga tidak), keduanya
+    # konsisten memakai default yang sama. Jebakan build-vs-start yang
+    # diperingatkan di kedua berkas itu (bundel menyebut satu host, proxy
+    # sungguhan menghubungi host lain) hilang dengan sendirinya — bukan
+    # ditangani, tapi dibuat tidak mungkin terjadi.
+    #
+    # Sisa masalahnya murni jaringan: di Compose biasa, "127.0.0.1" container
+    # app BUKAN container proof-server. Dua opsi ditimbang:
+    #
+    #   (a) network_mode: "service:proof-server" — app berbagi NETWORK
+    #       NAMESPACE (karena itu juga loopback-nya) dengan container
+    #       proof-server. "127.0.0.1:6300" di dalam app sungguhan menjangkau
+    #       proof-server, karena bagi kernel keduanya satu namespace jaringan.
+    #   (b) Menyetel VITE_PROOF_SERVER_URL=http://proof-server:6300 hanya
+    #       saat start (lewat "environment" di service ini).
+    #
+    # (a) DIPILIH — dan ini BUKAN preferensi gaya, ini satu-satunya opsi yang
+    # membuat kalimat "stays private" tampil. Alasannya ada di
+    # client/src/lib/proof-server.ts: proofServerReach() mengklasifikasikan
+    # "lokal" HANYA bila HOSTNAME target proxy ada di HOST_LOKAL
+    # (localhost/127.0.0.1/::1/[::1]/0.0.0.0, atau berakhiran ".localhost").
+    # Nama layanan Compose "proof-server" BUKAN anggota himpunan itu. Jadi
+    # opsi (b) akan membuat runtime-config.json melaporkan target yang BENAR
+    # (proxy memang menghubungi "http://proof-server:6300" — itu memang host
+    # yang sungguhan dipakai) TAPI proofServerReach() akan mengklasifikasikan
+    # itu sebagai "remote", BUKAN "lokal" — walau witness-nya secara fisik
+    # tidak pernah meninggalkan mesin ini. VoteModal.tsx hanya menampilkan
+    # "stays private" bila reach === "lokal" DAN targetTerverifikasi — dengan
+    # opsi (b), syarat pertama itu TIDAK PERNAH terpenuhi.
+    #
+    # Hanya opsi (a) membuat runtime-config.json melaporkan
+    # "http://127.0.0.1:6300" — hostname yang MEMANG anggota HOST_LOKAL — dan
+    # karena halaman pemilih dibuka lewat http://localhost:5300 (asal halaman
+    # juga lokal), proofServerReach() menjawab "lokal" dengan benar. Dibuktikan
+    # end-to-end oleh scripts/uji-paket-pemilih.sh (bagian reach === "lokal").
+    #
+    # Konsekuensi teknis network_mode: "service:proof-server" — service ini
+    # TIDAK BOLEH (dan Compose menolak bila) punya "ports:" atau "networks:"
+    # sendiri; itulah sebabnya port 5300 dipetakan di service "proof-server"
+    # di atas, bukan di sini. Bagi kernel keduanya satu network namespace,
+    # jadi pemetaan port di container mana pun dalam namespace itu berlaku
+    # untuk keduanya.
+    network_mode: "service:proof-server"
+    depends_on:
+      proof-server:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+    healthcheck:
+      # Opsional (tidak diminta spek), tapi murah: image runtime berbasis Node,
+      # jadi dipakai fetch bawaan Node sendiri alih-alih menambah curl/wget.
+      # Menembak endpoint runtime-config sendiri lewat loopback bersama di
+      # atas — bila ini menjawab 200, proxy /proof-server pasti juga sudah
+      # terpasang (rute yang sama didaftarkan sebelum express.static di
+      # server/index.ts).
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "fetch('http://127.0.0.1:3000/__votepriv/runtime-config.json').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped

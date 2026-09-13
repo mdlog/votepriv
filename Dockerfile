@@ -52,6 +52,16 @@ RUN pnpm install --frozen-lockfile
 # dan .superpowers/paket-pemilih.md untuk penjelasan lengkap jebakan
 # build-vs-start.
 ENV NODE_ENV=production
+# Paket workspace `contract` dan `shared` mendeklarasikan main -> dist/index.js,
+# yaitu HASIL BUILD (tsc) yang gitignored. client/ dan pkgs/shared mengimpornya
+# sebagai paket ("contract", "shared"), jadi keduanya HARUS dibangun sebelum
+# `pnpm build` akar — kalau tidak Vite gagal: `Failed to resolve entry for
+# package "contract"`. Ini persis yang menjatuhkan rilis v0.1.0 di CI: di mesin
+# pengembang pkgs/*/dist kebetulan sudah ada (dan .dockerignore lama tidak
+# mengecualikannya), sehingga build lokal sukses dan cacatnya tersembunyi.
+# Urutan penting: contract dulu (shared mengimpornya).
+# Keduanya murni tsc — artefak compactc di src/managed sudah tracked git.
+RUN pnpm --filter contract build && pnpm --filter shared build
 RUN pnpm build
 
 # =============================================================================

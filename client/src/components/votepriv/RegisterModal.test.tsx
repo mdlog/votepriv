@@ -1,7 +1,20 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RegisterModal, type CadanganKredensial, uraiCadanganKredensial, unduhCadanganKredensial } from "./RegisterModal";
 import { ballotUji } from "@/test/fixture-ballot";
+// Lintas-paket, SENGAJA: satu-satunya cara membuktikan ekspor CLI (alur
+// juri, pkgs/cli/src/ekspor-cadangan.ts) menghasilkan berkas yang BENAR-BENAR
+// bisa diimpor RegisterModal adalah memanggil `uraiCadanganKredensial` ASLI
+// di atas (bukan meniru validasinya) atas keluaran NYATA `eksporCadangan` —
+// lihat describe "ekspor-cadangan CLI x uraiCadanganKredensial" di akhir
+// berkas ini, dan .superpowers/alur-juri.md untuk latar lengkapnya. Aman
+// diimpor di sini: ekspor-cadangan.ts murni Node fs/path + artefak.ts/
+// config.ts (tidak menyentuh React/DOM), dan `main()`-nya dijaga
+// `import.meta.main` (tidak pernah berjalan saat diimpor begini).
+import { eksporCadangan } from "../../../../pkgs/cli/src/ekspor-cadangan.ts";
 
 /**
  * Mock SATU-SATUNYA pintu jalur tulis yang RegisterModal.tsx pakai —
@@ -261,5 +274,69 @@ describe("uraiCadanganKredensial / unduhCadanganKredensial — round trip (guard
 
   it("uraiCadanganKredensial menolak hex yang bukan 64 karakter", () => {
     expect(() => uraiCadanganKredensial(JSON.stringify({ alamatBallot: "x".repeat(64), credentialHex: "ab" }))).toThrow();
+  });
+});
+
+describe("ekspor-cadangan CLI (pkgs/cli) x uraiCadanganKredensial — round trip lintas paket (alur juri)", () => {
+  // Guard mutasi wajib (a), .superpowers/alur-juri.md: ekspor CLI harus
+  // menghasilkan bentuk PERSIS yang uraiCadanganKredensial (KONTRAK, tidak
+  // diubah) terima — dibuktikan dengan mengimpor dan memanggil fungsi ASLI
+  // itu di sini, bukan menulis ulang aturannya (64 hex, dua field bernama
+  // persis alamatBallot/credentialHex).
+  it("berkas yang ditulis eksporCadangan terbaca PERSIS oleh uraiCadanganKredensial ASLI, alamatBallot cocok ballot", () => {
+    const dirArtefak = fs.mkdtempSync(path.join(os.tmpdir(), "votepriv-uji-artefak-juri-"));
+    const dirKeluaran = fs.mkdtempSync(path.join(os.tmpdir(), "votepriv-uji-cadangan-juri-"));
+    const alamatBallot = "f".repeat(64);
+    const credentials = ["1".repeat(64), "2".repeat(64), "3".repeat(64)];
+
+    // Artefak sintetis TULIS TANGAN, sengaja BUKAN lewat tulisArtefak (yang
+    // hidup di pkgs/cli/src/artefak.ts — pkgs/cli sudah mengujinya sendiri di
+    // artefak.test.ts): berkas ini hanya perlu berbentuk seperti yang
+    // `bacaArtefak` baca kembali (JSON.parse polos), untuk menjaga uji
+    // lintas-paket ini sesempit mungkin.
+    fs.writeFileSync(
+      path.join(dirArtefak, "test-net-juri.json"),
+      JSON.stringify({ networkId: "test-net-juri", ballot: alamatBallot, credentials }),
+    );
+
+    const hasil = eksporCadangan("test-net-juri", { dirArtefak, dirKeluaran });
+    expect(hasil.jumlah).toBe(3);
+    expect(hasil.berkas).toHaveLength(3);
+
+    const alamatTerbaca = new Set<string>();
+    const credentialTerbaca = new Set<string>();
+    for (const jalur of hasil.berkas) {
+      const teks = fs.readFileSync(jalur, "utf8");
+      const dibaca = uraiCadanganKredensial(teks); // FUNGSI ASLI RegisterModal.tsx — bukan tiruan
+      expect(dibaca.alamatBallot).toBe(alamatBallot);
+      alamatTerbaca.add(dibaca.alamatBallot);
+      credentialTerbaca.add(dibaca.credentialHex);
+    }
+    expect(alamatTerbaca).toEqual(new Set([alamatBallot]));
+    expect(credentialTerbaca).toEqual(new Set(credentials));
+  });
+
+  it("uraiCadanganKredensial ASLI menolak berkas eksporCadangan ketika dicocokkan dengan ballot LAIN — pesan 'different ballot'", () => {
+    // Reproduksi guard RegisterModal.tsx.pulihkanDariBerkas: `alamatBallot !==
+    // ballot.id yang sedang dibuka` ditolak. uraiCadanganKredensial sendiri
+    // TIDAK memeriksa ini (itu tanggung jawab pemanggil) — uji ini karena itu
+    // memeriksa bagian yang jadi tanggung jawab CLI: alamatBallot yang
+    // dikembalikan uraiCadanganKredensial adalah alamat BALLOT ASLI yang
+    // dipakai eksporCadangan, sehingga perbandingan `!== ballot.id lain` di
+    // RegisterModal.tsx pasti berlaku benar atas keluaran CLI ini.
+    const dirArtefak = fs.mkdtempSync(path.join(os.tmpdir(), "votepriv-uji-artefak-juri-"));
+    const dirKeluaran = fs.mkdtempSync(path.join(os.tmpdir(), "votepriv-uji-cadangan-juri-"));
+    const alamatBallotAsli = "a".repeat(64);
+    fs.writeFileSync(
+      path.join(dirArtefak, "test-net-juri.json"),
+      JSON.stringify({ networkId: "test-net-juri", ballot: alamatBallotAsli, credentials: ["9".repeat(64)] }),
+    );
+
+    const hasil = eksporCadangan("test-net-juri", { dirArtefak, dirKeluaran });
+    const dibaca = uraiCadanganKredensial(fs.readFileSync(hasil.berkas[0], "utf8"));
+
+    const alamatBallotLain = "b".repeat(64);
+    expect(dibaca.alamatBallot).not.toBe(alamatBallotLain);
+    expect(dibaca.alamatBallot).toBe(alamatBallotAsli);
   });
 });

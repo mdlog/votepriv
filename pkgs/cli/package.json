@@ -12,6 +12,7 @@
     "register-leaves": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/register-leaves.ts",
     "e2e": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/e2e.ts",
     "doctor": "node --no-warnings --experimental-strip-types src/doctor.ts",
+    "ekspor-cadangan": "node --no-warnings --experimental-strip-types src/ekspor-cadangan.ts",
     "build": "rm -rf dist && tsc --project tsconfig.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

@@ -45,6 +45,29 @@ When you're done for the session, stop everything with
 `docker compose -f docker-compose.voter.yml down` (or Ctrl+C, then that same
 command, to remove the containers cleanly).
 
+## If your organiser sent you a credential file
+
+Some ballots — judging rounds, for example, where the organiser cannot count
+on being online whenever a judge decides to vote — are set up with
+credentials the organiser generates and registers ahead of time, one per
+judge. If that's how you were invited, you'll have received a small `.json`
+file (named something like `votepriv-credential-<8 characters>.json`) instead
+of being asked to register from scratch. To use it:
+
+1. Open the ballot and click **Register to vote**.
+2. In the panel at the bottom of that dialog, click **Restore from backup
+   file** and choose the `.json` file you were sent.
+3. Your leaf and voting screen appear exactly as if you had registered
+   yourself — go ahead and vote.
+
+Because the organiser generated this file rather than you, they could
+technically have cast a vote with it themselves before it ever reached you —
+that is exactly why it has to reach you over a private channel (a direct
+message, an encrypted note, in person), and never by posting it in the
+repository or any public link. Once you vote with it, the credential is
+spent: from that point on, no one — not even the organiser — can use it
+again.
+
 ## What you'll see, and why it's true here
 
 In the sidebar you'll see a privacy indicator that says **"Always on."** When

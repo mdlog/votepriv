@@ -122,6 +122,11 @@ pkgs/cli/logs/
 pkgs/cli/private-state/
 pkgs/cli/artefak/
 
+# Berkas cadangan credential per-juri hasil `pnpm cli ekspor-cadangan` —
+# rahasia pemilih (siapa pun yang memegangnya bisa mencoblos), diserahkan ke
+# tiap juri lewat kanal privat, TIDAK PERNAH lewat repo. Lihat .superpowers/alur-juri.md.
+pkgs/cli/cadangan/
+
 # Rekaman interaksi debug collector (teks elemen yang diklik, isi input, badan permintaan)
 .manus-logs/
 

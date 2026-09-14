@@ -55,6 +55,32 @@ pnpm cli register-leaves /abs/path/to/leaves.txt      # one leaf per line, from 
 Registration closes permanently at the first cast vote. `pnpm cli doctor` checks
 your environment; `pnpm cli e2e` runs a three-voter end-to-end test on testnet.
 
+### Running a judged ballot (handing out credentials ahead of time)
+
+Judges vote whenever they get to it, often days after the ballot goes live —
+there is no organiser online to run `register-leaves` for them. For that
+case, flip the order: create and register the credentials *before* judging
+starts, on a long schedule, then hand each one to its judge over a private
+channel.
+
+```
+VOTEPRIV_ELIGIBLE_COUNT=<judges> VOTEPRIV_MENIT_VOTE=10080 VOTEPRIV_MENIT_TALLY=12960 pnpm cli deploy-ballot
+pnpm cli ekspor-cadangan
+```
+
+The first command is the old `deploy-ballot` path (no
+`VOTEPRIV_TANPA_PENDAFTARAN`), so it creates and registers one credential per
+seat itself, with a 7-day voting window plus 2 more days before tallying
+closes (`VOTEPRIV_MENIT_VOTE`/`VOTEPRIV_MENIT_TALLY` override the 120/180
+minute defaults — both must be positive integers, and tally must exceed
+vote). The second reads that artefact and writes one backup file per
+credential to `pkgs/cli/cadangan/<ballot address>/` (gitignored, mode
+`0600`). Send each file to exactly one judge over a private channel — direct
+message, encrypted note, in person — **never** through this repository or a
+public link: whoever holds a file could vote with it until its judge does.
+Judges import their file from **Register to vote → Restore from backup
+file** (see [README-VOTER.md](README-VOTER.md)).
+
 ## Development
 
 Requires Node 22.23 and pnpm 10.4 (`corepack enable`), plus a local proof server:
@@ -63,7 +89,7 @@ Requires Node 22.23 and pnpm 10.4 (`corepack enable`), plus a local proof server
 docker compose -f pkgs/cli/proof-server.yml up -d   # midnightntwrk/proof-server:8.1.0
 pnpm install
 pnpm dev                                            # app on :3000 (proxies /proof-server)
-pnpm test && pnpm --filter cli test                 # 612 + 236 tests
+pnpm test && pnpm --filter cli test                 # 614 + 274 tests
 pnpm check && pnpm check:uji                        # typecheck app, then test files
 ```
 
@@ -85,7 +111,7 @@ client/            React app (Vite). lib/chain/ is the on-chain read and write p
 server/            Production server: static files + /proof-server proxy.
 pkgs/contract/     Compact contracts (ballot, registry) and generated artefacts.
 pkgs/shared/       Credential helpers and metadata validation shared by app and CLI.
-pkgs/cli/          Organiser CLI: deploy, register leaves, e2e, doctor.
+pkgs/cli/          Organiser CLI: deploy, register leaves, export judge backups, e2e, doctor.
 docs/              Design spec. ARCHITECTURE.md predates the on-chain integration.
 ```
 

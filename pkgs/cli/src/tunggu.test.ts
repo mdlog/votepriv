@@ -144,12 +144,12 @@ describe("ringkasTallies", () => {
 describe("POLA_BELUM_WAKTUNYA", () => {
   it("cocok dua pesan 'belum waktunya' dan TIDAK cocok 'sudah lewat'", () => {
     // Dua yang boleh diulang: waktu blok belum sampai, mencoba lagi masuk akal.
-    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Pemungutan suara masih berlangsung")).toBe(true);
-    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Batas waktu pembukaan suara belum lewat")).toBe(true);
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Voting is still open")).toBe(true);
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Tally deadline has not passed yet")).toBe(true);
     // Yang TIDAK boleh diulang: jendelanya sudah tertutup, mengulang hanya
     // membakar proof. Perhatikan "sudah" versus "belum".
-    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Batas waktu pembukaan suara sudah lewat")).toBe(false);
-    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Credential ini sudah dipakai memilih")).toBe(false);
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Tally deadline has passed")).toBe(false);
+    expect(POLA_BELUM_WAKTUNYA.test("failed assert: Credential has already voted")).toBe(false);
   });
 });
 
@@ -168,7 +168,7 @@ function galatPutusKoneksi(): Error {
 
 /** Bentuk galat penolakan rantai (assert kontrak gagal) — TIDAK boleh diulang. */
 function galatDitolakRantai(): Error {
-  return new Error('failed assert: "Hanya admin yang boleh mendaftarkan pemilih"');
+  return new Error('failed assert: "Only the admin can register voters"');
 }
 
 describe("POLA_PUTUS_KONEKSI / putusKoneksiAmanDiulang", () => {
@@ -257,7 +257,7 @@ describe("kirimDenganRetri", () => {
         label: "uji",
         jedaMs: 1,
       }),
-    ).rejects.toThrow(/Hanya admin yang boleh mendaftarkan pemilih/);
+    ).rejects.toThrow(/Only the admin can register voters/);
     expect(panggilanKirim).toBe(1);
     expect(panggilanCek).toBe(0);
   });
@@ -363,7 +363,7 @@ describe("cobaSampaiWaktuBlokCocok", () => {
     const hasil = await cobaSampaiWaktuBlokCocok(
       async () => {
         ke += 1;
-        if (ke < 3) throw new Error("failed assert: Pemungutan suara masih berlangsung");
+        if (ke < 3) throw new Error("failed assert: Voting is still open");
         return "dibuka";
       },
       logPalsu,
@@ -381,14 +381,14 @@ describe("cobaSampaiWaktuBlokCocok", () => {
       cobaSampaiWaktuBlokCocok(
         async () => {
           ke += 1;
-          throw new Error("failed assert: Credential ini sudah dipakai memilih");
+          throw new Error("failed assert: Credential has already voted");
         },
         logPalsu,
         POLA_BELUM_WAKTUNYA,
         5,
         1,
       ),
-    ).rejects.toThrow(/sudah dipakai memilih/);
+    ).rejects.toThrow(/has already voted/);
     expect(ke).toBe(1);
   });
 });

@@ -509,60 +509,76 @@ describe("terjemahkanGalatRantai — ke-23 pesan assert ballot.compact (audit #2
   // diimpor dari pesan-rantai.ts. Mengimpor peta yang sama yang diuji akan
   // membuat uji ini tautologis (map[i] === map[i]): mengosongkan satu entri
   // peta harus membuat BARIS INI merah, bukan ikut kosong bersamanya.
-  const KE_23_PESAN_ASSERT: ReadonlyArray<readonly [indonesia: string, inggris: string]> = [
-    ["Jumlah opsi harus 2 sampai 4", "This ballot must have between 2 and 4 options."],
+  const KE_23_PESAN_ASSERT: ReadonlyArray<readonly [kontrak: string, ramah: string]> = [
+    ["Option count must be between 2 and 4", "This ballot must have between 2 and 4 options."],
+    ["Tally deadline must be after the vote deadline", "The vote-opening deadline must come after the voting deadline."],
+    ["Eligible voter count must be at least 1", "This ballot needs at least 1 eligible voter."],
     [
-      "Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara",
-      "The vote-opening deadline must come after the voting deadline.",
-    ],
-    ["Jumlah pemilih yang berhak minimal 1", "This ballot needs at least 1 eligible voter."],
-    [
-      "Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)",
+      "Eligible voter count exceeds the tree capacity (1024)",
       "This ballot allows more eligible voters than the maximum of 1,024.",
     ],
-    ["Persentase kuorum tidak boleh melebihi 100", "The quorum percentage cannot be more than 100."],
-    ["Hanya admin yang boleh mendaftarkan pemilih", "Only this ballot's admin can register voters."],
-    ["Ballot sudah tidak dalam fase pemungutan suara", "This ballot is no longer in its voting phase."],
-    ["Pendaftaran ditutup setelah suara pertama masuk", "Registration closed as soon as the first vote was cast."],
-    ["Jumlah pendaftaran harus 1 sampai 8", "You can register between 1 and 8 voters at a time."],
+    ["Quorum percent cannot exceed 100", "The quorum percentage cannot be more than 100."],
+    ["Only the admin can register voters", "Only this ballot's admin can register voters."],
+    ["Ballot is no longer in the voting phase", "This ballot is no longer in its voting phase."],
+    ["Registration is closed once the first vote is cast", "Registration closed as soon as the first vote was cast."],
+    ["Batch size must be between 1 and 8", "You can register between 1 and 8 voters at a time."],
     [
-      "Melebihi eligibleCount yang ditetapkan ballot",
+      "Registration would exceed the ballot's eligibleCount",
       "This would exceed the number of eligible voters set for this ballot.",
     ],
-    ["Batas waktu pemungutan suara sudah lewat", "The voting deadline for this ballot has passed."],
-    ["Ballot tidak sedang menerima suara", "This ballot is not currently accepting votes."],
-    ["Merkle path bukan untuk credential ini", "The submitted proof path does not match this credential."],
-    ["Anda tidak terdaftar sebagai pemilih pada ballot ini", "This credential is not registered for this ballot."],
-    ["Pilihan di luar opsi yang tersedia", "That option is not available on this ballot."],
-    ["Credential ini sudah dipakai memilih", "This credential has already voted on this ballot."],
-    ["Ballot sudah difinalisasi", "This ballot has already been finalized."],
-    ["Pemungutan suara masih berlangsung", "Voting is still open — votes can't be opened yet."],
-    ["Batas waktu pembukaan suara sudah lewat", "The deadline to open votes on this ballot has passed."],
-    ["Merkle path bukan untuk commitment ini", "The submitted proof path does not match this sealed vote."],
-    ["Commitment tidak ditemukan pada ballot ini", "This sealed vote was not found on this ballot."],
-    ["Suara ini sudah pernah dibuka", "This vote has already been opened."],
-    [
-      "Batas waktu pembukaan suara belum lewat",
-      "This ballot can't be finalized yet — the vote-opening deadline hasn't passed.",
-    ],
+    ["Vote deadline has passed", "The voting deadline for this ballot has passed."],
+    ["Ballot is not accepting votes", "This ballot is not currently accepting votes."],
+    ["Merkle path does not belong to this credential", "The submitted proof path does not match this credential."],
+    ["Credential is not registered on this ballot", "This credential is not registered for this ballot."],
+    ["Option is out of range", "That option is not available on this ballot."],
+    ["Credential has already voted", "This credential has already voted on this ballot."],
+    ["Ballot is already finalized", "This ballot has already been finalized."],
+    ["Voting is still open", "Voting is still open — votes can't be opened yet."],
+    ["Tally deadline has passed", "The deadline to open votes on this ballot has passed."],
+    ["Merkle path does not belong to this commitment", "The submitted proof path does not match this sealed vote."],
+    ["Commitment not found on this ballot", "This sealed vote was not found on this ballot."],
+    ["Vote has already been opened", "This vote has already been opened."],
+    ["Tally deadline has not passed yet", "This ballot can't be finalized yet — the vote-opening deadline hasn't passed."],
   ];
 
   it("mencakup PERSIS 23 pesan — bukan lebih sedikit, bukan duplikat", () => {
     expect(KE_23_PESAN_ASSERT).toHaveLength(23);
-    expect(new Set(KE_23_PESAN_ASSERT.map(([indonesia]) => indonesia)).size).toBe(23);
+    expect(new Set(KE_23_PESAN_ASSERT.map(([kontrak]) => kontrak)).size).toBe(23);
+  });
+
+  it("ke-23 kunci kontrak PERSIS sama dengan string assert di pkgs/contract/src/ballot.compact", () => {
+    // Dibaca dari SUMBER kontrak, bukan dari peta pesan-rantai.ts: peta itu
+    // yang diuji, dan kontrak adalah kebenaran yang harus ia ikuti. Kalau
+    // seseorang mengubah satu pesan assert di ballot.compact tanpa memperbarui
+    // peta, baris ini merah — bukan pemilih yang menemukannya lewat JSON mentah.
+    const sumber = readFileSync(path.resolve(process.cwd(), "pkgs", "contract", "src", "ballot.compact"), "utf8");
+    const diKontrak = [...sumber.matchAll(/assert\([^;]*?,\s*"([^"]+)"\);/g)].map((m) => m[1]);
+    // "Ballot is already finalized" muncul dua kali (tallyVote dan finalize).
+    expect(new Set(diKontrak)).toEqual(new Set(KE_23_PESAN_ASSERT.map(([kontrak]) => kontrak)));
+    expect(diKontrak).toHaveLength(24);
+  });
+
+  it("tidak ada kunci yang menjadi substring kunci lain — syarat agar pencocokan pertama selalu benar", () => {
+    const kunci = KE_23_PESAN_ASSERT.map(([kontrak]) => kontrak);
+    for (const a of kunci) {
+      for (const b of kunci) {
+        if (a !== b) expect(b.includes(a), `"${a}" adalah substring dari "${b}"`).toBe(false);
+      }
+    }
   });
 
   it.each(KE_23_PESAN_ASSERT)(
-    "%s -> dipaku ke Inggris, walau dibungkus ala CallTxFailedError",
-    (indonesia, inggris) => {
+    "%s -> dipaku ke kalimat ramah pemilih, walau dibungkus ala CallTxFailedError",
+    (kontrak, ramah) => {
       // Pesan MENTAH (tanpa pembungkus) — pencocokan substring mencakup kasus
       // pesan == kebutuhan persis, bukan hanya pesan yang lebih panjang.
-      expect(terjemahkanGalatRantai(indonesia)).toBe(inggris);
+      expect(terjemahkanGalatRantai(kontrak)).toBe(ramah);
       // Pesan TERBUNGKUS (bentuk sungguhan yang sampai ke setGalat) — DIPAKU
-      // ke nilai Inggris yang SAMA, bukan sekadar "berbeda dari masukan".
-      expect(terjemahkanGalatRantai(bungkusCallTxFailedError(indonesia))).toBe(inggris);
-      // Dan hasilnya sendiri tidak mengandung kata Indonesia terlarang.
-      expect(inggris).not.toMatch(POLA_INDONESIA);
+      // ke nilai ramah yang SAMA, bukan sekadar "berbeda dari masukan".
+      expect(terjemahkanGalatRantai(bungkusCallTxFailedError(kontrak))).toBe(ramah);
+      // Dan baik kunci kontrak maupun hasilnya tidak mengandung kata Indonesia terlarang.
+      expect(kontrak).not.toMatch(POLA_INDONESIA);
+      expect(ramah).not.toMatch(POLA_INDONESIA);
     },
   );
 
@@ -701,7 +717,7 @@ describe("VoteModal — KELIMA cabang reach, keadaan gagal, tally-open, ballot t
     assertHanyaInggris(teksBody(), /proof server refused the request/, "VoteModal kegagalan generik");
   });
 
-  it("kegagalan KONTRAK (CallTxFailedError membungkus assert Indonesia) dirender Inggris — audit #2 Kelas 1", async () => {
+  it("kegagalan KONTRAK (CallTxFailedError membungkus assert kontrak) dirender sebagai kalimat ramah pemilih — audit #2 Kelas 1", async () => {
     // Bentuk nyata: midnight-js melempar CallTxFailedError (lihat komentar
     // bungkusCallTxFailedError di atas), tapi VoteModal hanya pernah membaca
     // `e.message` (`e instanceof Error ? e.message : String(e)`) — Error
@@ -709,7 +725,7 @@ describe("VoteModal — KELIMA cabang reach, keadaan gagal, tally-open, ballot t
     // sudah cukup untuk membuktikan jalur terjemahkanGalatRantai bekerja,
     // tanpa mengimpor CallTxFailedError sungguhan (yang menyeret
     // midnight-js-contracts ke berkas uji ini).
-    const pesanKontrakTerbungkus = bungkusCallTxFailedError("Credential ini sudah dipakai memilih");
+    const pesanKontrakTerbungkus = bungkusCallTxFailedError("Credential has already voted");
     kirimSuaraMock.mockRejectedValue(Object.assign(new Error(pesanKontrakTerbungkus), { kode: "ON_CHAIN" }));
     const { container } = renderVoteModal({
       wallet: { address: "mn_shield-addr_test1x", networkId: "preview", connectorName: "lace", apiVersion: "4.0.1", api: {} },
@@ -725,11 +741,13 @@ describe("VoteModal — KELIMA cabang reach, keadaan gagal, tally-open, ballot t
     assertHanyaInggris(
       teksBody(),
       /This credential has already voted on this ballot\./,
-      "VoteModal galat kontrak (assert Indonesia terbungkus)",
+      "VoteModal galat kontrak (assert kontrak terbungkus)",
     );
-    // Dan secara eksplisit: string assert Indonesia ASLI tidak muncul sama
-    // sekali di DOM — bukan cuma lolos dari POLA_INDONESIA lewat kebetulan.
-    expect(teksBody()).not.toContain("Credential ini sudah dipakai memilih");
+    // Dan secara eksplisit: pembungkus JSON mentah (circuitId/FailFallible)
+    // tidak muncul sama sekali di DOM — pemilih melihat kalimatnya, bukan
+    // status transaksi mentah.
+    expect(teksBody()).not.toContain("FailFallible");
+    expect(teksBody()).not.toContain("circuitId");
   });
 
   it("layar sukses mencoblos berbahasa Inggris pada proof server REMOTE (klaim BERSYARAT)", async () => {
@@ -962,21 +980,25 @@ describe("Home — KEENAM cabang privacy (title= sidebar), keadaan memuat, walle
 
 // ─── D. Gerbang bundel bahasa — dist/public/assets/*.js (audit #2) ─────────
 //
-// BATASAN JUJUR, diminta eksplisit oleh brief audit #2: ke-23 string assert
-// INDONESIA tetap ADA di dist/public/assets/*.js pada build apa pun —
-// pkgs/contract/src/managed/ballot/contract (kontrak TERGENERASI, kode
-// pihak lain yang diimpor sebagai kotak hitam — lihat komentar
-// batas-bundel.test.ts soal batas kepercayaan yang sama) memuatnya apa
-// adanya di dalam circuit yang dikompilasi, dan itu BUKAN bug — lihat
-// keputusan tugas ini soal MENGAPA ballot.compact tidak boleh diubah.
+// RIWAYAT: saat gerbang ini lahir, ke-23 string assert INDONESIA tetap ADA
+// di dist/public/assets/*.js pada build apa pun, karena kontrak tergenerasi
+// (pkgs/contract/src/managed/ballot/contract) memuat pesan assert-nya apa
+// adanya dan ballot.compact saat itu dianggap tidak boleh diubah. Gerbang
+// ini karena itu dulu hanya mengassert KEHADIRAN padanan Inggris.
 //
-// Gerbang ini karena itu TIDAK mengassert KETIADAAN Indonesia (assert itu
-// PASTI merah selamanya, untuk alasan yang tidak ada hubungannya dengan
-// regresi bahasa apa pun). Yang ia assert: ke-23 PADANAN INGGRIS dari
-// `terjemahkanGalatRantai` (pesan-rantai.ts) benar-benar IKUT ter-bundle,
-// bukan di-tree-shake sebagai kode "tidak terpakai" oleh Vite/Rollup — bukti
-// TIDAK LANGSUNG bahwa jalur terjemahan sungguh terpasang di build produksi,
-// bukan cuma lolos di lingkungan uji (jsdom, tanpa build sungguhan).
+// SEKARANG ballot.compact sudah berbahasa Inggris seluruhnya, dan
+// kompilasi ulang terbukti TIDAK mengubah kunci prover/verifier maupun zkir
+// (pesan assert hanya hidup di JS hasil compactc, bukan di circuit). Gerbang
+// ini karena itu DUA ARAH:
+//   - KEHADIRAN: ke-23 kalimat ramah dari `terjemahkanGalatRantai`
+//     (pesan-rantai.ts) benar-benar IKUT ter-bundle, bukan di-tree-shake
+//     sebagai kode "tidak terpakai" oleh Vite/Rollup — bukti TIDAK LANGSUNG
+//     bahwa jalur itu sungguh terpasang di build produksi, bukan cuma lolos
+//     di lingkungan uji (jsdom, tanpa build sungguhan).
+//   - KETIADAAN: tidak SATU PUN dari ke-23 string assert Indonesia LAMA
+//     (maupun pesan witness lama) tersisa di bundel — regresi berupa
+//     kontrak yang dikompilasi ulang dari sumber lama, atau dist/ basi,
+//     langsung merah di sini.
 //
 // INI BUKAN bukti bahwa terjemahan dipanggil pada waktu yang tepat dengan
 // argumen yang tepat, atau bahwa hasil renderiannya benar — bukti UNTUK ITU
@@ -1058,5 +1080,52 @@ describe.skipIf(!DIST_ADA)("D. Gerbang bundel bahasa — dist/public/assets/*.js
     expect(gabungan).toContain(
       "This device is missing required local vote data for this ballot — try restoring your credential or vote backup file, then try again.",
     );
+  });
+
+  // Ke-23 string assert Indonesia yang PERNAH ada di ballot.compact, plus
+  // pesan witness lama — disalin dari riwayat git, bukan dari peta mana pun.
+  // Uji ini adalah arah KETIADAAN gerbang: satu pun yang muncul berarti
+  // bundel dibangun dari kontrak lama (atau dist/ basi).
+  const PESAN_INDONESIA_LAMA = [
+    "Jumlah opsi harus 2 sampai 4",
+    "Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara",
+    "Jumlah pemilih yang berhak minimal 1",
+    "Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)",
+    "Persentase kuorum tidak boleh melebihi 100",
+    "Hanya admin yang boleh mendaftarkan pemilih",
+    "Ballot sudah tidak dalam fase pemungutan suara",
+    "Pendaftaran ditutup setelah suara pertama masuk",
+    "Jumlah pendaftaran harus 1 sampai 8",
+    "Melebihi eligibleCount yang ditetapkan ballot",
+    "Batas waktu pemungutan suara sudah lewat",
+    "Ballot tidak sedang menerima suara",
+    "Merkle path bukan untuk credential ini",
+    "Anda tidak terdaftar sebagai pemilih pada ballot ini",
+    "Pilihan di luar opsi yang tersedia",
+    "Credential ini sudah dipakai memilih",
+    "Ballot sudah difinalisasi",
+    "Pemungutan suara masih berlangsung",
+    "Batas waktu pembukaan suara sudah lewat",
+    "Merkle path bukan untuk commitment ini",
+    "Commitment tidak ditemukan pada ballot ini",
+    "Suara ini sudah pernah dibuka",
+    "Batas waktu pembukaan suara belum lewat",
+    "belum diisi di private state",
+  ] as const;
+
+  it("tidak SATU PUN pesan assert Indonesia lama tersisa di bundel produksi (kontrak sudah Inggris)", () => {
+    expect(PESAN_INDONESIA_LAMA).toHaveLength(24);
+    const gabungan = teksSeluruhBundelJs();
+    const tersisa = PESAN_INDONESIA_LAMA.filter((s) => gabungan.includes(s));
+    expect(tersisa, `pesan Indonesia lama masih ada di dist/public/assets/*.js: ${JSON.stringify(tersisa)}`).toEqual([]);
+  });
+
+  it("ke-23 pesan assert kontrak (Inggris) ADA di bundel — kontrak tergenerasi yang ter-bundle adalah yang sudah Inggris", () => {
+    const gabungan = teksSeluruhBundelJs();
+    const sumber = readFileSync(path.resolve(process.cwd(), "pkgs", "contract", "src", "ballot.compact"), "utf8");
+    const diKontrak = [...new Set([...sumber.matchAll(/assert\([^;]*?,\s*"([^"]+)"\);/g)].map((m) => m[1]))];
+    expect(diKontrak).toHaveLength(23);
+    const hilang = diKontrak.filter((s) => !gabungan.includes(s));
+    expect(hilang, `pesan assert kontrak hilang dari bundel: ${JSON.stringify(hilang)}`).toEqual([]);
   });
 });

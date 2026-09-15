@@ -274,7 +274,7 @@ export class BallotSimulator {
     const daun = pureCircuits.cred_leaf(cred);
     const path = this.getLedger().eligibility.findPathForLeaf(daun);
     if (path === undefined) {
-      throw new Error("Credential tidak ada di pohon eligibility");
+      throw new Error("Credential is not in the eligibility tree");
     }
     const dengan = withCredential(ps, this.contractAddress, cred);
     return withEligibilityPath(
@@ -310,7 +310,7 @@ export class BallotSimulator {
     const c = pureCircuits.vote_commitment(opening.option, opening.salt);
     const path = this.getLedger().commitments.findPathForLeaf(c);
     if (path === undefined) {
-      throw new Error("Commitment tidak ada di pohon");
+      throw new Error("Commitment is not in the tree");
     }
     return withCommitmentPath(ps, this.contractAddress, path);
   }

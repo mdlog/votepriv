@@ -197,21 +197,21 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 201 char 1',
+                                     'ballot.compact line 198 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(Array.isArray(leaves_0) && leaves_0.length === 8 && leaves_0.every((t) => t.buffer instanceof ArrayBuffer && t.BYTES_PER_ELEMENT === 1 && t.length === 32))) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 1 (argument 2 as invoked from Typescript)',
-                                     'ballot.compact line 201 char 1',
+                                     'ballot.compact line 198 char 1',
                                      'Vector<8, Bytes<32>>',
                                      leaves_0)
         }
         if (!(typeof(n_0) === 'bigint' && n_0 >= 0n && n_0 <= 255n)) {
           __compactRuntime.typeError('registerVoters',
                                      'argument 2 (argument 3 as invoked from Typescript)',
-                                     'ballot.compact line 201 char 1',
+                                     'ballot.compact line 198 char 1',
                                      'Uint<0..256>',
                                      n_0)
         }
@@ -240,7 +240,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('castVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 234 char 1',
+                                     'ballot.compact line 229 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -263,7 +263,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('tallyVote',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 311 char 1',
+                                     'ballot.compact line 304 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -286,7 +286,7 @@ export class Contract {
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
           __compactRuntime.typeError('finalize',
                                      'argument 1 (as invoked from Typescript)',
-                                     'ballot.compact line 363 char 1',
+                                     'ballot.compact line 355 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
@@ -349,42 +349,42 @@ export class Contract {
     if (!(typeof(nOptions_0) === 'bigint' && nOptions_0 >= 0n && nOptions_0 <= 255n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 8 (argument 9 as invoked from Typescript)',
-                                 'ballot.compact line 134 char 1',
+                                 'ballot.compact line 132 char 1',
                                  'Uint<0..256>',
                                  nOptions_0)
     }
     if (!(typeof(voteDl_0) === 'bigint' && voteDl_0 >= 0n && voteDl_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 9 (argument 10 as invoked from Typescript)',
-                                 'ballot.compact line 134 char 1',
+                                 'ballot.compact line 132 char 1',
                                  'Uint<0..18446744073709551616>',
                                  voteDl_0)
     }
     if (!(typeof(tallyDl_0) === 'bigint' && tallyDl_0 >= 0n && tallyDl_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 10 (argument 11 as invoked from Typescript)',
-                                 'ballot.compact line 134 char 1',
+                                 'ballot.compact line 132 char 1',
                                  'Uint<0..18446744073709551616>',
                                  tallyDl_0)
     }
     if (!(typeof(quorum_0) === 'bigint' && quorum_0 >= 0n && quorum_0 <= 255n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 11 (argument 12 as invoked from Typescript)',
-                                 'ballot.compact line 134 char 1',
+                                 'ballot.compact line 132 char 1',
                                  'Uint<0..256>',
                                  quorum_0)
     }
     if (!(typeof(eligible_0) === 'bigint' && eligible_0 >= 0n && eligible_0 <= 18446744073709551615n)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 12 (argument 13 as invoked from Typescript)',
-                                 'ballot.compact line 134 char 1',
+                                 'ballot.compact line 132 char 1',
                                  'Uint<0..18446744073709551616>',
                                  eligible_0)
     }
     if (!(nonce_0.buffer instanceof ArrayBuffer && nonce_0.BYTES_PER_ELEMENT === 1 && nonce_0.length === 32)) {
       __compactRuntime.typeError('Contract state constructor',
                                  'argument 14 (argument 15 as invoked from Typescript)',
-                                 'ballot.compact line 134 char 1',
+                                 'ballot.compact line 132 char 1',
                                  'Bytes<32>',
                                  nonce_0)
     }
@@ -869,15 +869,14 @@ export class Contract {
                                        { ins: { cached: false, n: 1 } },
                                        { ins: { cached: true, n: 1 } }]);
     __compactRuntime.assert(nOptions_0 >= 2n && nOptions_0 <= 4n,
-                            'Jumlah opsi harus 2 sampai 4');
+                            'Option count must be between 2 and 4');
     __compactRuntime.assert(tallyDl_0 > voteDl_0,
-                            'Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara');
+                            'Tally deadline must be after the vote deadline');
     __compactRuntime.assert(eligible_0 >= 1n,
-                            'Jumlah pemilih yang berhak minimal 1');
+                            'Eligible voter count must be at least 1');
     __compactRuntime.assert(eligible_0 <= 1024n,
-                            'Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)');
-    __compactRuntime.assert(quorum_0 <= 100n,
-                            'Persentase kuorum tidak boleh melebihi 100');
+                            'Eligible voter count exceeds the tree capacity (1024)');
+    __compactRuntime.assert(quorum_0 <= 100n, 'Quorum percent cannot exceed 100');
     __compactRuntime.queryLedgerState(context,
                                       partialProofData,
                                       [
@@ -1203,7 +1202,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('admin_secret_key',
                                  'return value',
-                                 'ballot.compact line 91 char 1',
+                                 'ballot.compact line 90 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1220,7 +1219,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('voter_credential',
                                  'return value',
-                                 'ballot.compact line 92 char 1',
+                                 'ballot.compact line 91 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1237,7 +1236,7 @@ export class Contract {
     if (!(typeof(result_0) === 'object' && result_0.leaf.buffer instanceof ArrayBuffer && result_0.leaf.BYTES_PER_ELEMENT === 1 && result_0.leaf.length === 32 && Array.isArray(result_0.path) && result_0.path.length === 10 && result_0.path.every((t) => typeof(t) === 'object' && typeof(t.sibling) === 'object' && typeof(t.sibling.field) === 'bigint' && t.sibling.field >= 0 && t.sibling.field <= __compactRuntime.MAX_FIELD && typeof(t.goes_left) === 'boolean'))) {
       __compactRuntime.typeError('eligibility_path',
                                  'return value',
-                                 'ballot.compact line 93 char 1',
+                                 'ballot.compact line 92 char 1',
                                  'struct MerkleTreePath<leaf: Bytes<32>, path: Vector<10, struct MerkleTreePathEntry<sibling: struct MerkleTreeDigest<field: Field>, goes_left: Boolean>>>',
                                  result_0)
     }
@@ -1254,7 +1253,7 @@ export class Contract {
     if (!(typeof(result_0) === 'bigint' && result_0 >= 0n && result_0 <= 255n)) {
       __compactRuntime.typeError('get_my_option',
                                  'return value',
-                                 'ballot.compact line 94 char 1',
+                                 'ballot.compact line 93 char 1',
                                  'Uint<0..256>',
                                  result_0)
     }
@@ -1271,7 +1270,7 @@ export class Contract {
     if (!(result_0.buffer instanceof ArrayBuffer && result_0.BYTES_PER_ELEMENT === 1 && result_0.length === 32)) {
       __compactRuntime.typeError('get_my_salt',
                                  'return value',
-                                 'ballot.compact line 95 char 1',
+                                 'ballot.compact line 94 char 1',
                                  'Bytes<32>',
                                  result_0)
     }
@@ -1290,7 +1289,7 @@ export class Contract {
     if (!(Array.isArray(result_0) && result_0.length === 0 )) {
       __compactRuntime.typeError('store_opening',
                                  'return value',
-                                 'ballot.compact line 96 char 1',
+                                 'ballot.compact line 95 char 1',
                                  '[]',
                                  result_0)
     }
@@ -1307,7 +1306,7 @@ export class Contract {
     if (!(typeof(result_0) === 'object' && result_0.leaf.buffer instanceof ArrayBuffer && result_0.leaf.BYTES_PER_ELEMENT === 1 && result_0.leaf.length === 32 && Array.isArray(result_0.path) && result_0.path.length === 10 && result_0.path.every((t) => typeof(t) === 'object' && typeof(t.sibling) === 'object' && typeof(t.sibling.field) === 'bigint' && t.sibling.field >= 0 && t.sibling.field <= __compactRuntime.MAX_FIELD && typeof(t.goes_left) === 'boolean'))) {
       __compactRuntime.typeError('commitment_path',
                                  'return value',
-                                 'ballot.compact line 97 char 1',
+                                 'ballot.compact line 96 char 1',
                                  'struct MerkleTreePath<leaf: Bytes<32>, path: Vector<10, struct MerkleTreePathEntry<sibling: struct MerkleTreeDigest<field: Field>, goes_left: Boolean>>>',
                                  result_0)
     }
@@ -1334,7 +1333,7 @@ export class Contract {
     return this._persistentHash_0([new Uint8Array([118, 111, 116, 101, 112, 114, 105, 118, 58, 118, 111, 116, 101, 58, 118, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
                                    __compactRuntime.convertFieldToBytes(32,
                                                                         option_0,
-                                                                        'ballot.compact line 118 char 5'),
+                                                                        'ballot.compact line 117 char 5'),
                                    salt_0]);
   }
   _tally_nullifier_0(salt_0) {
@@ -1359,7 +1358,7 @@ export class Contract {
                                                                                                                                 alignment: _descriptor_6.alignment() } }] } },
                                                                                                      { popeq: { cached: false,
                                                                                                                 result: undefined } }]).value)),
-                            'Hanya admin yang boleh mendaftarkan pemilih');
+                            'Only the admin can register voters');
     __compactRuntime.assert(_descriptor_2.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                       partialProofData,
                                                                                       [
@@ -1377,7 +1376,7 @@ export class Contract {
                                                                                                   result: undefined } }]).value)
                             ===
                             0,
-                            'Ballot sudah tidak dalam fase pemungutan suara');
+                            'Ballot is no longer in the voting phase');
     __compactRuntime.assert(this._equal_1(_descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                                     partialProofData,
                                                                                                     [
@@ -1394,26 +1393,26 @@ export class Contract {
                                                                                                      { popeq: { cached: true,
                                                                                                                 result: undefined } }]).value),
                                           0n),
-                            'Pendaftaran ditutup setelah suara pertama masuk');
+                            'Registration is closed once the first vote is cast');
     __compactRuntime.assert(n_0 >= 1n && n_0 <= 8n,
-                            'Jumlah pendaftaran harus 1 sampai 8');
-    const terpakai_0 = _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
-                                                                                 partialProofData,
-                                                                                 [
-                                                                                  { dup: { n: 0 } },
-                                                                                  { idx: { cached: false,
-                                                                                           pushPath: false,
-                                                                                           path: [
-                                                                                                  { tag: 'value',
-                                                                                                    value: { value: _descriptor_6.toValue(1n),
-                                                                                                             alignment: _descriptor_6.alignment() } },
-                                                                                                  { tag: 'value',
-                                                                                                    value: { value: _descriptor_6.toValue(9n),
-                                                                                                             alignment: _descriptor_6.alignment() } }] } },
-                                                                                  { popeq: { cached: true,
-                                                                                             result: undefined } }]).value);
+                            'Batch size must be between 1 and 8');
+    const used_0 = _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
+                                                                             partialProofData,
+                                                                             [
+                                                                              { dup: { n: 0 } },
+                                                                              { idx: { cached: false,
+                                                                                       pushPath: false,
+                                                                                       path: [
+                                                                                              { tag: 'value',
+                                                                                                value: { value: _descriptor_6.toValue(1n),
+                                                                                                         alignment: _descriptor_6.alignment() } },
+                                                                                              { tag: 'value',
+                                                                                                value: { value: _descriptor_6.toValue(9n),
+                                                                                                         alignment: _descriptor_6.alignment() } }] } },
+                                                                              { popeq: { cached: true,
+                                                                                         result: undefined } }]).value);
     let t_0;
-    __compactRuntime.assert((t_0 = terpakai_0 + n_0,
+    __compactRuntime.assert((t_0 = used_0 + n_0,
                              t_0
                              <=
                              _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
@@ -1431,7 +1430,7 @@ export class Contract {
                                                                                                                    alignment: _descriptor_6.alignment() } }] } },
                                                                                         { popeq: { cached: false,
                                                                                                    result: undefined } }]).value)),
-                            'Melebihi eligibleCount yang ditetapkan ballot');
+                            "Registration would exceed the ballot's eligibleCount");
     if (n_0 > 0n) {
       const tmp_0 = leaves_0[0];
       __compactRuntime.queryLedgerState(context,
@@ -1974,7 +1973,7 @@ export class Contract {
                                                                                         'lt',
                                                                                         { popeq: { cached: true,
                                                                                                    result: undefined } }]).value)),
-                            'Batas waktu pemungutan suara sudah lewat');
+                            'Vote deadline has passed');
     __compactRuntime.assert(_descriptor_2.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                       partialProofData,
                                                                                       [
@@ -1992,12 +1991,12 @@ export class Contract {
                                                                                                   result: undefined } }]).value)
                             ===
                             0,
-                            'Ballot tidak sedang menerima suara');
+                            'Ballot is not accepting votes');
     const cred_0 = this._voter_credential_0(context, partialProofData);
-    const daun_0 = this._cred_leaf_0(cred_0);
+    const leaf_0 = this._cred_leaf_0(cred_0);
     const path_0 = this._eligibility_path_0(context, partialProofData);
-    __compactRuntime.assert(this._equal_2(path_0.leaf, daun_0),
-                            'Merkle path bukan untuk credential ini');
+    __compactRuntime.assert(this._equal_2(path_0.leaf, leaf_0),
+                            'Merkle path does not belong to this credential');
     const rt_0 = this._merkleTreePathRoot_0(path_0);
     __compactRuntime.assert(_descriptor_1.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                       partialProofData,
@@ -2024,10 +2023,10 @@ export class Contract {
                                                                                        'member',
                                                                                        { popeq: { cached: true,
                                                                                                   result: undefined } }]).value),
-                            'Anda tidak terdaftar sebagai pemilih pada ballot ini');
-    const opsi_0 = this._get_my_option_0(context, partialProofData);
+                            'Credential is not registered on this ballot');
+    const option_0 = this._get_my_option_0(context, partialProofData);
     const salt_0 = this._get_my_salt_0(context, partialProofData);
-    __compactRuntime.assert(opsi_0
+    __compactRuntime.assert(option_0
                             <
                             _descriptor_6.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                       partialProofData,
@@ -2044,7 +2043,7 @@ export class Contract {
                                                                                                                   alignment: _descriptor_6.alignment() } }] } },
                                                                                        { popeq: { cached: false,
                                                                                                   result: undefined } }]).value),
-                            'Pilihan di luar opsi yang tersedia');
+                            'Option is out of range');
     const nf_0 = this._vote_nullifier_0(_descriptor_3.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                                   partialProofData,
                                                                                                   [
@@ -2080,7 +2079,7 @@ export class Contract {
                                                                                         'member',
                                                                                         { popeq: { cached: true,
                                                                                                    result: undefined } }]).value),
-                            'Credential ini sudah dipakai memilih');
+                            'Credential has already voted');
     __compactRuntime.queryLedgerState(context,
                                       partialProofData,
                                       [
@@ -2100,7 +2099,7 @@ export class Contract {
                                                  value: __compactRuntime.StateValue.newNull().encode() } },
                                        { ins: { cached: false, n: 1 } },
                                        { ins: { cached: true, n: 2 } }]);
-    const tmp_1 = this._vote_commitment_0(opsi_0, salt_0);
+    const tmp_1 = this._vote_commitment_0(option_0, salt_0);
     __compactRuntime.queryLedgerState(context,
                                       partialProofData,
                                       [
@@ -2160,7 +2159,7 @@ export class Contract {
                                                                 .value
                                                             )) } },
                                        { ins: { cached: true, n: 2 } }]);
-    this._store_opening_0(context, partialProofData, opsi_0, salt_0);
+    this._store_opening_0(context, partialProofData, option_0, salt_0);
     return [];
   }
   _tallyVote_0(context, partialProofData) {
@@ -2181,7 +2180,7 @@ export class Contract {
                                                                                                   result: undefined } }]).value)
                             !==
                             2,
-                            'Ballot sudah difinalisasi');
+                            'Ballot is already finalized');
     let tmp_0;
     __compactRuntime.assert((tmp_0 = _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                                partialProofData,
@@ -2214,7 +2213,7 @@ export class Contract {
                                                                                         'lt',
                                                                                         { popeq: { cached: true,
                                                                                                    result: undefined } }]).value)),
-                            'Pemungutan suara masih berlangsung');
+                            'Voting is still open');
     let tmp_1;
     __compactRuntime.assert((tmp_1 = _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                                partialProofData,
@@ -2247,13 +2246,13 @@ export class Contract {
                                                                                         'lt',
                                                                                         { popeq: { cached: true,
                                                                                                    result: undefined } }]).value)),
-                            'Batas waktu pembukaan suara sudah lewat');
-    const opsi_0 = this._get_my_option_0(context, partialProofData);
+                            'Tally deadline has passed');
+    const option_0 = this._get_my_option_0(context, partialProofData);
     const salt_0 = this._get_my_salt_0(context, partialProofData);
-    const c_0 = this._vote_commitment_0(opsi_0, salt_0);
+    const c_0 = this._vote_commitment_0(option_0, salt_0);
     const path_0 = this._commitment_path_0(context, partialProofData);
     __compactRuntime.assert(this._equal_3(path_0.leaf, c_0),
-                            'Merkle path bukan untuk commitment ini');
+                            'Merkle path does not belong to this commitment');
     const rt_0 = this._merkleTreePathRoot_0(path_0);
     __compactRuntime.assert(_descriptor_1.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                       partialProofData,
@@ -2281,7 +2280,7 @@ export class Contract {
                                                                                        'eq',
                                                                                        { popeq: { cached: true,
                                                                                                   result: undefined } }]).value),
-                            'Commitment tidak ditemukan pada ballot ini');
+                            'Commitment not found on this ballot');
     const tnf_0 = this._tally_nullifier_0(salt_0);
     __compactRuntime.assert(!_descriptor_1.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                        partialProofData,
@@ -2302,7 +2301,7 @@ export class Contract {
                                                                                         'member',
                                                                                         { popeq: { cached: true,
                                                                                                    result: undefined } }]).value),
-                            'Suara ini sudah pernah dibuka');
+                            'Vote has already been opened');
     if (_descriptor_2.fromValue(__compactRuntime.queryLedgerState(context,
                                                                   partialProofData,
                                                                   [
@@ -2358,7 +2357,7 @@ export class Contract {
                                                  value: __compactRuntime.StateValue.newNull().encode() } },
                                        { ins: { cached: false, n: 1 } },
                                        { ins: { cached: true, n: 2 } }]);
-    const opsiPublik_0 = opsi_0;
+    const publicOption_0 = option_0;
     if (_descriptor_1.fromValue(__compactRuntime.queryLedgerState(context,
                                                                   partialProofData,
                                                                   [
@@ -2373,7 +2372,7 @@ export class Contract {
                                                                                      value: { value: _descriptor_6.toValue(13n),
                                                                                               alignment: _descriptor_6.alignment() } }] } },
                                                                    { push: { storage: false,
-                                                                             value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(opsiPublik_0),
+                                                                             value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(publicOption_0),
                                                                                                                           alignment: _descriptor_6.alignment() }).encode() } },
                                                                    'member',
                                                                    { popeq: { cached: true,
@@ -2381,7 +2380,7 @@ export class Contract {
     {
       const tmp_2 = ((t1) => {
                       if (t1 > 18446744073709551615n) {
-                        throw new __compactRuntime.CompactError('ballot.compact line 341 char 32: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
+                        throw new __compactRuntime.CompactError('ballot.compact line 334 char 34: cast from Field or Uint value to smaller Uint value failed: ' + t1 + ' is greater than 18446744073709551615');
                       }
                       return t1;
                     })(_descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
@@ -2401,7 +2400,7 @@ export class Contract {
                                                                                            pushPath: false,
                                                                                            path: [
                                                                                                   { tag: 'value',
-                                                                                                    value: { value: _descriptor_6.toValue(opsiPublik_0),
+                                                                                                    value: { value: _descriptor_6.toValue(publicOption_0),
                                                                                                              alignment: _descriptor_6.alignment() } }] } },
                                                                                   { popeq: { cached: false,
                                                                                              result: undefined } }]).value)
@@ -2420,7 +2419,7 @@ export class Contract {
                                                            value: { value: _descriptor_6.toValue(13n),
                                                                     alignment: _descriptor_6.alignment() } }] } },
                                          { push: { storage: false,
-                                                   value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(opsiPublik_0),
+                                                   value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(publicOption_0),
                                                                                                 alignment: _descriptor_6.alignment() }).encode() } },
                                          { push: { storage: true,
                                                    value: __compactRuntime.StateValue.newCell({ value: _descriptor_0.toValue(tmp_2),
@@ -2442,7 +2441,7 @@ export class Contract {
                                                            value: { value: _descriptor_6.toValue(13n),
                                                                     alignment: _descriptor_6.alignment() } }] } },
                                          { push: { storage: false,
-                                                   value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(opsiPublik_0),
+                                                   value: __compactRuntime.StateValue.newCell({ value: _descriptor_6.toValue(publicOption_0),
                                                                                                 alignment: _descriptor_6.alignment() }).encode() } },
                                          { push: { storage: true,
                                                    value: __compactRuntime.StateValue.newCell({ value: _descriptor_0.toValue(tmp_3),
@@ -2489,7 +2488,7 @@ export class Contract {
                                                                                                   result: undefined } }]).value)
                             !==
                             2,
-                            'Ballot sudah difinalisasi');
+                            'Ballot is already finalized');
     let tmp_0;
     __compactRuntime.assert((tmp_0 = _descriptor_0.fromValue(__compactRuntime.queryLedgerState(context,
                                                                                                partialProofData,
@@ -2522,7 +2521,7 @@ export class Contract {
                                                                                         'lt',
                                                                                         { popeq: { cached: true,
                                                                                                    result: undefined } }]).value)),
-                            'Batas waktu pembukaan suara belum lewat');
+                            'Tally deadline has not passed yet');
     __compactRuntime.queryLedgerState(context,
                                       partialProofData,
                                       [
@@ -2889,7 +2888,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(rt_0) === 'object' && typeof(rt_0.field) === 'bigint' && rt_0.field >= 0 && rt_0.field <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('checkRoot',
                                      'argument 1',
-                                     'ballot.compact line 55 char 1',
+                                     'ballot.compact line 54 char 1',
                                      'struct MerkleTreeDigest<field: Field>',
                                      rt_0)
         }
@@ -2942,14 +2941,14 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(index_0) === 'bigint' && index_0 >= 0 && index_0 <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 55 char 1',
+                                     'ballot.compact line 54 char 1',
                                      'Field',
                                      index_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 2',
-                                     'ballot.compact line 55 char 1',
+                                     'ballot.compact line 54 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -2964,7 +2963,7 @@ export function ledger(stateOrChargedState) {
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('find_path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 55 char 1',
+                                     'ballot.compact line 54 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -3068,7 +3067,7 @@ export function ledger(stateOrChargedState) {
         if (!(elem_0.buffer instanceof ArrayBuffer && elem_0.BYTES_PER_ELEMENT === 1 && elem_0.length === 32)) {
           __compactRuntime.typeError('member',
                                      'argument 1',
-                                     'ballot.compact line 78 char 1',
+                                     'ballot.compact line 76 char 1',
                                      'Bytes<32>',
                                      elem_0)
         }
@@ -3140,7 +3139,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(rt_0) === 'object' && typeof(rt_0.field) === 'bigint' && rt_0.field >= 0 && rt_0.field <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('checkRoot',
                                      'argument 1',
-                                     'ballot.compact line 81 char 1',
+                                     'ballot.compact line 80 char 1',
                                      'struct MerkleTreeDigest<field: Field>',
                                      rt_0)
         }
@@ -3194,14 +3193,14 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(index_0) === 'bigint' && index_0 >= 0 && index_0 <= __compactRuntime.MAX_FIELD)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 81 char 1',
+                                     'ballot.compact line 80 char 1',
                                      'Field',
                                      index_0)
         }
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('path_for_leaf',
                                      'argument 2',
-                                     'ballot.compact line 81 char 1',
+                                     'ballot.compact line 80 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -3216,7 +3215,7 @@ export function ledger(stateOrChargedState) {
         if (!(leaf_0.buffer instanceof ArrayBuffer && leaf_0.BYTES_PER_ELEMENT === 1 && leaf_0.length === 32)) {
           __compactRuntime.typeError('find_path_for_leaf',
                                      'argument 1',
-                                     'ballot.compact line 81 char 1',
+                                     'ballot.compact line 80 char 1',
                                      'Bytes<32>',
                                      leaf_0)
         }
@@ -3279,7 +3278,7 @@ export function ledger(stateOrChargedState) {
         if (!(elem_0.buffer instanceof ArrayBuffer && elem_0.BYTES_PER_ELEMENT === 1 && elem_0.length === 32)) {
           __compactRuntime.typeError('member',
                                      'argument 1',
-                                     'ballot.compact line 87 char 1',
+                                     'ballot.compact line 86 char 1',
                                      'Bytes<32>',
                                      elem_0)
         }
@@ -3366,7 +3365,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 255n)) {
           __compactRuntime.typeError('member',
                                      'argument 1',
-                                     'ballot.compact line 88 char 1',
+                                     'ballot.compact line 87 char 1',
                                      'Uint<0..256>',
                                      key_0)
         }
@@ -3398,7 +3397,7 @@ export function ledger(stateOrChargedState) {
         if (!(typeof(key_0) === 'bigint' && key_0 >= 0n && key_0 <= 255n)) {
           __compactRuntime.typeError('lookup',
                                      'argument 1',
-                                     'ballot.compact line 88 char 1',
+                                     'ballot.compact line 87 char 1',
                                      'Uint<0..256>',
                                      key_0)
         }
@@ -3472,7 +3471,7 @@ export const pureCircuits = {
     if (!(sk_0.buffer instanceof ArrayBuffer && sk_0.BYTES_PER_ELEMENT === 1 && sk_0.length === 32)) {
       __compactRuntime.typeError('admin_pk',
                                  'argument 1',
-                                 'ballot.compact line 103 char 1',
+                                 'ballot.compact line 102 char 1',
                                  'Bytes<32>',
                                  sk_0)
     }
@@ -3486,7 +3485,7 @@ export const pureCircuits = {
     if (!(cred_0.buffer instanceof ArrayBuffer && cred_0.BYTES_PER_ELEMENT === 1 && cred_0.length === 32)) {
       __compactRuntime.typeError('cred_leaf',
                                  'argument 1',
-                                 'ballot.compact line 107 char 1',
+                                 'ballot.compact line 106 char 1',
                                  'Bytes<32>',
                                  cred_0)
     }
@@ -3501,14 +3500,14 @@ export const pureCircuits = {
     if (!(nonce_0.buffer instanceof ArrayBuffer && nonce_0.BYTES_PER_ELEMENT === 1 && nonce_0.length === 32)) {
       __compactRuntime.typeError('vote_nullifier',
                                  'argument 1',
-                                 'ballot.compact line 111 char 1',
+                                 'ballot.compact line 110 char 1',
                                  'Bytes<32>',
                                  nonce_0)
     }
     if (!(cred_0.buffer instanceof ArrayBuffer && cred_0.BYTES_PER_ELEMENT === 1 && cred_0.length === 32)) {
       __compactRuntime.typeError('vote_nullifier',
                                  'argument 2',
-                                 'ballot.compact line 111 char 1',
+                                 'ballot.compact line 110 char 1',
                                  'Bytes<32>',
                                  cred_0)
     }
@@ -3523,14 +3522,14 @@ export const pureCircuits = {
     if (!(typeof(option_0) === 'bigint' && option_0 >= 0n && option_0 <= 255n)) {
       __compactRuntime.typeError('vote_commitment',
                                  'argument 1',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 114 char 1',
                                  'Uint<0..256>',
                                  option_0)
     }
     if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
       __compactRuntime.typeError('vote_commitment',
                                  'argument 2',
-                                 'ballot.compact line 115 char 1',
+                                 'ballot.compact line 114 char 1',
                                  'Bytes<32>',
                                  salt_0)
     }
@@ -3544,7 +3543,7 @@ export const pureCircuits = {
     if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
       __compactRuntime.typeError('tally_nullifier',
                                  'argument 1',
-                                 'ballot.compact line 123 char 1',
+                                 'ballot.compact line 122 char 1',
                                  'Bytes<32>',
                                  salt_0)
     }

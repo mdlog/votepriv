@@ -1,9 +1,9 @@
-/** Registry tidak punya data privat; tipe ini ada agar bentuknya seragam dengan ballot. */
+/** The registry has no private data; this type exists so its shape matches the ballot's. */
 export type RegistryPrivateState = Record<string, never>;
 
 export const RegistryPrivateStateId = "votePrivRegistry" as const;
 
 export const emptyRegistryPrivateState = (): RegistryPrivateState => ({});
 
-/** Tidak ada witness yang dideklarasikan registry.compact. */
+/** registry.compact declares no witnesses. */
 export const registryWitnesses = {};

@@ -106,7 +106,7 @@ describe("deployRegistry", () => {
     let panggilan = 0;
     const deployFnPalsu = async () => {
       panggilan += 1;
-      throw new Error('failed assert: "Jumlah opsi harus 2 sampai 4"');
+      throw new Error('failed assert: "Option count must be between 2 and 4"');
     };
 
     await expect(
@@ -114,7 +114,7 @@ describe("deployRegistry", () => {
         bacaDust: async () => 500n,
         jedaMs: 1,
       }),
-    ).rejects.toThrow(/Jumlah opsi harus 2 sampai 4/);
+    ).rejects.toThrow(/Option count must be between 2 and 4/);
     expect(panggilan).toBe(1);
   });
 });
@@ -467,13 +467,13 @@ describe("daftarkanVoter", () => {
       callTx: {
         registerVoters: async () => {
           panggilan += 1;
-          throw new Error('failed assert: "Hanya admin yang boleh mendaftarkan pemilih"');
+          throw new Error('failed assert: "Only the admin can register voters"');
         },
       },
     } as unknown as FoundContract<BallotC>;
 
     await expect(daftarkanVoter(ballotPalsu, [daun(1)], logPalsu, { jedaMs: 1 })).rejects.toThrow(
-      /Hanya admin yang boleh mendaftarkan pemilih/,
+      /Only the admin can register voters/,
     );
     expect(panggilan).toBe(1);
   });

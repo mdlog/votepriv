@@ -4,7 +4,7 @@ import CompactStandardLibrary;
 
 export enum BallotPhase { voting, tallying, finalized }
 
-// ── Metadata, di-seal saat deploy ────────────────────────────────────────
+// ── Metadata, sealed at deploy ───────────────────────────────────────────
 export sealed ledger title:             Opaque<"string">;
 export sealed ledger description:       Opaque<"string">;
 export sealed ledger community:         Opaque<"string">;
@@ -14,32 +14,31 @@ export sealed ledger option2:           Opaque<"string">;
 export sealed ledger option3:           Opaque<"string">;
 export sealed ledger optionCount:       Uint<8>;
 
-// voteDeadline dan tallyDeadline: DETIK sejak epoch Unix (secondsSinceEpoch),
-// BUKAN milidetik. Ini bukan pilihan gaya — onchain-runtime-v3 mendeklarasikan
-// secondsSinceEpoch: bigint sebagai satuan waktu blok pada node sungguhan, dan
-// kernel.blockTimeLessThan/blockTimeGreaterThan membandingkan nilai ini mentah-
-// mentah terhadap ledger ini, tanpa skala apa pun (dikonfirmasi empiris, Task 5).
-// Bila nilai ini di-deploy dalam milidetik (mis. dari Date.now() langsung, ~1000x
-// lebih besar dari detik), deadline efektif tidak akan pernah tercapai dalam
-// rentang waktu manusia — assert deadline diam-diam tidak pernah gagal — dan
-// kegagalan ini TIDAK akan terlihat lewat simulator: simulator dapat dibuat
-// konsisten sendiri di bawah kedua konvensi (ms atau detik), sehingga seluruh
-// uji tetap hijau sementara ballot yang di-deploy sungguhan rusak.
+// voteDeadline and tallyDeadline: SECONDS since the Unix epoch
+// (secondsSinceEpoch), NOT milliseconds. This is not a style choice —
+// onchain-runtime-v3 declares secondsSinceEpoch: bigint as the block-time unit
+// on a real node, and kernel.blockTimeLessThan/blockTimeGreaterThan compare that
+// value against these ledgers as-is, with no scaling (confirmed empirically,
+// Task 5). If these are deployed in milliseconds (e.g. straight from Date.now(),
+// ~1000x larger than seconds), the effective deadline is never reached within a
+// human time span — the deadline asserts silently never fail — and the failure
+// is NOT visible through the simulator: the simulator can be made self-consistent
+// under either convention (ms or seconds), so every test stays green while the
+// ballot deployed for real is broken.
 export sealed ledger voteDeadline:      Uint<64>;
 export sealed ledger tallyDeadline:     Uint<64>;
 
-// METADATA SAJA — TIDAK DITEGAKKAN OLEH CIRCUIT MANA PUN.
-// quorumPercent ditulis sekali di constructor lalu tidak pernah dibaca lagi oleh
-// circuit mana pun di berkas ini. finalize() berhasil pada partisipasi 0% persis
-// seperti pada 100%: tidak ada satu jalur kode pun yang membandingkan voteCount
-// atau talliedCount terhadap nilai ini. Perlakukan sebagai keterangan yang dapat
-// diaudit publik ("kuorum yang dimaksudkan penyelenggara"), BUKAN sebagai ambang
-// yang mengikat — jangan menampilkannya di UI seolah-olah kontrak akan menolak
-// hasil yang berada di bawahnya, karena kontrak tidak menolak apa pun.
-// Satu-satunya hal yang ditegakkan kontrak adalah bahwa nilainya masuk akal
-// sebagai persen (assert quorum <= 100 di constructor), sehingga angka yang
-// ditampilkan bukan omong kosong. Menegakkan kuorum adalah keputusan produk yang
-// sengaja diambil terpisah dari perbaikan ini.
+// METADATA ONLY — NOT ENFORCED BY ANY CIRCUIT.
+// quorumPercent is written once in the constructor and never read again by any
+// circuit in this file. finalize() succeeds at 0% participation exactly as it
+// does at 100%: no code path compares voteCount or talliedCount against this
+// value. Treat it as a publicly auditable note ("the quorum the organiser
+// intended"), NOT as a binding threshold — do not show it in a UI as if the
+// contract would reject a result below it, because the contract rejects
+// nothing. The only thing the contract enforces is that the value makes sense
+// as a percentage (assert quorum <= 100 in the constructor), so the number
+// displayed is not nonsense. Enforcing quorum is a product decision deliberately
+// kept separate from this note.
 export sealed ledger quorumPercent:     Uint<8>;
 export sealed ledger eligibleCount:     Uint<64>;
 export sealed ledger eligibilityPolicy: Opaque<"string">;
@@ -49,41 +48,41 @@ export sealed ledger ballotNonce:       Bytes<32>;
 export ledger phase: BallotPhase;
 
 // ── Eligibility ──────────────────────────────────────────────────────────
-// HistoricMerkleTree, bukan MerkleTree: bila admin mendaftarkan voter dalam
-// beberapa batch, root berubah di antara batch. checkRoot() menerima root lama
-// sehingga path yang sudah disusun voter tetap sah.
+// HistoricMerkleTree rather than MerkleTree: when the admin registers voters in
+// several batches, the root changes between batches. checkRoot() accepts an
+// older root, so a path a voter has already built stays valid.
 export ledger eligibility: HistoricMerkleTree<10, Bytes<32>>;
 
-// ── Fase vote ────────────────────────────────────────────────────────────
+// ── Voting phase ─────────────────────────────────────────────────────────
 export ledger voteCount: Counter;
 
-// Jumlah credential yang sudah diterbitkan. HistoricMerkleTree tidak mengekspos
-// firstFree()/size() ke dalam circuit (keduanya runtime-only pada compactc
-// 0.31.1) sehingga batas eligibleCount ditegakkan lewat Counter paralel ini,
-// yang selalu bertambah persis sebanyak leaf yang di-insert pada transaksi
-// yang sama. Nilainya publik, sehingga jumlah credential yang diterbitkan
-// tetap dapat diaudit siapa pun lewat ledger ini.
+// Number of credentials issued so far. HistoricMerkleTree does not expose
+// firstFree()/size() inside a circuit (both are runtime-only on compactc
+// 0.31.1), so the eligibleCount bound is enforced through this parallel Counter,
+// which always grows by exactly the number of leaves inserted in the same
+// transaction. The value is public, so the number of credentials issued stays
+// auditable by anyone through this ledger.
 //
-// INVARIAN: registeredCount == jumlah leaf di dalam eligibility, selalu.
-// Keduanya adalah state berpasangan yang tidak dijamin apa pun selain disiplin —
-// tidak ada tipe maupun compiler yang mencegah circuit baru mengubah salah satu
-// tanpa yang lain. Bila keduanya berpisah, batas eligibleCount berhenti bermakna
-// dan admin dapat menerbitkan credential melebihi jumlah yang di-seal saat deploy.
-// Karena itu: setiap circuit yang memanggil eligibility.insert() WAJIB menambah
-// registeredCount sebanyak jumlah insert-nya, di transaksi yang sama. Saat ini
-// hanya registerVoters yang menyentuh keduanya; castVote hanya membaca lewat
-// checkRoot dan tidak menyentuh satu pun.
+// INVARIANT: registeredCount == number of leaves in eligibility, always.
+// The two are paired state guaranteed by nothing but discipline — no type and no
+// compiler stops a new circuit from changing one without the other. If they
+// drift apart, the eligibleCount bound stops meaning anything and the admin can
+// issue more credentials than the count sealed at deploy. Therefore: every
+// circuit that calls eligibility.insert() MUST increment registeredCount by the
+// number of inserts, in the same transaction. Today only registerVoters touches
+// either; castVote only reads through checkRoot and touches neither.
 export ledger registeredCount: Counter;
 
 export ledger nullifiers: Set<Bytes<32>>;
-// MerkleTree biasa, bukan Historic: pohon ini sudah beku saat fase tally dimulai,
-// karena castVote hanya boleh sebelum deadline dan tallyVote hanya sesudahnya.
+// Plain MerkleTree, not Historic: this tree is already frozen when the tally
+// phase starts, because castVote is only allowed before the deadline and
+// tallyVote only after it.
 export ledger commitments: MerkleTree<10, Bytes<32>>;
 
-// ── Fase tally ───────────────────────────────────────────────────────────
-// Tidak ada circuit closeVoting terpisah. Transisi voting -> tallying dilakukan
-// secara malas oleh tallyVote() itu sendiri, dipicu pembuka suara pertama —
-// lihat komentar di tallyVote() untuk alasannya (jebakan liveness).
+// ── Tally phase ──────────────────────────────────────────────────────────
+// There is no separate closeVoting circuit. The voting -> tallying transition
+// is made lazily by tallyVote() itself, triggered by the first voter to open a
+// vote — see the comment on tallyVote() for why (liveness trap).
 export ledger tallyNullifiers: Set<Bytes<32>>;
 export ledger tallies:         Map<Uint<8>, Uint<64>>;
 export ledger talliedCount:    Counter;
@@ -96,9 +95,9 @@ witness get_my_salt(): Bytes<32>;
 witness store_opening(o: Uint<8>, s: Bytes<32>): [];
 witness commitment_path(): MerkleTreePath<10, Bytes<32>>;
 
-// ── Hash berpemisah domain ───────────────────────────────────────────────
-// Semuanya `export pure` agar dapat dipanggil TypeScript lewat pureCircuits,
-// sehingga klien tidak perlu mengimplementasi ulang hashing Compact.
+// ── Domain-separated hashes ──────────────────────────────────────────────
+// All `export pure` so TypeScript can call them through pureCircuits, and the
+// client never has to re-implement Compact's hashing.
 
 export pure circuit admin_pk(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "votepriv:pk:v1"), sk]);
@@ -125,12 +124,11 @@ export pure circuit tally_nullifier(salt: Bytes<32>): Bytes<32> {
 }
 
 // ── Constructor ──────────────────────────────────────────────────────────
-// SELURUH validasi mendahului SELURUH penulisan ledger, pola yang sama dengan
-// castVote/tallyVote. Di sini bobotnya lebih berat daripada di circuit mana pun:
-// setiap field yang ditulis di bawah bersifat `sealed`, sehingga nilai yang
-// keliru TIDAK PERNAH bisa diperbaiki setelah deploy. Satu-satunya jalan keluar
-// dari ballot yang salah konfigurasi adalah men-deploy ballot baru dan
-// meninggalkan yang lama — beserta seluruh suara yang sudah masuk ke dalamnya.
+// ALL validation precedes ALL ledger writes, the same pattern as
+// castVote/tallyVote. It carries more weight here than in any circuit: every
+// field written below is `sealed`, so a wrong value can NEVER be corrected
+// after deploy. The only way out of a misconfigured ballot is to deploy a new
+// one and abandon the old — together with every vote already cast into it.
 constructor(
   t: Opaque<"string">,
   d: Opaque<"string">,
@@ -147,36 +145,35 @@ constructor(
   policy: Opaque<"string">,
   nonce: Bytes<32>
 ) {
-  // Spec §5.1 menetapkan 2..4 opsi, dan ledger ini hanya punya option0..option3.
-  // Di atas 4, castVote menerima opsi yang sama sekali tidak punya label on-chain:
-  // assert(opsi < optionCount) lolos, tallies[opsi] terisi, dan hasilnya memuat
-  // baris yang tidak dapat diberi nama oleh siapa pun yang membaca ledger.
-  // Di bawah 2, ballot tidak menawarkan pilihan apa pun.
-  assert(nOptions >= 2 && nOptions <= 4, "Jumlah opsi harus 2 sampai 4");
+  // Spec §5.1 fixes 2..4 options, and this ledger only has option0..option3.
+  // Above 4, castVote would accept an option with no on-chain label at all:
+  // assert(option < optionCount) passes, tallies[option] fills up, and the
+  // result contains a row nobody reading the ledger can name. Below 2, the
+  // ballot offers no choice at all.
+  assert(nOptions >= 2 && nOptions <= 4, "Option count must be between 2 and 4");
 
-  // tallyDeadline WAJIB melewati voteDeadline. Bila tidak, kedua guard tallyVote
-  // — blockTime > voteDeadline DAN blockTime < tallyDeadline — tidak pernah benar
-  // bersamaan, sehingga setiap suara yang masuk menjadi PERMANEN TIDAK DAPAT
-  // DIBUKA. Yang membuatnya mahal: finalize() tetap berhasil, jadi ballot semacam
-  // itu terbit sebagai ballot final dengan voteCount > 0 dan talliedCount == 0
-  // serta tallies kosong, tanpa satu pun penanda di ledger bahwa ia sudah mati.
-  assert(tallyDl > voteDl, "Batas waktu pembukaan suara harus setelah batas waktu pemungutan suara");
+  // tallyDeadline MUST come after voteDeadline. Otherwise the two tallyVote
+  // guards — blockTime > voteDeadline AND blockTime < tallyDeadline — are never
+  // true at the same time, so every vote cast becomes PERMANENTLY UNOPENABLE.
+  // What makes this expensive: finalize() still succeeds, so such a ballot is
+  // published as final with voteCount > 0 and talliedCount == 0 and empty
+  // tallies, without a single marker in the ledger that it is dead.
+  assert(tallyDl > voteDl, "Tally deadline must be after the vote deadline");
 
-  // eligibleCount == 0 menghasilkan ballot yang tidak pernah bisa menerima satu
-  // credential pun (registerVoters menolak semuanya), jadi tidak ada yang bisa
-  // memilih di dalamnya selamanya.
-  assert(eligible >= 1, "Jumlah pemilih yang berhak minimal 1");
+  // eligibleCount == 0 yields a ballot that can never accept a single
+  // credential (registerVoters rejects them all), so nobody can ever vote in it.
+  assert(eligible >= 1, "Eligible voter count must be at least 1");
 
-  // Kapasitas pohon eligibility adalah 2^10 = 1024 daun (Merkle depth 10).
-  // Tanpa batas ini, eligibleCount yang lebih besar diterima diam-diam dan
-  // pendaftaran baru gagal pada daun ke-1025 dengan "exceeded structure bounds"
-  // dari runtime — galat internal yang tidak menjelaskan apa pun, bukan salah
-  // satu pesan penolakan milik kontrak ini.
-  assert(eligible <= 1024, "Jumlah pemilih yang berhak melebihi kapasitas pohon (1024)");
+  // The eligibility tree holds 2^10 = 1024 leaves (Merkle depth 10). Without
+  // this bound a larger eligibleCount is accepted silently and registration
+  // fails on the 1025th leaf with "exceeded structure bounds" from the runtime —
+  // an internal error that explains nothing, rather than one of this contract's
+  // own rejection messages.
+  assert(eligible <= 1024, "Eligible voter count exceeds the tree capacity (1024)");
 
-  // Persen di atas 100 tidak punya arti. Ini SATU-SATUNYA hal yang ditegakkan
-  // kontrak atas quorumPercent — lihat catatan pada deklarasinya.
-  assert(quorum <= 100, "Persentase kuorum tidak boleh melebihi 100");
+  // A percentage above 100 has no meaning. This is the ONLY thing the contract
+  // enforces about quorumPercent — see the note on its declaration.
+  assert(quorum <= 100, "Quorum percent cannot exceed 100");
 
   title             = disclose(t);
   description       = disclose(d);
@@ -196,24 +193,23 @@ constructor(
   phase             = BallotPhase.voting;
 }
 
-// Khusus admin. Menutup sendiri begitu suara pertama masuk, sehingga daftar
-// pemilih tidak dapat berubah di tengah pemungutan suara.
+// Admin only. Closes itself as soon as the first vote lands, so the voter list
+// cannot change in the middle of voting.
 export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
-  assert(disclose(admin_pk(admin_secret_key()) == adminKey), "Hanya admin yang boleh mendaftarkan pemilih");
-  assert(phase == BallotPhase.voting, "Ballot sudah tidak dalam fase pemungutan suara");
-  assert(voteCount.read() == 0, "Pendaftaran ditutup setelah suara pertama masuk");
-  assert(n >= 1 && n <= 8, "Jumlah pendaftaran harus 1 sampai 8");
+  assert(disclose(admin_pk(admin_secret_key()) == adminKey), "Only the admin can register voters");
+  assert(phase == BallotPhase.voting, "Ballot is no longer in the voting phase");
+  assert(voteCount.read() == 0, "Registration is closed once the first vote is cast");
+  assert(n >= 1 && n <= 8, "Batch size must be between 1 and 8");
 
-  // registeredCount bersifat publik, jadi siapa pun dapat memeriksa jumlah
-  // credential yang benar-benar diterbitkan terhadap eligibleCount yang di-seal.
-  const terpakai = registeredCount.read();
-  assert(terpakai + (n as Uint<64>) <= eligibleCount, "Melebihi eligibleCount yang ditetapkan ballot");
+  // registeredCount is public, so anyone can check the number of credentials
+  // actually issued against the sealed eligibleCount.
+  const used = registeredCount.read();
+  assert(used + (n as Uint<64>) <= eligibleCount, "Registration would exceed the ballot's eligibleCount");
 
-  // Diurai manual, bukan for-loop, agar tidak bergantung pada sintaks perulangan.
-  // Kondisi tiap cabang di-disclose karena keputusan meng-insert atau tidak
-  // itu sendiri adalah operasi ledger bersyarat — compactc 0.31.1 mewajibkan
-  // pengungkapan eksplisit untuk boolean apa pun yang menentukan apakah
-  // sebuah operasi ledger dijalankan.
+  // Unrolled by hand rather than a for-loop, to avoid depending on loop syntax.
+  // Each branch condition is disclosed because the decision to insert or not is
+  // itself a conditional ledger operation — compactc 0.31.1 requires explicit
+  // disclosure for any boolean that decides whether a ledger operation runs.
   if (disclose(n > 0)) { eligibility.insert(disclose(leaves[0])); }
   if (disclose(n > 1)) { eligibility.insert(disclose(leaves[1])); }
   if (disclose(n > 2)) { eligibility.insert(disclose(leaves[2])); }
@@ -226,142 +222,138 @@ export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
   registeredCount.increment(disclose(n as Uint<16>));
 }
 
-// Dipanggil voter. Membuktikan keanggotaan di pohon eligibility dalam zero-
-// knowledge, membakar nullifier supaya credential yang sama tidak bisa dipakai
-// dua kali, lalu mencatat commitment suara. Seluruh validasi berjalan sebelum
-// mutasi ledger apa pun, sehingga tidak ada state yang berubah sebagian saat
-// sebuah assert gagal.
+// Called by a voter. Proves membership in the eligibility tree in zero
+// knowledge, burns a nullifier so the same credential cannot be used twice,
+// then records the vote commitment. All validation runs before any ledger
+// mutation, so no state is left half-changed when an assert fails.
 export circuit castVote(): [] {
-  assert(kernel.blockTimeLessThan(voteDeadline), "Batas waktu pemungutan suara sudah lewat");
-  // Status assert fase ini sama dengan assert fase di tallyVote (lihat catatan
-  // panjang di atas circuit itu): tidak ada state yang HANYA guard ini yang
-  // menolaknya. phase meninggalkan voting hanya lewat tallyVote (butuh waktu blok
-  // > voteDeadline) atau finalize (butuh waktu blok > tallyDeadline), dan waktu
-  // blok tidak pernah mundur — jadi setiap kali phase != voting, guard deadline
-  // satu baris di atas sudah gagal juga, dan karena ia ditulis lebih dulu,
-  // pesannyalah yang benar-benar dilihat pengguna.
+  assert(kernel.blockTimeLessThan(voteDeadline), "Vote deadline has passed");
+  // This phase assert has the same status as the phase assert in tallyVote (see
+  // the long note above that circuit): there is no state that ONLY this guard
+  // rejects. phase leaves voting only through tallyVote (needs block time >
+  // voteDeadline) or finalize (needs block time > tallyDeadline), and block time
+  // never goes backwards — so whenever phase != voting, the deadline guard one
+  // line above has already failed too, and because it is written first, its
+  // message is the one the user actually sees.
   //
-  // Bedanya dengan tallyVote: di sini jaminan itu BERSANDAR pada assert
-  // tallyDl > voteDl di constructor. Tanpa assert itu, ballot dengan
-  // tallyDeadline < voteDeadline dapat difinalisasi selagi waktu blok masih
-  // < voteDeadline, dan pada state itu assert fase inilah satu-satunya yang
-  // menolak. Jadi baris ini bukan sekadar dokumentasi niat.
-  assert(phase == BallotPhase.voting, "Ballot tidak sedang menerima suara");
+  // The difference from tallyVote: here that guarantee RESTS on the
+  // tallyDl > voteDl assert in the constructor. Without it, a ballot with
+  // tallyDeadline < voteDeadline could be finalized while block time is still
+  // < voteDeadline, and in that state this phase assert is the only thing that
+  // rejects. So this line is not merely a statement of intent.
+  assert(phase == BallotPhase.voting, "Ballot is not accepting votes");
 
   const cred = voter_credential();
-  const daun = cred_leaf(cred);
+  const leaf = cred_leaf(cred);
   const path = eligibility_path();
 
-  // Membuktikan credential ada di pohon eligibility tanpa membuka credential-nya.
-  assert(disclose(path.leaf == daun), "Merkle path bukan untuk credential ini");
+  // Proves the credential is in the eligibility tree without revealing it.
+  assert(disclose(path.leaf == leaf), "Merkle path does not belong to this credential");
   const rt: MerkleTreeDigest = disclose(merkleTreePathRoot<10, Bytes<32>>(path));
-  assert(eligibility.checkRoot(rt), "Anda tidak terdaftar sebagai pemilih pada ballot ini");
+  assert(eligibility.checkRoot(rt), "Credential is not registered on this ballot");
 
-  const opsi = get_my_option();
+  const option = get_my_option();
   const salt = get_my_salt();
-  assert(disclose(opsi < optionCount), "Pilihan di luar opsi yang tersedia");
+  assert(disclose(option < optionCount), "Option is out of range");
 
-  // Satu credential, satu suara.
+  // One credential, one vote.
   const nf: Bytes<32> = disclose(vote_nullifier(ballotNonce, cred));
-  assert(!nullifiers.member(nf), "Credential ini sudah dipakai memilih");
+  assert(!nullifiers.member(nf), "Credential has already voted");
   nullifiers.insert(nf);
 
-  // Yang masuk ledger hanyalah hash. Tidak ada satu bit pun tentang pilihan.
-  commitments.insert(disclose(vote_commitment(opsi, salt)));
+  // Only a hash enters the ledger. Not a single bit about the choice.
+  commitments.insert(disclose(vote_commitment(option, salt)));
   voteCount.increment(1);
 
-  // Disimpan lokal agar pemilih dapat membuka suaranya pada fase tally.
-  store_opening(opsi, salt);
+  // Kept locally so the voter can open their vote in the tally phase.
+  store_opening(option, salt);
 }
 
-// Dipanggil voter, setelah voteDeadline, untuk membuka commitment suaranya
-// sendiri. Membuktikan dalam zero-knowledge bahwa commitment yang dibuka ada
-// di pohon commitments, TANPA mengungkap yang mana — hanya opsi yang terpilih
-// yang menjadi publik. Nullifier tally diturunkan dari salt, bukan dari
-// commitment, sehingga tidak ada cara menghubungkan "satu suara untuk opsi X"
-// kembali ke commitment mana pun, apalagi ke pemilihnya — inilah yang membuat
-// pembukaan ini tidak dapat dilacak walau hasilnya sudah dipublikasikan.
+// Called by a voter, after voteDeadline, to open their own vote commitment.
+// Proves in zero knowledge that the commitment being opened is in the
+// commitments tree, WITHOUT revealing which one — only the chosen option becomes
+// public. The tally nullifier is derived from the salt, not from the
+// commitment, so there is no way to link "one vote for option X" back to any
+// commitment, let alone to the voter — this is what keeps the opening
+// untraceable even once the result is published.
 //
-// Tidak ada circuit closeVoting terpisah. Transisi voting -> tallying
-// dilakukan secara malas oleh pembuka suara pertama, di dalam circuit ini —
-// bukan lewat circuit penutup tersendiri. Circuit penutup akan menciptakan
-// jebakan liveness: bila tidak ada yang memanggilnya, suara tidak akan pernah
-// bisa dibuka sama sekali, dan ballot mati dengan seluruh suaranya utuh tapi
-// tidak dapat dihitung.
+// There is no separate closeVoting circuit. The voting -> tallying transition
+// is made lazily by the first voter to open a vote, inside this circuit — not
+// through a dedicated closing circuit. A closing circuit would create a
+// liveness trap: if nobody ever called it, no vote could ever be opened, and
+// the ballot would die with all of its votes intact but uncountable.
 //
-// CATATAN (Task 7, DIKOREKSI pada gelombang perbaikan review branch).
-// Klaim yang benar tentang assert phase != finalized di baris pertama circuit
-// ini adalah soal JANGKAUAN, bukan soal urutan: tidak ada state yang HANYA
-// guard ini yang menolaknya. Begitu finalize() berhasil, waktu blok sudah pasti
-// > tallyDeadline (itu prasyarat finalize sendiri) dan waktu blok tidak pernah
-// mundur, sehingga guard blockTimeLessThan(tallyDeadline) juga pasti gagal pada
-// state yang sama.
+// NOTE (Task 7, CORRECTED during the branch-review fix wave).
+// The correct claim about the phase != finalized assert on the first line of
+// this circuit is about REACH, not about order: there is no state that ONLY
+// this guard rejects. Once finalize() has succeeded, block time is certainly
+// > tallyDeadline (that is finalize's own precondition) and block time never
+// goes backwards, so the blockTimeLessThan(tallyDeadline) guard is certain to
+// fail in the same state as well.
 //
-// Versi sebelumnya menulis bahwa guard tallyDeadline "SELALU sudah menolak
-// lebih dulu". Itu KELIRU dan berbahaya untuk dijadikan premis: urutan evaluasi
-// mengikuti urutan penulisan, dan assert fase ditulis paling atas. Setelah
-// finalisasi, pesan yang benar-benar diterima pengguna adalah "Ballot sudah
-// difinalisasi" — bukan "Batas waktu pembukaan suara sudah lewat". Siapa pun
-// yang menyusun ulang atau menghapus guard di sini harus bernalar dari fakta
-// itu, bukan dari premis yang salah.
+// An earlier version wrote that the tallyDeadline guard "ALWAYS rejects first".
+// That was WRONG and dangerous as a premise: evaluation follows the written
+// order, and the phase assert is written first. After finalization the message
+// the user actually receives is "Ballot is already finalized" — not "Tally
+// deadline has passed". Anyone reordering or removing guards here must reason
+// from that fact, not from the wrong premise.
 //
-// Baris ini dipertahankan justru karena pesannya lebih tepat menjelaskan
-// keadaan kepada pengguna, dan sebagai pertahanan berlapis bila guard waktu
-// suatu saat berubah.
+// The line is kept precisely because its message explains the situation to the
+// user more accurately, and as defence in depth should the time guards ever
+// change.
 export circuit tallyVote(): [] {
-  assert(phase != BallotPhase.finalized, "Ballot sudah difinalisasi");
-  assert(kernel.blockTimeGreaterThan(voteDeadline), "Pemungutan suara masih berlangsung");
-  assert(kernel.blockTimeLessThan(tallyDeadline), "Batas waktu pembukaan suara sudah lewat");
+  assert(phase != BallotPhase.finalized, "Ballot is already finalized");
+  assert(kernel.blockTimeGreaterThan(voteDeadline), "Voting is still open");
+  assert(kernel.blockTimeLessThan(tallyDeadline), "Tally deadline has passed");
 
-  const opsi = get_my_option();
+  const option = get_my_option();
   const salt = get_my_salt();
-  const c    = vote_commitment(opsi, salt);
+  const c    = vote_commitment(option, salt);
   const path = commitment_path();
 
-  // Membuktikan commitment ini ada di pohon, tanpa membuka commitment yang mana.
-  assert(disclose(path.leaf == c), "Merkle path bukan untuk commitment ini");
+  // Proves this commitment is in the tree, without revealing which one.
+  assert(disclose(path.leaf == c), "Merkle path does not belong to this commitment");
   const rt: MerkleTreeDigest = disclose(merkleTreePathRoot<10, Bytes<32>>(path));
-  assert(commitments.checkRoot(rt), "Commitment tidak ditemukan pada ballot ini");
+  assert(commitments.checkRoot(rt), "Commitment not found on this ballot");
 
-  // Nullifier tally diturunkan dari salt yang rahasia — BUKAN dari commitment.
-  // Inilah yang membuat "satu suara untuk opsi X" tidak dapat dihubungkan
-  // kembali ke commitment mana pun, apalagi ke pemilihnya.
+  // The tally nullifier is derived from the secret salt — NOT from the
+  // commitment. This is what makes "one vote for option X" unlinkable to any
+  // commitment, let alone to the voter.
   const tnf: Bytes<32> = disclose(tally_nullifier(salt));
-  assert(!tallyNullifiers.member(tnf), "Suara ini sudah pernah dibuka");
+  assert(!tallyNullifiers.member(tnf), "Vote has already been opened");
 
-  // Seluruh validasi di atas sudah lulus; baru sekarang ledger dimutasi.
-  // Transisi fase dulu (lihat komentar di atas circuit ini), lalu nullifier,
-  // lalu tally itu sendiri.
+  // Every validation above has passed; only now is the ledger mutated.
+  // Phase transition first (see the comment above this circuit), then the
+  // nullifier, then the tally itself.
   if (phase == BallotPhase.voting) { phase = BallotPhase.tallying; }
 
   tallyNullifiers.insert(tnf);
 
-  const opsiPublik: Uint<8> = disclose(opsi);
-  if (tallies.member(opsiPublik)) {
-    tallies.insert(opsiPublik, (tallies.lookup(opsiPublik) + 1) as Uint<64>);
+  const publicOption: Uint<8> = disclose(option);
+  if (tallies.member(publicOption)) {
+    tallies.insert(publicOption, (tallies.lookup(publicOption) + 1) as Uint<64>);
   } else {
-    tallies.insert(opsiPublik, 1);
+    tallies.insert(publicOption, 1);
   }
   talliedCount.increment(1);
 }
 
-// Terbuka untuk siapa saja setelah tallyDeadline lewat — bukan hanya admin,
-// karena finalisasi hanya menandai fakta yang sudah publik (tallyDeadline
-// sudah lewat), bukan sebuah keputusan yang butuh otorisasi. Memberi tanda
-// finalitas yang eksplisit di on-chain, bukan sekadar turunan waktu di sisi
-// tampilan.
+// Open to anyone once tallyDeadline has passed — not just the admin, because
+// finalization only records a fact that is already public (tallyDeadline has
+// passed), not a decision that needs authorisation. It gives finality an
+// explicit on-chain marker instead of leaving it as a time derivation on the
+// display side.
 //
-// Diterima dari fase apa pun selain finalized — SENGAJA BUKAN
-// assert(phase == BallotPhase.tallying, ...). phase hanya berpindah ke
-// tallying secara malas ketika pembuka suara pertama memanggil tallyVote
-// (lihat komentar di tallyVote). Sebuah ballot yang tidak pernah dibuka satu
-// suara pun (mis. tidak ada voter yang kembali setelah voteDeadline) akan
-// tetap berada di fase voting selamanya; mewajibkan phase == tallying di sini
-// akan membuat ballot semacam itu tidak dapat difinalisasi sama sekali —
-// jebakan liveness yang sama persis dengan alasan closeVoting dihapus sebagai
-// circuit terpisah (lihat komentar di tallyVote).
+// Accepted from any phase other than finalized — DELIBERATELY NOT
+// assert(phase == BallotPhase.tallying, ...). phase only moves to tallying
+// lazily when the first voter to open a vote calls tallyVote (see the comment
+// on tallyVote). A ballot in which no vote was ever opened (e.g. no voter came
+// back after voteDeadline) stays in the voting phase forever; requiring
+// phase == tallying here would make such a ballot impossible to finalize at
+// all — exactly the liveness trap that is the reason closeVoting was dropped as
+// a separate circuit (see the comment on tallyVote).
 export circuit finalize(): [] {
-  assert(phase != BallotPhase.finalized, "Ballot sudah difinalisasi");
-  assert(kernel.blockTimeGreaterThan(tallyDeadline), "Batas waktu pembukaan suara belum lewat");
+  assert(phase != BallotPhase.finalized, "Ballot is already finalized");
+  assert(kernel.blockTimeGreaterThan(tallyDeadline), "Tally deadline has not passed yet");
   phase = BallotPhase.finalized;
 }

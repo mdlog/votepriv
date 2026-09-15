@@ -278,8 +278,10 @@ export default function Home() {
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? "mobile-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark"><span /><span /><span /></div>
-          <span>vote<span>priv</span></span>
+          {/* Tanda merek: berkas di client/public/ (disalin apa adanya ke dist/public/),
+              dibuat dari logo sumber lewat skrip di luar repo — lihat komentar .brand-mark di index.css. */}
+          <img className="brand-mark" src="/logo-mark.png" alt="" width={28} height={28} />
+          <span>Vote<span>Priv</span></span>
         </div>
         <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <div className="workspace-card">

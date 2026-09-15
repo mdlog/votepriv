@@ -64,10 +64,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--mint); outl
 .app-shell { min-height: 100vh; display: flex; background: radial-gradient(circle at 73% -15%, rgba(56, 90, 109, .18), transparent 27rem), var(--background); }
 .sidebar { width: 240px; flex: 0 0 240px; min-height: 100vh; padding: 25px 15px 17px; border-right: 1px solid var(--line); background: rgba(10,14,21,.84); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; z-index: 30; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 12px 29px; font: 700 20px 'Space Grotesk', sans-serif; letter-spacing: -.07em; color: #f5f7f5; }
-.brand > span > span { color: var(--mint); }
-.brand-mark { width: 24px; height: 24px; display: flex; align-items: flex-end; gap: 3px; }
-.brand-mark span { display: block; width: 6px; border-radius: 4px; background: var(--mint); box-shadow: 0 0 15px rgba(165,243,205,.28); }
-.brand-mark span:nth-child(1) { height: 10px; opacity: .65; }.brand-mark span:nth-child(2) { height: 18px; }.brand-mark span:nth-child(3) { height: 14px; opacity: .8; }
+/* "Priv" memakai gradasi wordmark logo (#687bfc → #4c89fd, disampel dari berkas logo), bukan mint — supaya teks di samping tanda merek cocok dengan logonya. */
+.brand > span > span { background: linear-gradient(90deg, #687bfc, #4c89fd); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Tanda merek = client/public/logo-mark.png (512 px, latar transparan) — ikon kotak suara dari logo, dipotong dari lockup penuh. Ukuran ditulis di atribut width/height juga agar tidak ada lompatan tata letak saat gambar dimuat. */
+.brand-mark { width: 28px; height: 28px; flex: 0 0 auto; display: block; object-fit: contain; filter: drop-shadow(0 0 10px rgba(104,123,252,.35)); }
 .workspace-card { display: flex; align-items: center; gap: 10px; padding: 10px; margin: 0 0 28px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.035); }
 .workspace-avatar, .user-avatar { display: grid; place-items: center; flex: 0 0 auto; background: linear-gradient(135deg,#d1ffe4,#65a9ad); color: #07150f; font: 700 10px 'DM Mono', monospace; border-radius: 8px; }
 .workspace-avatar { width: 30px; height: 30px; }.workspace-card > div:nth-child(2) { display:flex; flex-direction:column; gap: 2px; flex: 1; min-width:0; }.workspace-card strong { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.workspace-card span { color: var(--muted-foreground); font-size: 10px; white-space: nowrap; }

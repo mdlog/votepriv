@@ -1,0 +1,28 @@
+# Optional overlay for docker-compose.voter.yml: start the proof server from a
+# pre-downloaded parameter set instead of fetching it from
+# https://srs.midnight.network at every start.
+#
+# When you need it: the proof server prints
+#   "Failed to fetch data from https://srs.midnight.network/... Giving up."
+# and the app never starts ("dependency failed to start: container
+# votepriv-proof-server-1 is unhealthy"). That happens when containers on your
+# machine cannot reach the internet (a common Docker Desktop / WSL2 DNS problem,
+# or a network that blocks the host) even though your browser can.
+#
+# The parameters are public data (Midnight's SRS and the zswap/dust proving and
+# verifying keys). The proof server keeps them in /.cache/midnight/zk-params;
+# mounting a directory there makes it skip the download entirely — verified by
+# starting the container with --network none and getting HTTP 200 from /health.
+#
+# Usage:
+#   1. Download zk-params.tar.gz from the release page (its sha256 is in the
+#      release notes) and extract it next to this file:  tar xzf zk-params.tar.gz
+#      → a directory ./zk-params/ containing bls_midnight_2p10..2p15, dust/, zswap/
+#   2. docker compose -f docker-compose.voter.yml -f docker-compose.zk-params.yml up
+#
+# It also works as a plain cache: with the directory mounted, a fresh `up` never
+# re-downloads the ~33 MB parameter set.
+services:
+  proof-server:
+    volumes:
+      - "./zk-params:/.cache/midnight/zk-params"

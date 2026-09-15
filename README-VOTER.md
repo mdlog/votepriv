@@ -45,6 +45,36 @@ When you're done for the session, stop everything with
 `docker compose -f docker-compose.voter.yml down` (or Ctrl+C, then that same
 command, to remove the containers cleanly).
 
+## If the proof server cannot download its parameters
+
+At first start the proof server fetches ~33 MB of public parameters from
+`https://srs.midnight.network`. If containers on your machine cannot reach the
+internet (a common Docker Desktop / WSL2 DNS problem, or a restrictive
+network), you will see:
+
+```
+Failed to fetch data from https://srs.midnight.network/bls_midnight_2p10 after 3 attempts. Giving up.
+dependency failed to start: container votepriv-proof-server-1 is unhealthy
+```
+
+Use the pre-downloaded parameter set instead — the proof server then needs no
+network at all (verified by starting it with `--network none`):
+
+1. From the release page **Assets**, download `zk-params.tar.gz` and
+   `docker-compose.zk-params.yml` into the same folder as
+   `docker-compose.voter.yml`. Check the archive's sha256 against the value in
+   the release notes.
+2. Extract it: `tar xzf zk-params.tar.gz` → a `zk-params/` folder.
+3. Start with both files:
+
+   ```
+   docker compose -f docker-compose.voter.yml -f docker-compose.zk-params.yml up
+   ```
+
+The archive contains only public data (Midnight's SRS and the zswap/dust
+proving and verifying keys) copied from a proof server that had downloaded and
+verified them. Nothing in it is specific to you or to any ballot.
+
 ## If your organiser sent you a credential file
 
 Some ballots — judging rounds, for example, where the organiser cannot count

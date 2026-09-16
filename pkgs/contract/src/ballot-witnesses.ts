@@ -1,50 +1,46 @@
 import type { MerkleTreePath, WitnessContext } from "@midnight-ntwrk/compact-runtime";
 
 /**
- * SATU id untuk SELURUH ballot — dan itu memang disengaja.
+ * ONE id for EVERY ballot — and that is deliberate.
  *
- * KOREKSI (review cabang penuh): komentar ini sebelumnya mengklaim bahwa
- * midnight-js "mengunci private state provider pada id ini, jadi seluruh
- * ballot berbagi satu blob penyimpanan". Itu SALAH, diverifikasi langsung
- * terhadap @midnight-ntwrk/midnight-js-level-private-state-provider 4.0.4
- * yang terpasang (src/level-private-state-provider.ts, `getScopedKey`):
- * kunci penyimpanan sesungguhnya adalah `${contractAddress}:${privateStateId}`
- * — ALAMAT KONTRAK ikut jadi bagian kunci, bukan hanya id ini — sehingga
- * setiap ballot (alamat berbeda) sudah mendapat ENTRI TERPISAH di LevelDB
- * dengan sendirinya, walau `privateStateId`-nya sama persis untuk semuanya.
- * Ini yang benar, dan cocok dengan catatan `setContractAddress` di vote.ts
- * (siapkanPemilih): "level provider menyusun kuncinya sebagai
- * `${contractAddress}:${privateStateId}`" — vote.ts sudah benar; komentar
- * inilah yang salah dan sudah dikoreksi.
+ * CORRECTION (full branch review): this comment previously claimed that
+ * midnight-js "locks the private state provider to this id, so every ballot
+ * shares one storage blob". That was WRONG, verified directly against the
+ * installed @midnight-ntwrk/midnight-js-level-private-state-provider 4.0.4
+ * (src/level-private-state-provider.ts, `getScopedKey`): the real storage key
+ * is `${contractAddress}:${privateStateId}` — the CONTRACT ADDRESS is part of
+ * the key, not just this id — so every ballot (different address) already gets
+ * a SEPARATE LevelDB entry on its own, even though its `privateStateId` is
+ * exactly the same for all of them. That is the correct picture, and it matches
+ * the `setContractAddress` note in vote.ts (siapkanPemilih): "the level provider
+ * composes its key as `${contractAddress}:${privateStateId}`" — vote.ts was
+ * right; this comment was wrong and has been corrected.
  *
- * Yang menentukan aman atau tidaknya beberapa ballot memakai id yang sama
- * KARENA ITU bukan bentuk isi blob-nya (provider sudah memisahkan blob per
- * ballot sendiri, terlepas dari bentuk isinya) — melainkan supaya
- * `BallotPrivateState` yang dibaca `psp.get(BallotPrivateStateId)` tetap
- * MENYATAKAN SENDIRI ballot mana yang dimilikinya, sesuai spec §8: setiap
- * field selain `secretKey` adalah map berkunci alamat kontrak ballot (lihat
- * `BallotPrivateState` di bawah), bukan field datar. Ini penting justru
- * karena satu penyimpan (satu direktori LevelDB) BOLEH dipakai admin yang
- * sama untuk lebih dari satu ballot yang ia buat (lihat komentar
- * `rakitProvidersBallot`/`namaStore` di pkgs/cli/src/deploy-ballot.ts) —
- * dan bila kelak satu proses memegang dua `BallotPrivateState` dari dua
- * ballot berbeda sekaligus (mis. digabung di kode aplikasi, bukan providers
- * yang menggabungkannya), field datar `option`/`salt` tidak menyatakan
- * ballot mana pemiliknya: menimpa satu variabel `option` datar dengan nilai
- * ballot B menghancurkan (secara LOGIS, di level aplikasi, bukan di level
- * penyimpanan) opening ballot A yang sedang dipegang bersamaan, dan suara A
- * jadi permanen tidak dapat dibuka (spec §6.3: opening hilang = suara
- * hilang). Map berkunci alamat menutup celah itu di level TIPE: nilai
- * ballot A dan ballot B tidak pernah menempati slot yang sama walau berada
- * di objek JS yang sama.
+ * What decides whether several ballots can safely share one id is THEREFORE
+ * not the shape of the blob (the provider already separates blobs per ballot,
+ * whatever their shape) — it is that the `BallotPrivateState` read by
+ * `psp.get(BallotPrivateStateId)` keeps STATING which ballot it belongs to,
+ * per spec §8: every field other than `secretKey` is a map keyed by ballot
+ * contract address (see `BallotPrivateState` below), not a flat field. This
+ * matters precisely because one store (one LevelDB directory) MAY be used by
+ * the same admin for more than one ballot they created (see the
+ * `rakitProvidersBallot`/`namaStore` comment in pkgs/cli/src/deploy-ballot.ts)
+ * — and if one process ever holds two `BallotPrivateState`s from two different
+ * ballots at once (e.g. merged in application code, not by the providers), flat
+ * `option`/`salt` fields would not say which ballot owns them: overwriting a
+ * flat `option` with ballot B's value destroys (LOGICALLY, at the application
+ * level, not at the storage level) the opening of ballot A held at the same
+ * time, and A's vote becomes permanently unopenable (spec §6.3: lost opening =
+ * lost vote). Address-keyed maps close that gap at the TYPE level: ballot A's
+ * and ballot B's values never occupy the same slot even inside one JS object.
  */
 export const BallotPrivateStateId = "votePrivBallot" as const;
 
 /**
- * Pembukaan satu suara: pasangan (opsi, salt) yang mengikat satu commitment.
- * Disimpan sebagai satu record karena keduanya memang atomik — commitment adalah
- * hash dari keduanya sekaligus, jadi salt tanpa opsi (atau sebaliknya) tidak
- * pernah bisa membuka apa pun.
+ * The opening of one vote: the (option, salt) pair that binds one commitment.
+ * Stored as a single record because the two really are atomic — the commitment
+ * is a hash of both at once, so a salt without its option (or the reverse) can
+ * never open anything.
  */
 export type BallotOpening = {
   readonly option: bigint;
@@ -52,28 +48,27 @@ export type BallotOpening = {
 };
 
 /**
- * Bentuk private state VotePriv, sesuai spec §8 ("Bentuk private state").
+ * Shape of the VotePriv private state, per spec §8 ("Private state shape").
  *
- * Setiap field selain `secretKey` adalah map BERKUNCI ALAMAT KONTRAK BALLOT.
- * `secretKey` sengaja tetap datar: ia identitas admin, bukan nilai per-ballot —
- * satu orang memakai kunci yang sama untuk seluruh ballot yang ia buat.
+ * Every field other than `secretKey` is a map KEYED BY BALLOT CONTRACT ADDRESS.
+ * `secretKey` deliberately stays flat: it is the admin's identity, not a
+ * per-ballot value — one person uses the same key for every ballot they create.
  *
- * Kuncinya adalah `ContractAddress` APA ADANYA seperti yang dilaporkan runtime
- * lewat `WitnessContext.contractAddress`. Penyimpan (adapter Plan C) WAJIB
- * memakai bentuk string yang sama persis saat menulis, atau pembacaan witness
- * akan meleset dan suara tampak hilang. Pakai helper `with*` di bawah, jangan
- * menyusun map-nya sendiri.
+ * The key is the `ContractAddress` EXACTLY as the runtime reports it through
+ * `WitnessContext.contractAddress`. The store (the Plan C adapter) MUST use the
+ * very same string form when writing, or witness reads will miss and the vote
+ * will appear lost. Use the `with*` helpers below; do not build the maps by hand.
  */
 export type BallotPrivateState = {
-  /** Kunci rahasia admin; menentukan adminKey saat deploy. Bukan nilai per-ballot. */
+  /** Admin secret key; determines adminKey at deploy. Not a per-ballot value. */
   readonly secretKey: Uint8Array;
-  /** alamat ballot -> credential voter pada ballot itu. */
+  /** ballot address -> the voter's credential on that ballot. */
   readonly credentials: Record<string, Uint8Array>;
-  /** alamat ballot -> opening yang dipakai castVote lalu tallyVote. */
+  /** ballot address -> the opening used by castVote and later tallyVote. */
   readonly openings: Record<string, BallotOpening>;
-  /** alamat ballot -> Merkle path menuju daun eligibility, disusun klien dari state on-chain. */
+  /** ballot address -> Merkle path to the eligibility leaf, built client-side from on-chain state. */
   readonly eligibilityPaths: Record<string, MerkleTreePath<Uint8Array>>;
-  /** alamat ballot -> Merkle path menuju commitment, disusun klien saat fase tally. */
+  /** ballot address -> Merkle path to the commitment, built client-side in the tally phase. */
   readonly commitmentPaths: Record<string, MerkleTreePath<Uint8Array>>;
 };
 
@@ -85,9 +80,9 @@ export const emptyBallotPrivateState = (secretKey: Uint8Array): BallotPrivateSta
   commitmentPaths: {},
 });
 
-// ── Penulis: satu-satunya cara yang benar mengisi state per-ballot ──────────
-// Semuanya murni dan tidak memvalidasi apa pun. Tidak satu pun menyentuh entri
-// milik ballot lain — itulah keseluruhan poin perbaikan ini.
+// ── Writers: the only correct way to fill per-ballot state ──────────────────
+// All pure, none validates anything. None touches another ballot's entry —
+// that is the whole point of this design.
 
 export const withCredential = (
   ps: BallotPrivateState,
@@ -125,7 +120,7 @@ export const withCommitmentPath = (
   commitmentPaths: { ...ps.commitmentPaths, [ballot]: path },
 });
 
-// ── Pembaca: dipakai UI untuk tahu apakah masih ada suara yang bisa dibuka ──
+// ── Readers: used by the UI to know whether a vote can still be opened ──────
 
 export const credentialFor = (ps: BallotPrivateState, ballot: string): Uint8Array | null =>
   ps.credentials[ballot] ?? null;
@@ -134,36 +129,36 @@ export const openingFor = (ps: BallotPrivateState, ballot: string): BallotOpenin
   ps.openings[ballot] ?? null;
 
 /**
- * Context witness yang sebenarnya dari runtime. Yang penting di sini:
- * `contractAddress`. Witness tidak menerima identitas ballot sebagai argumen —
- * tidak satu pun dari ketujuh witness di ballot.compact punya parameter untuk
- * itu, dan menambahkannya berarti mengubah antarmuka circuit. Runtime sendiri
- * yang menyediakannya: kode yang dihasilkan compactc memanggil
+ * The real witness context from the runtime. What matters here is
+ * `contractAddress`. Witnesses do not receive the ballot identity as an
+ * argument — none of the seven witnesses in ballot.compact has a parameter for
+ * it, and adding one would change the circuit interface. The runtime supplies
+ * it: compactc-generated code calls
  * `createWitnessContext(ledger, privateState, context.currentQueryContext.address)`
- * sebelum SETIAP pemanggilan witness, jadi alamat kontrak yang sedang berjalan
- * selalu tersedia — tanpa kunci yang harus disetel pemanggil lebih dulu dan
- * tanpa id private state per-instance.
+ * before EVERY witness call, so the address of the running contract is always
+ * available — with no key the caller has to set first and no per-instance
+ * private state id.
  *
- * Ledger sengaja `unknown`: lapisan ini tidak boleh membaca state publik untuk
- * memutuskan apa pun.
+ * Ledger is deliberately `unknown`: this layer must not read public state to
+ * decide anything.
  */
 type Ctx = WitnessContext<unknown, BallotPrivateState>;
 
-const need = <T>(v: T | null, nama: string, ballot: string): T => {
+const need = <T>(v: T | null, name: string, ballot: string): T => {
   if (v === null) {
-    throw new Error(`${nama} untuk ballot ${ballot} belum diisi di private state`);
+    throw new Error(`${name} for ballot ${ballot} is not set in private state`);
   }
   return v;
 };
 
-const lihat = <T>(peta: Record<string, T>, ballot: string): T | null => peta[ballot] ?? null;
+const lookup = <T>(map: Record<string, T>, ballot: string): T | null => map[ballot] ?? null;
 
 /**
- * Penyimpan lokal yang bodoh. Tidak memvalidasi aturan apa pun —
- * seluruh aturan ditegakkan assert di dalam circuit.
+ * A dumb local store. Validates no rule at all — every rule is enforced by the
+ * asserts inside the circuits.
  *
- * Satu-satunya "kepintaran" di sini adalah memilih entri milik ballot yang
- * sedang dipanggil, dan itu bukan aturan: itu penyimpanan yang berkunci benar.
+ * The only "cleverness" here is picking the entry that belongs to the ballot
+ * being called, and that is not a rule: it is correctly keyed storage.
  */
 export const ballotWitnesses = {
   admin_secret_key: (ctx: Ctx): [BallotPrivateState, Uint8Array] => [
@@ -172,20 +167,20 @@ export const ballotWitnesses = {
   ],
   voter_credential: (ctx: Ctx): [BallotPrivateState, Uint8Array] => [
     ctx.privateState,
-    need(lihat(ctx.privateState.credentials, ctx.contractAddress), "credential", ctx.contractAddress),
+    need(lookup(ctx.privateState.credentials, ctx.contractAddress), "credential", ctx.contractAddress),
   ],
   get_my_option: (ctx: Ctx): [BallotPrivateState, bigint] => [
     ctx.privateState,
-    need(lihat(ctx.privateState.openings, ctx.contractAddress), "opening", ctx.contractAddress).option,
+    need(lookup(ctx.privateState.openings, ctx.contractAddress), "opening", ctx.contractAddress).option,
   ],
   get_my_salt: (ctx: Ctx): [BallotPrivateState, Uint8Array] => [
     ctx.privateState,
-    need(lihat(ctx.privateState.openings, ctx.contractAddress), "opening", ctx.contractAddress).salt,
+    need(lookup(ctx.privateState.openings, ctx.contractAddress), "opening", ctx.contractAddress).salt,
   ],
   eligibility_path: (ctx: Ctx): [BallotPrivateState, MerkleTreePath<Uint8Array>] => [
     ctx.privateState,
     need(
-      lihat(ctx.privateState.eligibilityPaths, ctx.contractAddress),
+      lookup(ctx.privateState.eligibilityPaths, ctx.contractAddress),
       "eligibilityPath",
       ctx.contractAddress,
     ),
@@ -193,7 +188,7 @@ export const ballotWitnesses = {
   commitment_path: (ctx: Ctx): [BallotPrivateState, MerkleTreePath<Uint8Array>] => [
     ctx.privateState,
     need(
-      lihat(ctx.privateState.commitmentPaths, ctx.contractAddress),
+      lookup(ctx.privateState.commitmentPaths, ctx.contractAddress),
       "commitmentPath",
       ctx.contractAddress,
     ),

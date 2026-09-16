@@ -178,3 +178,30 @@ export function padatkanTallies(
   }
   return padat;
 }
+
+/**
+ * Keanggotaan satu leaf di pohon eligibility ballot — dipakai app pemilih
+ * sebagai BUKTI on-chain bahwa pendaftarannya mendarat (lihat
+ * inbox-pendaftaran.ts). `findPathForLeaf` adalah API HistoricMerkleTree yang
+ * sama yang dipakai eligibility-tulis.ts untuk menyusun path castVote, jadi
+ * "true" di sini berarti castVote memang akan menemukan leaf itu.
+ */
+export function dekodeKeanggotaanLeaf(stateHex: string, alamat: string, leafHex: string): boolean {
+  const rapi = leafHex.trim().toLowerCase().replace(/^0x/, "");
+  if (!/^[0-9a-f]{64}$/.test(rapi)) {
+    throw new GalatRantai("dekode", "The leaf to look up is not 64 hex characters.", alamat);
+  }
+  const leaf = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) leaf[i] = parseInt(rapi.slice(i * 2, i * 2 + 2), 16);
+  const charged = keChargedState(stateHex, alamat);
+  try {
+    return ledgerBallotMentah(charged).eligibility.findPathForLeaf(leaf) !== undefined;
+  } catch (e) {
+    if (e instanceof GalatRantai) throw e;
+    throw new GalatRantai(
+      "dekode",
+      `${alamat} could not be read as a ballot contract: ${e instanceof Error ? e.message : String(e)}`,
+      alamat,
+    );
+  }
+}

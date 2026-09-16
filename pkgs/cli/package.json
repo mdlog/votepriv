@@ -10,6 +10,7 @@
     "deploy-registry": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/deploy-registry.ts",
     "deploy-ballot": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/deploy-ballot.ts",
     "register-leaves": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/register-leaves.ts",
+    "register-inbox": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/register-inbox.ts",
     "e2e": "node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/e2e.ts",
     "doctor": "node --no-warnings --experimental-strip-types src/doctor.ts",
     "ekspor-cadangan": "node --no-warnings --experimental-strip-types src/ekspor-cadangan.ts",

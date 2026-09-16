@@ -45,6 +45,54 @@ When you're done for the session, stop everything with
 `docker compose -f docker-compose.voter.yml down` (or Ctrl+C, then that same
 command, to remove the containers cleanly).
 
+## If the proof server cannot download its parameters
+
+At first start the proof server fetches ~33 MB of public parameters from
+`https://srs.midnight.network`. If containers on your machine cannot reach the
+internet (a common Docker Desktop / WSL2 DNS problem, or a restrictive
+network), you will see:
+
+```
+Failed to fetch data from https://srs.midnight.network/bls_midnight_2p10 after 3 attempts. Giving up.
+dependency failed to start: container votepriv-proof-server-1 is unhealthy
+```
+
+Use the pre-downloaded parameter set instead — the proof server then needs no
+network at all (verified by starting it with `--network none`):
+
+1. From the release page **Assets**, download `zk-params.tar.gz` and
+   `docker-compose.zk-params.yml` into the same folder as
+   `docker-compose.voter.yml`. Check the archive's sha256 against the value in
+   the release notes.
+2. Extract it: `tar xzf zk-params.tar.gz` → a `zk-params/` folder.
+3. Start with both files:
+
+   ```
+   docker compose -f docker-compose.voter.yml -f docker-compose.zk-params.yml up
+   ```
+
+The archive contains only public data (Midnight's SRS and the zswap/dust
+proving and verifying keys) copied from a proof server that had downloaded and
+verified them. Nothing in it is specific to you or to any ballot.
+
+## What "Register to vote" does
+
+Registering creates a random 32-byte credential **in your browser** and keeps it
+there (plus the backup file you download). Only its public hash — the *leaf* —
+ever leaves your machine.
+
+- If the ballot's eligibility policy names a registration inbox (an `https://…`
+  address shown on the ballot card), the app sends the leaf there automatically
+  and the organiser's inbox registers it on-chain right away. The dialog then
+  says *Registered on-chain* — and it says so only after it has verified, on the
+  indexer, that your leaf is in the ballot's eligibility tree. No wallet is
+  needed for this step.
+- Otherwise, copy the leaf and send it to the organiser yourself.
+
+Registration is open until the ballot's vote deadline. The inbox sees the leaf
+and, like any web request, your IP address; it never sees your credential and
+learns nothing about how you vote.
+
 ## If your organiser sent you a credential file
 
 Some ballots — judging rounds, for example, where the organiser cannot count

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { kebijakanEligibility } from "./pendaftaran-awal.ts";
 import { cariKataTerlarang, validasiBahasaMetadata } from "shared";
 import type { MetadataBallot } from "shared";
 
@@ -71,7 +72,7 @@ describe("metadata bawaan deploy-ballot.ts — Inggris, lolos gerbang validasiBa
   it("blok metadata benar-benar terekstrak (bukti anti-vakum: teks Inggris yang diharapkan ADA)", () => {
     expect(semuaString).toContain("Q4 Community Treasury");
     expect(semuaString).toContain("Midnight Builders");
-    expect(semuaString.length).toBeGreaterThanOrEqual(7); // title, description, community, 3 options, eligibilityPolicy x2 cabang
+    expect(semuaString.length).toBeGreaterThanOrEqual(6); // title, description, community, 3 options (eligibilityPolicy datang dari kebijakanEligibility, diuji di bawah)
   });
 
   it("title, description, community tidak mengandung kata Indonesia terlarang", () => {
@@ -88,25 +89,32 @@ describe("metadata bawaan deploy-ballot.ts — Inggris, lolos gerbang validasiBa
     }
   });
 
-  it("eligibilityPolicy — KEDUA cabang ternary (tanpaPendaftaran ? ... : ...) bersih DAN persis nilai yang diharapkan", () => {
-    const m = blok.match(/eligibilityPolicy:\s*tanpaPendaftaran\s*\?\s*"([^"]*)"\s*:\s*"([^"]*)"/);
-    expect(m, "pola ternary eligibilityPolicy tidak ditemukan — perbarui regex ini").not.toBeNull();
-    const [, cabangTanpaPendaftaran, cabangBawaan] = m as RegExpMatchArray;
-    expect(cariKataTerlarang(cabangTanpaPendaftaran)).toBeUndefined();
-    expect(cariKataTerlarang(cabangBawaan)).toBeUndefined();
-    // Pin nilai PERSIS — MUTASI WAJIB audit-bahasa-metadata (kembalikan ke
-    // kalimat Indonesia asli) harus membuat baris ini merah secara langsung,
-    // bukan hanya bergantung pada cariKataTerlarang.
-    expect(cabangTanpaPendaftaran).toBe(
-      "Voters register their own credential leaf; the organiser only ever holds the hash.",
+  // eligibilityPolicy tidak lagi literal di blok metadata: ia datang dari
+  // kebijakanEligibility() (pendaftaran-awal.ts) supaya URL inbox pendaftaran
+  // bisa disisipkan saat deploy. Uji ini memaku (a) blok metadata memang
+  // memanggil helper itu, dan (b) KETIGA cabang helper — bawaan, tanpa
+  // pendaftaran tanpa inbox, tanpa pendaftaran dengan inbox — bersih dan
+  // persis nilai yang diharapkan (MUTASI WAJIB audit-bahasa-metadata:
+  // mengembalikan kalimat Indonesia asli harus membuat baris ini merah).
+  const CABANG_KEBIJAKAN = [
+    kebijakanEligibility(false, undefined),
+    kebijakanEligibility(true, undefined),
+    kebijakanEligibility(true, "https://votepriv.mdloglabs.org/register"),
+  ];
+
+  it("eligibilityPolicy dipasok kebijakanEligibility(tanpaPendaftaran, VOTEPRIV_INBOX_URL) — ketiga cabang bersih DAN persis nilai yang diharapkan", () => {
+    expect(blok).toMatch(/eligibilityPolicy:\s*kebijakanEligibility\(tanpaPendaftaran,\s*process\.env\.VOTEPRIV_INBOX_URL\)/);
+    for (const k of CABANG_KEBIJAKAN) expect(cariKataTerlarang(k), k).toBeUndefined();
+    expect(CABANG_KEBIJAKAN[0]).toBe("Three test credentials issued by the organiser.");
+    expect(CABANG_KEBIJAKAN[1]).toBe("Voters register their own credential leaf; the organiser only ever holds the hash.");
+    expect(CABANG_KEBIJAKAN[2]).toBe(
+      "Open registration until the vote deadline: the app sends only your public leaf to https://votepriv.mdloglabs.org/register and the organiser registers it on-chain; the organiser only ever holds the hash.",
     );
-    expect(cabangBawaan).toBe("Three test credentials issued by the organiser.");
   });
 
-  it("metadata bawaan LENGKAP (kedua cabang eligibilityPolicy) lolos validasiBahasaMetadata", () => {
+  it("metadata bawaan LENGKAP (ketiga cabang eligibilityPolicy) lolos validasiBahasaMetadata", () => {
     const options = ambilOptions(blok, "deploy-ballot.ts");
-    const m = blok.match(/eligibilityPolicy:\s*tanpaPendaftaran\s*\?\s*"([^"]*)"\s*:\s*"([^"]*)"/) as RegExpMatchArray;
-    for (const eligibilityPolicy of [m[1], m[2]]) {
+    for (const eligibilityPolicy of CABANG_KEBIJAKAN) {
       const meta: MetadataBallot = {
         title: ambil(blok, /title:\s*"([^"]*)"/, "title", "deploy-ballot.ts"),
         description: ambil(blok, /description:\s*"([^"]*)"/, "description", "deploy-ballot.ts"),

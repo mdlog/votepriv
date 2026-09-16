@@ -35,7 +35,7 @@ export const JARINGAN_BAWAAN: MidnightNetworkId = "preview";
  * seluruh daftar ballot lahir dari `registry.ballots`.
  */
 export const ALAMAT_REGISTRY_BAWAAN =
-  "b9d127d83f1436488e2cc808d9732d51f4f5befe2711362c7d669759db2a298a";
+  "c42681741bff50e346b9e80493b622c57883f748cc0a3af60f71545e6f8ff35a";
 
 export type JaringanAktif = {
   networkId: MidnightNetworkId;

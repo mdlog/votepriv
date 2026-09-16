@@ -261,18 +261,18 @@ const AMBANG_MILIDETIK = 100_000_000_000n;
  * yang ditulis constructor bersifat `sealed`. Nilai keliru tidak pernah bisa
  * diperbaiki setelah deploy — satu-satunya jalan keluar adalah men-deploy
  * ballot baru dan meninggalkan yang lama beserta seluruh suara di dalamnya.
- * Pesan kontrak ("Jumlah opsi harus 2 sampai 4") tidak menyebut field mana
+ * Pesan kontrak ("Option count must be between 2 and 4") tidak menyebut field mana
  * pada objek metadata yang salah; pesan di sini menyebutnya.
  *
  * `jumlahCredential` opsional karena hanya pemanggil yang tahu berapa
  * credential yang akan didaftarkan; bila diberikan, ia menutup satu kegagalan
  * yang baru muncul SATU TRANSAKSI KEMUDIAN (registerVoters ditolak
- * "Melebihi eligibleCount yang ditetapkan ballot", pada ballot yang sudah
+ * "Registration would exceed the ballot's eligibleCount", pada ballot yang sudah
  * telanjur ter-deploy dan tidak bisa diperbaiki).
  */
 export function validasiMetadata(meta: MetadataBallot, jumlahCredential?: number): void {
   if (meta.options.length < 2 || meta.options.length > 4) {
-    throw new Error(`Jumlah opsi harus 2 sampai 4; metadata memberi ${meta.options.length}.`);
+    throw new Error(`Jumlah opsi harus 2 sampai 4 (kontrak menolak "Option count must be between 2 and 4"); metadata memberi ${meta.options.length}.`);
   }
   if (meta.options.some((o) => o.trim() === "")) {
     // optionCount di-seal terpisah dari label. nOptions=4 dengan o2/o3 kosong
@@ -354,8 +354,8 @@ export function batchDaun(daun: readonly Uint8Array[]): BatchDaun[] {
  *
  * WAJIB stabil lintas proses: constructor ballot menyegel
  * adminKey = admin_pk(admin_secret_key()), dan registerVoters menolak siapa pun
- * yang tidak bisa mereproduksi kunci itu ("Hanya admin yang boleh mendaftarkan
- * pemilih"). Kunci acak per proses berarti ballot yang baru di-deploy langsung
+ * yang tidak bisa mereproduksi kunci itu ("Only the admin can register
+ * voters"). Kunci acak per proses berarti ballot yang baru di-deploy langsung
  * tidak bisa diisi pemilih, permanen.
  *
  * Diturunkan dari kunci rahasia unshielded dengan pemisah domain, bukan
@@ -566,8 +566,9 @@ export async function bacaLedgerBallot(
  * yang diseimbangkan sebelum yang pertama terlihat di chain dapat memilih UTXO
  * yang sama.
  *
- * registerVoters MENUTUP SENDIRI: ia menuntut voteCount == 0. Seluruh pemilih
- * harus terdaftar SEBELUM suara pertama masuk.
+ * registerVoters ditutup oleh voteDeadline (deadline yang sama dengan
+ * castVote), BUKAN lagi oleh suara pertama — pemilih baru bisa didaftarkan
+ * selama jendela vote masih terbuka.
  */
 export interface OpsiRetriDaftarkanVoter {
   /**
@@ -604,7 +605,11 @@ export async function daftarkanVoter(
   daun: readonly Uint8Array[],
   log: Logger,
   opsi: OpsiRetriDaftarkanVoter = {},
-): Promise<void> {
+): Promise<{ txIds: (string | null)[] }> {
+  // txId per batch, `null` bila batch itu mendarat lewat pemeriksaan
+  // "sudah mendarat" (percobaan asli putus sebelum node menjawab) — dipakai
+  // inbox pendaftaran untuk melaporkan txId ke pemilih.
+  const txIds: (string | null)[] = [];
   // BUKAN `Awaited<ReturnType<typeof ballot.callTx.registerVoters>>`: circuit
   // call di CircuitCallTxInterface (midnight-js-contracts) OVERLOADED — satu
   // signature tanpa TransactionContext (yang KITA pakai, mengembalikan
@@ -663,6 +668,7 @@ export async function daftarkanVoter(
       jedaMs: opsi.jedaMs,
     });
 
+    txIds.push(r?.public.txId ?? null);
     log.info(
       {
         batch: i + 1,
@@ -672,6 +678,7 @@ export async function daftarkanVoter(
       "Batch terdaftar",
     );
   }
+  return { txIds };
 }
 
 /**

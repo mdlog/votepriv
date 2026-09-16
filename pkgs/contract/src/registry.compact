@@ -2,12 +2,12 @@ pragma language_version >= 0.23;
 
 import CompactStandardLibrary;
 
-// Alamat kontrak ballot, terbaru di depan.
+// Ballot contract addresses, newest first.
 export ledger ballots: List<Opaque<"string">>;
 export ledger count:   Counter;
 
-// Permissionless: siapa pun boleh mendaftarkan ballot yang sudah ia deploy.
-// Entri yang tidak resolve ke kontrak ballot yang sah disaring di sisi klien.
+// Permissionless: anyone may register a ballot they have deployed.
+// Entries that do not resolve to a valid ballot contract are filtered client-side.
 export circuit register(addr: Opaque<"string">): [] {
   ballots.pushFront(disclose(addr));
   count.increment(1);

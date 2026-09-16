@@ -191,20 +191,20 @@ export async function tungguSampaiDetik(
 /**
  * Dua pesan assert yang BOLEH diulang — dan hanya dua.
  *
- *   "Pemungutan suara masih berlangsung"        (tallyVote terlalu cepat)
- *   "Batas waktu pembukaan suara belum lewat"   (finalize terlalu cepat)
+ *   "Voting is still open"        (tallyVote terlalu cepat)
+ *   "Tally deadline has not passed yet"   (finalize terlalu cepat)
  *
  * Keduanya berarti hal yang sama: jam lokal sudah lewat, waktu blok belum.
  * Menunggu lalu mengulang akan berhasil.
  *
- * Yang SENGAJA TIDAK ada di sini: "Batas waktu pembukaan suara **sudah**
- * lewat" — assert ketiga tallyVote. Perbedaannya satu kata (belum/sudah) dan
- * artinya berlawanan: jendelanya sudah tertutup, dan mengulang hanya membakar
+ * Yang SENGAJA TIDAK ada di sini: "Tally deadline **has passed**" — assert
+ * ketiga tallyVote. Perbedaannya hanya satu kata (has passed / has not passed
+ * yet) dan artinya berlawanan: jendelanya sudah tertutup, dan mengulang hanya membakar
  * proof sampai `maks` habis. Ia harus melempar keluar dan menghentikan proses.
  * Itu pula sebabnya kedua loop di e2e.ts punya penjaga anggaran waktu: pesan
  * itu tidak boleh sampai pernah muncul.
  */
-export const POLA_BELUM_WAKTUNYA = /Pemungutan suara masih berlangsung|Batas waktu pembukaan suara belum lewat/;
+export const POLA_BELUM_WAKTUNYA = /Voting is still open|Tally deadline has not passed yet/;
 
 /**
  * Mengulang sebuah pemanggilan selama kegagalannya adalah "waktu blok belum
@@ -215,7 +215,7 @@ export const POLA_BELUM_WAKTUNYA = /Pemungutan suara masih berlangsung|Batas wak
  * proof, tidak pernah dikirim, dan tidak pernah mengubah keadaan chain.
  *
  * Kegagalan lain diteruskan apa adanya — mengulang assert seperti "Credential
- * ini sudah dipakai memilih" tidak akan pernah berhasil dan hanya membuang
+ * has already voted" tidak akan pernah berhasil dan hanya membuang
  * waktu di dalam jendela yang berbatas.
  */
 export async function cobaSampaiWaktuBlokCocok<T>(

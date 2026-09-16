@@ -154,7 +154,7 @@ export async function pilih(ballot: FoundContract<BallotC>, log: Logger, label: 
   const r = await denganBatasWaktu(
     ballot.callTx.castVote(),
     BATAS_MS.panggilBerat,
-    `callTx.castVote (${label}) tidak selesai dalam ${BATAS_MS.panggilBerat / 60_000} menit. JANGAN mengulang sebelum membaca voteCount dari indexer: bila transaksinya mendarat, credential ini sudah terpakai dan percobaan kedua akan ditolak "Credential ini sudah dipakai memilih".`,
+    `callTx.castVote (${label}) tidak selesai dalam ${BATAS_MS.panggilBerat / 60_000} menit. JANGAN mengulang sebelum membaca voteCount dari indexer: bila transaksinya mendarat, credential ini sudah terpakai dan percobaan kedua akan ditolak "Credential has already voted".`,
   );
   pastikanSukses(r.public.status, `castVote (${label})`, r.public.txId);
   log.info({ pemilih: label, txId: r.public.txId, status: r.public.status }, "Suara masuk");
@@ -176,7 +176,7 @@ export async function finalisasi(ballot: FoundContract<BallotC>, log: Logger): P
   const r = await denganBatasWaktu(
     ballot.callTx.finalize(),
     BATAS_MS.panggilRingan,
-    `callTx.finalize tidak selesai dalam ${BATAS_MS.panggilRingan / 60_000} menit. Periksa phase di indexer sebelum mengulang: finalize kedua akan ditolak "Ballot sudah difinalisasi".`,
+    `callTx.finalize tidak selesai dalam ${BATAS_MS.panggilRingan / 60_000} menit. Periksa phase di indexer sebelum mengulang: finalize kedua akan ditolak "Ballot is already finalized".`,
   );
   pastikanSukses(r.public.status, "finalize", r.public.txId);
   log.info({ txId: r.public.txId, status: r.public.status }, "Ballot difinalisasi");

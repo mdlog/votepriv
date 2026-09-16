@@ -193,29 +193,46 @@ describe("jalurBerkasLeafDariArgv", () => {
 });
 
 describe("validasiKuotaPendaftaran", () => {
-  it("lolos ketika voteCount 0 dan jumlah baru pas sampai eligibleCount", () => {
+  const DL = 1_800_000_000n; // voteDeadline, detik
+  const SEBELUM = DL - 60n;
+  const SESUDAH = DL + 1n;
+
+  it("lolos ketika voteDeadline belum lewat dan jumlah baru pas sampai eligibleCount", () => {
     expect(() =>
-      validasiKuotaPendaftaran({ voteCount: 0n, registeredCount: 5n, eligibleCount: 8n }, 3),
+      validasiKuotaPendaftaran({ voteDeadline: DL, registeredCount: 5n, eligibleCount: 8n }, 3, SEBELUM),
     ).not.toThrow();
   });
 
-  // MUTASI WAJIB 1: guard ini menjaga baris `if (ledger.voteCount !== 0n) throw ...`.
-  it("menolak ketika voteCount bukan 0 — pendaftaran sudah ditutup permanen", () => {
+  // MUTASI WAJIB 1: guard ini menjaga baris `if (sekarangDetik >= ledger.voteDeadline) throw ...`.
+  it("menolak ketika voteDeadline sudah lewat — pendaftaran ditutup oleh deadline vote", () => {
     expect(() =>
-      validasiKuotaPendaftaran({ voteCount: 1n, registeredCount: 0n, eligibleCount: 8n }, 1),
-    ).toThrow(/ditutup permanen.*voteCount/s);
+      validasiKuotaPendaftaran({ voteDeadline: DL, registeredCount: 0n, eligibleCount: 8n }, 1, SESUDAH),
+    ).toThrow(/sudah ditutup: voteDeadline/);
+  });
+
+  it("tepat PADA voteDeadline sudah ditolak (kontrak: blockTimeLessThan, batas eksklusif)", () => {
+    expect(() =>
+      validasiKuotaPendaftaran({ voteDeadline: DL, registeredCount: 0n, eligibleCount: 8n }, 1, DL),
+    ).toThrow(/sudah ditutup: voteDeadline/);
+  });
+
+  it("TIDAK lagi menolak karena sudah ada suara — pendaftaran tetap terbuka setelah suara pertama", () => {
+    // Objek ledger sengaja tanpa voteCount: fungsi ini tidak boleh membacanya lagi.
+    expect(() =>
+      validasiKuotaPendaftaran({ voteDeadline: DL, registeredCount: 3n, eligibleCount: 8n }, 1, SEBELUM),
+    ).not.toThrow();
   });
 
   // MUTASI WAJIB 2: guard ini menjaga baris `if (BigInt(jumlahBaru) > tersisa) throw ...`.
   it("menolak ketika registeredCount + jumlah melebihi eligibleCount", () => {
     expect(() =>
-      validasiKuotaPendaftaran({ voteCount: 0n, registeredCount: 6n, eligibleCount: 8n }, 3),
+      validasiKuotaPendaftaran({ voteDeadline: DL, registeredCount: 6n, eligibleCount: 8n }, 3, SEBELUM),
     ).toThrow(/melebihi kuota tersisa \(2\)/);
   });
 
   it("batas pas (registeredCount + jumlah === eligibleCount) tetap LOLOS, bukan ditolak", () => {
     expect(() =>
-      validasiKuotaPendaftaran({ voteCount: 0n, registeredCount: 5n, eligibleCount: 8n }, 3),
+      validasiKuotaPendaftaran({ voteDeadline: DL, registeredCount: 5n, eligibleCount: 8n }, 3, SEBELUM),
     ).not.toThrow();
   });
 });

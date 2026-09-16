@@ -105,6 +105,27 @@ public link: whoever holds a file could vote with it until its judge does.
 Judges import their file from **Register to vote → Restore from backup
 file** (see [README-VOTER.md](README-VOTER.md)).
 
+## Contracts on Midnight preview
+
+| What | Address |
+|---|---|
+| Registry (v2 — ballots whose registration stays open until the vote deadline) | `c42681741bff50e346b9e80493b622c57883f748cc0a3af60f71545e6f8ff35a` |
+| Live demo ballot (self-service registration, 16 seats) | `cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13` |
+| Finalized three-voter ballot (public tally) | `c270b8d0fe4176a0a623866d6f42597a5625f3730b341fc665ef7af5df563d8d` on registry `2eda6f25dfd9693885f0469a87a8471fb72383a2d608edc7ecf5722dca0e3608` |
+
+The app reads them through the preview indexer, `https://indexer.preview.midnight.network/api/v3/graphql`.
+That is a GraphQL endpoint that answers `POST` only — opening it in a browser gives `405`. To read a
+contract yourself:
+
+```
+curl -s https://indexer.preview.midnight.network/api/v3/graphql \
+  -H 'content-type: application/json' \
+  -d '{"query":"{ contract(address:\"cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13\") { address state actions(limit: 3) { __typename transaction { hash block { height } } } } }"}'
+```
+
+`state` is the serialized contract state; `pkgs/contract`'s `ledger()` decodes it (the app does exactly
+this — see `client/src/lib/chain/dekode.ts`).
+
 ## Development
 
 Requires Node 22.23 and pnpm 10.4 (`corepack enable`), plus a local proof server:

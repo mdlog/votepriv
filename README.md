@@ -110,6 +110,10 @@ public link: whoever holds a file could vote with it until its judge does.
 Judges import their file from **Register to vote → Restore from backup
 file** (see [README-VOTER.md](README-VOTER.md)).
 
+## Pitch deck
+
+[docs/pitch/VotePriv-pitch-deck.pdf](docs/pitch/VotePriv-pitch-deck.pdf) — ten slides: problem, design, contract circuits, dual ledger, topology, self-service registration, evidence, how to test, roadmap. Source: `docs/pitch/deck.html`.
+
 ## Architecture and Midnight integration
 
 ```

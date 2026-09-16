@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VotePriv — pitch deck</title>
+<style>
+  @page { size: 1920px 1080px; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #080b11; color: #e8eef0; font-family: "Inter", "Inter Display", system-ui, sans-serif; }
+  .slide { width: 1920px; height: 1080px; page-break-after: always; position: relative; overflow: hidden; padding: 96px 120px; background: radial-gradient(circle at 78% -10%, rgba(56,90,109,.22), transparent 30rem), #080b11; }
+  .slide:last-child { page-break-after: auto; }
+  .eyebrow { font: 500 20px/1 "DejaVu Sans Mono", monospace; letter-spacing: .18em; text-transform: uppercase; color: #a5f3cd; margin: 0 0 28px; }
+  h1 { font: 700 96px/1.02 "Inter Display", "Inter", sans-serif; letter-spacing: -.045em; margin: 0 0 24px; color: #f4f7f5; }
+  h2 { font: 700 64px/1.08 "Inter Display", "Inter", sans-serif; letter-spacing: -.04em; margin: 0 0 44px; color: #f4f7f5; }
+  h2 em { color: #a5f3cd; font-style: normal; }
+  p, li { font-size: 30px; line-height: 1.5; color: #b9c4c0; }
+  ul { margin: 0; padding-left: 36px; }
+  li + li { margin-top: 18px; }
+  strong { color: #f0f5f2; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 24px; color: #d9fbe9; background: rgba(165,243,205,.08); padding: 2px 10px; border-radius: 6px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 72px; }
+  .card { border: 1px solid rgba(165,243,205,.16); background: rgba(165,243,205,.045); border-radius: 18px; padding: 36px 40px; }
+  .card h3 { margin: 0 0 14px; font-size: 32px; color: #d5f5e4; }
+  .card p { margin: 0; font-size: 26px; }
+  .slide > *:not(.foot) { zoom: 1.22; }
+  .slide > .title-logo { zoom: 1.1; }
+  .foot { position: absolute; left: 120px; right: 120px; bottom: 56px; display: flex; justify-content: space-between; font: 500 20px "DejaVu Sans Mono", monospace; color: #5f6d75; letter-spacing: .08em; }
+  .num { font-size: 20px; }
+  .big { font: 700 120px/1 "Inter Display", "Inter", sans-serif; color: #a5f3cd; letter-spacing: -.05em; }
+  .stat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-top: 30px; }
+  .stat .card { text-align: left; }
+  .stat .card .big { font-size: 84px; margin-bottom: 10px; }
+  .flow { display: flex; align-items: stretch; gap: 22px; margin-top: 20px; }
+  .flow .step { flex: 1; border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 28px 30px; background: rgba(255,255,255,.03); }
+  .flow .step h3 { margin: 0 0 10px; font-size: 28px; color: #f0f5f2; }
+  .flow .step p { margin: 0; font-size: 23px; line-height: 1.45; }
+  .flow .arrow { align-self: center; font-size: 44px; color: #a5f3cd; }
+  .pill { display: inline-block; font: 500 20px "DejaVu Sans Mono", monospace; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(165,243,205,.3); color: #a5f3cd; margin-right: 12px; }
+  .title-logo { display: flex; align-items: center; gap: 40px; margin-bottom: 40px; }
+  .title-logo img { width: 190px; height: 190px; }
+  .wordmark { font: 700 150px/1 "Inter Display", "Inter", sans-serif; letter-spacing: -.05em; color: #fff; }
+  .wordmark span { background: linear-gradient(90deg, #687bfc, #4c89fd); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .addr { font-family: "DejaVu Sans Mono", monospace; font-size: 21px; color: #cfe6da; word-break: break-all; }
+  .small { font-size: 24px; color: #8b98a1; }
+  .warn { border-color: rgba(255,196,110,.35); background: rgba(255,196,110,.06); }
+  .warn h3 { color: #f3dcb4; }
+</style>
+</head>
+<body>
+
+<section class="slide">
+  <div class="title-logo"><img src="logo-mark.png" alt=""><div class="wordmark">Vote<span>Priv</span></div></div>
+  <h1 style="font-size:78px">Private voting on Midnight</h1>
+  <p style="font-size:36px;max-width:1500px">Prove you are eligible, seal your choice, let anyone audit the tally — and nobody, including the organiser, learns who voted for what.</p>
+  <p style="margin-top:56px"><span class="pill">Midnight preview · Compact</span><span class="pill">Lace 4.0.1</span><span class="pill">Apache-2.0</span><span class="pill">github.com/mdlog/votepriv</span></p>
+  <div class="foot"><span>MIDNIGHT BUILDATHON · WAVE 1</span><span>MDLOG Labs</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">The problem</p>
+  <h2>On-chain voting is <em>public</em> by default</h2>
+  <div class="cols">
+    <div>
+      <ul>
+        <li>Address and choice sit side by side on the ledger — <strong>forever</strong>.</li>
+        <li>"Private" designs usually just <strong>move the trust</strong>: a tally server that sees plaintext, a relayer that learns who you are, a proof service run by the organiser.</li>
+        <li>Governance needs the opposite: <strong>eligibility and participation provable, identity and choice not</strong>.</li>
+      </ul>
+    </div>
+    <div class="card warn">
+      <h3>What has to be true</h3>
+      <p>Only eligible people vote · one person, one vote · the tally is verifiable by anyone · no party — not even the organiser — can map a voter to a choice.</p>
+    </div>
+  </div>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">2</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">What VotePriv does</p>
+  <h2>Eligibility without identity, <em>choice without exposure</em></h2>
+  <div class="cols">
+    <ul>
+      <li><strong>Secret credential, public leaf.</strong> Only the hash of a voter's credential is registered, in a Merkle tree on-chain.</li>
+      <li><strong>Casting is a ZK proof</strong> of tree membership — the chain never learns which leaf.</li>
+      <li><strong>One credential, one vote</strong>: a per-ballot nullifier is published on cast; a second cast is rejected.</li>
+    </ul>
+    <ul>
+      <li><strong>Two-phase tally.</strong> The choice is a sealed commitment until the vote deadline; it is opened with a <em>second</em> nullifier that cannot be linked to the cast.</li>
+      <li><strong>The organiser never holds a secret</strong> — credentials are generated in the voter's browser.</li>
+      <li><strong>The proof server runs on the voter's machine</strong>, so the witness (credential + choice) never leaves it.</li>
+    </ul>
+  </div>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">3</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Inside the Compact contract</p>
+  <h2>Four circuits, <em>one privacy invariant</em></h2>
+  <div class="flow">
+    <div class="step"><h3>registerVoters</h3><p>Admin only. Inserts up to 8 leaves into a <code>HistoricMerkleTree&lt;10&gt;</code>. Open until the vote deadline.</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><h3>castVote</h3><p>Proves <code>cred_leaf(cred)</code> is in the tree, publishes <code>vote_nullifier(nonce, cred)</code>, inserts <code>vote_commitment(option, salt)</code>. Stores the opening privately.</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><h3>tallyVote</h3><p>After the deadline: proves the commitment is in the tree, publishes <code>tally_nullifier(salt)</code>, discloses only the option, increments the tally.</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><h3>finalize</h3><p>Anyone, after the tally deadline. An explicit on-chain marker of finality.</p></div>
+  </div>
+  <p style="margin-top:44px"><strong>What the ledger holds:</strong> sealed metadata, leaves, nullifiers, commitments, tallies. <strong>What it never holds:</strong> a credential, a salt, or a voter-to-choice mapping. All hashes are <code>export pure</code> circuits, so the client never re-implements hashing.</p>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">4</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Midnight's dual ledger, used as intended</p>
+  <h2>Public state on-chain, <em>private state at home</em></h2>
+  <div class="cols">
+    <div class="card"><h3>Public — decoded by anyone from the indexer</h3><p>Ballot metadata, eligibility tree, nullifier set, commitment tree, tallies, phase. The app reads them with raw GraphQL and the generated <code>ledger()</code> — an indexer outage is never rendered as "no ballots".</p></div>
+    <div class="card"><h3>Private — the witness side</h3><p>Credential, the <code>(option, salt)</code> opening written by <code>store_opening</code>, and the Merkle paths the client builds. Kept per ballot in IndexedDB (browser) or LevelDB (CLI). Only a proof crosses the boundary.</p></div>
+  </div>
+  <p style="margin-top:40px">Write path: <code>findDeployedContract</code> verifies the on-chain verifier keys → witness → <code>proveTx</code> on the <strong>local</strong> proof server → Lace balances and submits. The 10 MB write-path WASM is a lazily loaded chunk, guarded by a test.</p>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">5</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Topology is the privacy claim</p>
+  <h2>A proof server the voter <em>controls</em></h2>
+  <div class="cols">
+    <ul>
+      <li>Whoever runs the proof server sees the witness. So VotePriv ships a <strong>one-file Docker package</strong>: app + proof server in one network namespace, port 6300 never published.</li>
+      <li>Image on GHCR with <strong>provenance + SBOM</strong>, compose pinned by <strong>digest</strong>; the release gate refuses to publish unless the packaged proof-server path verifies as local.</li>
+      <li>Offline parameter bundle for machines whose containers cannot reach the internet.</li>
+    </ul>
+    <div class="card"><h3>The UI only claims what it can verify</h3><p>The privacy indicator says <strong>"Always on"</strong> only after the app has confirmed, at runtime, that the proof server it talks to is local. Otherwise it names the machine that will see your witness.</p></div>
+  </div>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">6</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Self-service registration</p>
+  <h2>Register from any laptop — <em>no wallet, no organiser online</em></h2>
+  <div class="flow">
+    <div class="step"><h3>1 · Browser</h3><p>Generates a 32-byte credential, keeps it in IndexedDB, computes the public leaf.</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><h3>2 · Inbox address from the chain</h3><p>The ballot's sealed policy names the organiser's registration inbox. Only the leaf is sent.</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><h3>3 · Organiser inbox</h3><p>Registers it at once — one <code>registerVoters</code> transaction per batch of whatever is queued. Holds only hashes.</p></div>
+    <div class="arrow">→</div>
+    <div class="step"><h3>4 · Verified, not trusted</h3><p>The app reports "Registered on-chain" only after finding the leaf in the eligibility tree it decodes from the indexer.</p></div>
+  </div>
+  <p style="margin-top:44px" class="small">The contract was changed for this: registration is closed by the vote deadline, not by the first vote — safe because choices stay sealed until then and <code>registeredCount</code> is public.</p>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">7</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Evidence, not claims</p>
+  <h2>Deployed, tested, <em>verifiable</em></h2>
+  <div class="stat">
+    <div class="card"><div class="big">1,020</div><p>tests across contract simulator, CLI, shared and app — guards mutation-checked before commit.</p></div>
+    <div class="card"><div class="big">0</div><p>payer identity fields in real Midnight transactions — proven by deserializing them, which killed a relayer we were about to build.</p></div>
+    <div class="card"><div class="big">3 / 3</div><p>votes cast, opened and finalized on preview by the CLI end-to-end run; browser votes via Lace landed on live ballots.</p></div>
+  </div>
+  <p style="margin-top:36px" class="small">Registry v2 <span class="addr">c42681741bff50e346b9e80493b622c57883f748cc0a3af60f71545e6f8ff35a</span><br>
+  Live ballot <span class="addr">cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13</span><br>
+  Finalized ballot <span class="addr">c270b8d0fe4176a0a623866d6f42597a5625f3730b341fc665ef7af5df563d8d</span></p>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">8</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Try it</p>
+  <h2>Three ways for judges to <em>test</em></h2>
+  <div class="cols">
+    <ul>
+      <li><strong>Read only:</strong> <code>votepriv.mdloglabs.org</code> — ballots and results decoded live from the preview indexer.</li>
+      <li><strong>Register and vote:</strong> <code>docker compose -f docker-compose.voter.yml up</code> → localhost:5300 → <em>Register to vote</em> (no wallet) → <em>Vote privately</em> with Lace on preview.</li>
+      <li><strong>Contracts:</strong> <code>pnpm --filter contract compact</code> and <code>pnpm --filter contract test</code>.</li>
+    </ul>
+    <div class="card"><h3>Honest limits</h3><p>Anonymity is the size of the voter set. Off-chain metadata (timing, IP) is out of scope. The credential backup file is the vote in the clear. Testnet only; not audited.</p></div>
+  </div>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">9</span></div>
+</section>
+
+<section class="slide">
+  <p class="eyebrow">Roadmap</p>
+  <h2>Wave 2 → Wave 3</h2>
+  <div class="cols">
+    <div class="card"><h3>Wave 2 — usable by a real community</h3><p>Invitation-based eligibility without the organiser online · larger anonymity sets up to 1,024 leaves · tally-phase UX and per-option results · multi-ballot inbox and organiser dashboard · contract hardening and external review of the Merkle/nullifier design.</p></div>
+    <div class="card"><h3>Wave 3 — something an organisation would run</h3><p>Ballot creation from the app via Lace · attribute-bound eligibility proven in-circuit · a standalone auditor that recomputes tally, nullifiers and root from the chain alone · hosted inbox + self-hosted proof-server guidance · a pilot with a real community, then a security review.</p></div>
+  </div>
+  <p style="margin-top:44px;font-size:34px"><strong>VotePriv — private for the voter, verifiable for everyone.</strong> <span class="small">github.com/mdlog/votepriv · votepriv.mdloglabs.org</span></p>
+  <div class="foot"><span>VOTEPRIV</span><span class="num">10</span></div>
+</section>
+
+</body>
+</html>

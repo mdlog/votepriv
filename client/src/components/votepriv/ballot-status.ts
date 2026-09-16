@@ -248,16 +248,20 @@ export function menerimaSuara(status: BallotStatus): boolean {
  * validasiKuotaPendaftaran, pkgs/cli/src/leaf-file.ts, yang menegakkan
  * pasangan syarat yang SAMA sebelum menyentuh rantai):
  *
- *   1. votes === 0 — pendaftaran menutup PERMANEN begitu suara pertama masuk.
- *      Tidak ada cara memperbaikinya selain ballot baru.
+ *   1. Jendela vote masih terbuka (`kernel.blockTimeLessThan(voteDeadline)`)
+ *      — dinyatakan lewat `status` ballot yang sama dengan yang dipakai
+ *      `menerimaSuara`: pendaftaran dan pemungutan suara ditutup oleh
+ *      deadline YANG SAMA. Dulu pendaftaran menutup permanen pada suara
+ *      pertama (`votes === 0`); aturan itu dihapus dari kontrak supaya
+ *      pendaftaran mandiri lewat inbox tidak dikunci oleh pemilih pertama.
  *   2. registered < eligible — kuota yang di-seal saat deploy, tidak bisa
  *      diperbesar.
  *
  * Parameter berbentuk struktural (bukan `Ballot` penuh) dengan sengaja —
  * pola yang sama dengan `LedgerKuota` di leaf-file.ts — supaya uji bisa
- * memberi objek literal `{ votes, registered, eligible }` apa adanya tanpa
+ * memberi objek literal `{ status, registered, eligible }` apa adanya tanpa
  * membangun fixture `Ballot` lengkap untuk satu pemeriksaan murni ini.
  */
-export function menerimaPendaftaran(ballot: { votes: number; registered: number; eligible: number }): boolean {
-  return ballot.votes === 0 && ballot.registered < ballot.eligible;
+export function menerimaPendaftaran(ballot: { status: BallotStatus; registered: number; eligible: number }): boolean {
+  return menerimaSuara(ballot.status) && ballot.registered < ballot.eligible;
 }

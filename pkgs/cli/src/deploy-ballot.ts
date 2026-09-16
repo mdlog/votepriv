@@ -41,6 +41,7 @@ import { MENIT_TALLY, MENIT_VOTE } from "./jadwal.ts";
 import {
   bentukFieldCredentials,
   daftarkanVoterJikaPerlu,
+  kebijakanEligibility,
   eligibleCountDariEnv,
   modeTanpaPendaftaranAktif,
   siapkanPemilihAwal,
@@ -106,9 +107,7 @@ const metadata: MetadataBallot = {
   tallyDeadline: detikDariSekarang(MENIT_TALLY * MENIT),
   quorumPercent: 60, // <= 100. Metadata saja: TIDAK ditegakkan circuit mana pun.
   eligibleCount, // 1..1024, bawaan 3 — lihat VOTEPRIV_ELIGIBLE_COUNT di atas
-  eligibilityPolicy: tanpaPendaftaran
-    ? "Voters register their own credential leaf; the organiser only ever holds the hash."
-    : "Three test credentials issued by the organiser.",
+  eligibilityPolicy: kebijakanEligibility(tanpaPendaftaran, process.env.VOTEPRIV_INBOX_URL),
 };
 
 // Credential adalah 32 byte acak CSPRNG; daunnya dihitung circuit kontrak

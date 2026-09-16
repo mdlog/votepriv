@@ -198,9 +198,10 @@ export async function validasiLokalLaluSesi<S>(
  * yang tidak relevan di sini).
  */
 export interface LedgerKuota {
-  readonly voteCount: bigint;
   readonly registeredCount: bigint;
   readonly eligibleCount: bigint;
+  /** voteDeadline ballot, DETIK sejak epoch (satuan ledger). */
+  readonly voteDeadline: bigint;
 }
 
 /**
@@ -209,18 +210,26 @@ export interface LedgerKuota {
  * tapi gagal DI SINI, sebelum proof ZK ~10 MB dibangun, jauh lebih murah
  * daripada gagal setelah rantai menolak transaksi yang sudah dibangun-lengkap.
  *
- *   1. `voteCount == 0` — pendaftaran menutup PERMANEN begitu suara pertama
- *      masuk (spec: "Khusus admin... menutup sendiri begitu suara pertama
- *      masuk"). Tidak ada cara memperbaikinya selain ballot baru.
+ *   1. `voteDeadline` belum lewat — pendaftaran ditutup oleh deadline yang
+ *      SAMA dengan pemungutan suara (kontrak: kernel.blockTimeLessThan
+ *      (voteDeadline)). Aturan lama "voteCount == 0" (menutup permanen pada
+ *      suara pertama) dihapus dari kontrak supaya pendaftaran mandiri lewat
+ *      inbox tidak dikunci oleh pemilih pertama. Jam yang dipakai di sini jam
+ *      lokal (`sekarangDetik`, disuntik supaya bisa diuji); waktu blok yang
+ *      menentukan tetap milik kontrak.
  *   2. `registeredCount + jumlahBaru <= eligibleCount` — batas yang di-seal
  *      saat deploy, tidak bisa diperbesar.
  */
-export function validasiKuotaPendaftaran(ledger: LedgerKuota, jumlahBaru: number): void {
-  if (ledger.voteCount !== 0n) {
+export function validasiKuotaPendaftaran(
+  ledger: LedgerKuota,
+  jumlahBaru: number,
+  sekarangDetik: bigint = BigInt(Math.floor(Date.now() / 1000)),
+): void {
+  if (sekarangDetik >= ledger.voteDeadline) {
     throw new Error(
-      `Pendaftaran sudah ditutup permanen: voteCount ballot ini = ${ledger.voteCount} (bukan 0). ` +
-        `Kontrak menutup registerVoters selamanya begitu suara pertama masuk — tidak ada leaf baru ` +
-        `yang bisa didaftarkan lagi pada ballot ini. Deploy ballot baru bila pendaftaran masih diperlukan.`,
+      `Pendaftaran sudah ditutup: voteDeadline ballot ini (${ledger.voteDeadline}) sudah lewat ` +
+        `(sekarang ${sekarangDetik}). Kontrak menolak registerVoters setelah batas waktu pemungutan suara — ` +
+        `deploy ballot baru bila pendaftaran masih diperlukan.`,
     );
   }
 
@@ -323,7 +332,7 @@ export type FungsiDaftarkanVoter = (
   daun: readonly Uint8Array[],
   log: Logger,
   opsi?: OpsiRetriDaftarkanVoter,
-) => Promise<void>;
+) => Promise<unknown>;
 
 /**
  * Mendaftarkan SELURUH leaf yang sudah divalidasi, dalam batch <= 8, lewat

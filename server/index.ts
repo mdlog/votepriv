@@ -17,6 +17,7 @@ const __dirname = path.dirname(__filename);
  * indikator itu tidak layak dipercaya.
  */
 const proofServerTarget = process.env.VITE_PROOF_SERVER_URL || "http://127.0.0.1:6300";
+const inboxTarget = (process.env.VOTEPRIV_INBOX_URL || "").trim();
 
 async function startServer() {
   const app = express();
@@ -31,6 +32,20 @@ async function startServer() {
   // WAJIB sebelum express.static dan fallback SPA di bawah: fallback `app.get("*")`
   // akan menjawab /proof-server/... dengan index.html bila diberi kesempatan.
   app.use("/proof-server", proofServerProxy(proofServerTarget));
+
+  // Inbox pendaftaran penyelenggara (pkgs/cli/src/register-inbox.ts) —
+  // HANYA pada deployment yang menjalankannya (env VOTEPRIV_INBOX_URL, mis.
+  // http://127.0.0.1:5390). Paket pemilih Docker TIDAK menyetelnya: app di
+  // sana tidak pernah menjadi inbox, dan browser pemilih memanggil URL inbox
+  // yang tertulis di kebijakan ballot (on-chain) secara langsung. Proxy yang
+  // sama dengan proof server: badan di-pipe, galat hulu dicatat dan diberi kode.
+  if (inboxTarget) {
+    app.use("/register", proofServerProxy(inboxTarget));
+  } else {
+    app.use("/register", (_req, res) => {
+      res.status(404).json({ error: "This deployment does not run a registration inbox." });
+    });
+  }
 
   // Laporan konfigurasi runtime — lihat komentar panjang di client/src/lib/proof-server.ts.
   //
@@ -61,6 +76,7 @@ async function startServer() {
     // Dicetak supaya deployment yang salah konfigurasi terlihat di log, bukan
     // baru ketahuan saat suara pertama gagal dibuat proof-nya.
     console.log(`Proxy /proof-server → ${proofServerTarget}`);
+    console.log(inboxTarget ? `Proxy /register → ${inboxTarget}` : "No registration inbox on this deployment (/register answers 404)");
   });
 }
 

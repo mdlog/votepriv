@@ -78,7 +78,7 @@ const ballot = await temukanBallot(providersBallot, alamatBallot, emptyBallotPri
 
 const ledgerSebelum = await bacaLedgerBallot(kp.publicDataProvider, alamatBallot);
 
-// Kedua pemeriksaan WAJIB (voteCount==0, kuota) — MASIH sebelum menyentuh
+// Kedua pemeriksaan WAJIB (voteDeadline belum lewat, kuota) — MASIH sebelum menyentuh
 // rantai (registerVoters). Kontrak menolak keduanya juga, tapi gagal DI SINI
 // jauh lebih murah daripada membakar proof ZK ~10 MB lalu ditolak.
 validasiKuotaPendaftaran(ledgerSebelum, daftar.length);

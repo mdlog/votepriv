@@ -8,6 +8,7 @@ import {
   eligibleCountDariEnv,
   modeTanpaPendaftaranAktif,
   siapkanPemilihAwal,
+  kebijakanEligibility,
 } from "./pendaftaran-awal.ts";
 
 // Logger palsu: pola sama dengan deploy.test.ts — uji ini tidak boleh menulis ke berkas log.
@@ -133,5 +134,31 @@ describe("daftarkanVoterJikaPerlu", () => {
     expect(panggilan[0].ballot).toBe(ballotPalsu);
     expect(panggilan[0].daun).toBe(daun);
     expect(panggilan[0].opsi).toBe(opsi);
+  });
+});
+
+describe("kebijakanEligibility", () => {
+  it("mode credential CLI: kalimat tetap, URL inbox diabaikan", () => {
+    expect(kebijakanEligibility(false, "https://x.example/register")).toBe("Three test credentials issued by the organiser.");
+  });
+
+  it("tanpa pendaftaran, tanpa inbox: kalimat pendaftaran mandiri lama", () => {
+    expect(kebijakanEligibility(true, undefined)).toBe(
+      "Voters register their own credential leaf; the organiser only ever holds the hash.",
+    );
+    expect(kebijakanEligibility(true, "   ")).toMatch(/^Voters register their own credential leaf/);
+  });
+
+  it("tanpa pendaftaran + inbox https: URL ditulis apa adanya di kalimat kebijakan (masuk rantai)", () => {
+    const k = kebijakanEligibility(true, " https://votepriv.mdloglabs.org/register ");
+    expect(k).toBe(
+      "Open registration until the vote deadline: the app sends only your public leaf to https://votepriv.mdloglabs.org/register and the organiser registers it on-chain; the organiser only ever holds the hash.",
+    );
+  });
+
+  it("http://localhost diterima untuk pengembangan; http host lain dan teks non-URL ditolak", () => {
+    expect(kebijakanEligibility(true, "http://localhost:5390/register")).toContain("http://localhost:5390/register");
+    expect(() => kebijakanEligibility(true, "http://inbox.example/register")).toThrow(/harus URL https/);
+    expect(() => kebijakanEligibility(true, "kirim ke saya")).toThrow(/harus URL https/);
   });
 });

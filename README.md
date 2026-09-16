@@ -52,8 +52,32 @@ VOTEPRIV_TANPA_PENDAFTARAN=1 pnpm cli deploy-ballot   # ballot with empty seats
 pnpm cli register-leaves /abs/path/to/leaves.txt      # one leaf per line, from voters
 ```
 
-Registration closes permanently at the first cast vote. `pnpm cli doctor` checks
-your environment; `pnpm cli e2e` runs a three-voter end-to-end test on testnet.
+Registration stays open until the ballot's vote deadline (it is closed by the
+same deadline as voting, not by the first vote). `pnpm cli doctor` checks your
+environment; `pnpm cli e2e` runs a three-voter end-to-end test on testnet.
+
+### Self-service registration (registration inbox)
+
+Instead of collecting leaves by hand, run a **registration inbox**: a small
+HTTP service on the organiser's machine that receives a voter's public leaf
+and registers it on-chain immediately (one `registerVoters` transaction per
+batch of whatever is queued, up to 8 — it never waits for a full batch).
+
+```
+VOTEPRIV_TANPA_PENDAFTARAN=1 VOTEPRIV_INBOX_URL=https://<your-host>/register pnpm cli deploy-ballot
+VOTEPRIV_INBOX_URL=http://127.0.0.1:5390 pnpm start        # the app proxies /register → inbox
+pnpm cli register-inbox                                     # keep running while registration is open
+```
+
+The inbox URL is sealed into the ballot's `eligibilityPolicy` at deploy, so a
+voter's app finds it **on-chain** — the voter package needs no configuration.
+When a voter clicks *Register to vote*, the browser generates the credential,
+sends only the leaf to that URL, then watches both the inbox status and the
+ballot's eligibility tree on the indexer; it reports "registered" only once
+the leaf is provably in the tree. What the inbox receives is the public leaf
+and, like any web request, the sender's IP address — never the credential,
+never a vote. Ballots whose policy names no inbox keep the manual flow (copy
+the leaf, send it to the organiser).
 
 ### Running a judged ballot (handing out credentials ahead of time)
 

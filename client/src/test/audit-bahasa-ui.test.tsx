@@ -520,7 +520,7 @@ describe("terjemahkanGalatRantai — ke-23 pesan assert ballot.compact (audit #2
     ["Quorum percent cannot exceed 100", "The quorum percentage cannot be more than 100."],
     ["Only the admin can register voters", "Only this ballot's admin can register voters."],
     ["Ballot is no longer in the voting phase", "This ballot is no longer in its voting phase."],
-    ["Registration is closed once the first vote is cast", "Registration closed as soon as the first vote was cast."],
+    ["Registration is closed: the vote deadline has passed", "Registration for this ballot closed when its voting deadline passed."],
     ["Batch size must be between 1 and 8", "You can register between 1 and 8 voters at a time."],
     [
       "Registration would exceed the ballot's eligibleCount",
@@ -1046,7 +1046,7 @@ describe.skipIf(!DIST_ADA)("D. Gerbang bundel bahasa — dist/public/assets/*.js
     "The quorum percentage cannot be more than 100.",
     "Only this ballot's admin can register voters.",
     "This ballot is no longer in its voting phase.",
-    "Registration closed as soon as the first vote was cast.",
+    "Registration for this ballot closed when its voting deadline passed.",
     "You can register between 1 and 8 voters at a time.",
     "This would exceed the number of eligible voters set for this ballot.",
     "The voting deadline for this ballot has passed.",

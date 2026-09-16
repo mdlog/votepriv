@@ -108,7 +108,7 @@ export async function daftarkanVoterJikaPerlu(
   daun: readonly Uint8Array[],
   log: Logger,
   opsi: OpsiRetriDaftarkanVoter,
-  daftarkanVoterFn: typeof daftarkanVoter = daftarkanVoter,
+  daftarkanVoterFn: (...args: Parameters<typeof daftarkanVoter>) => Promise<unknown> = daftarkanVoter,
 ): Promise<void> {
   if (tanpaPendaftaran) {
     log.info(
@@ -118,4 +118,21 @@ export async function daftarkanVoterJikaPerlu(
     return;
   }
   await daftarkanVoterFn(ballot, daun, log, opsi);
+}
+
+/**
+ * Teks kebijakan eligibility — MASUK RANTAI dan sealed. Bila VOTEPRIV_INBOX_URL
+ * disetel (mode tanpa pendaftaran), URL inbox pendaftaran ditulis di sini:
+ * app pemilih membaca URL itu DARI RANTAI (bukan dari konfigurasi) dan
+ * mengirim leaf-nya ke sana saat pemilih klik "Register to vote". URL wajib
+ * https (atau localhost untuk pengembangan) — app menolak yang lain.
+ */
+export function kebijakanEligibility(tanpaPendaftaran: boolean, inboxUrl: string | undefined): string {
+  if (!tanpaPendaftaran) return "Three test credentials issued by the organiser.";
+  const url = inboxUrl?.trim();
+  if (!url) return "Voters register their own credential leaf; the organiser only ever holds the hash.";
+  if (!/^https:\/\/[^\s"'<>]+$/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s"'<>]*)?$/.test(url)) {
+    throw new Error(`VOTEPRIV_INBOX_URL harus URL https (atau http://localhost untuk pengembangan): ${url}`);
+  }
+  return `Open registration until the vote deadline: the app sends only your public leaf to ${url} and the organiser registers it on-chain; the organiser only ever holds the hash.`;
 }

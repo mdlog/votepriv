@@ -158,4 +158,4 @@ English. Commit messages carry no AI attribution trailers (enforced by
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE). The Compact contracts in `pkgs/contract` and everything needed to evaluate them are covered by it, as the Midnight Buildathon rules require.

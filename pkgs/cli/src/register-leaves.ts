@@ -64,7 +64,7 @@ log.info(
 const alamatBallotMentah = process.env.VOTEPRIV_BALLOT ?? bacaArtefak(config.networkId)?.ballot;
 if (alamatBallotMentah === undefined) {
   log.error(
-    "Tidak ada alamat ballot. Jalankan `pnpm cli deploy-ballot` lebih dulu, atau setel VOTEPRIV_BALLOT=<alamat>.",
+    "No ballot address. Run `pnpm cli deploy-ballot` first, or set VOTEPRIV_BALLOT=<address>.",
   );
   await hentikanWallet(ctx, log);
   process.exit(1);
@@ -124,7 +124,7 @@ const { nilai: ledgerSesudah, cocok, galatTerakhir, percobaan } = await ulangiSa
 
 if (!cocok || ledgerSesudah === undefined) {
   log.error(
-    { registeredCount: ledgerSesudah?.registeredCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
+    { registeredCount: ledgerSesudah?.registeredCount.toString() ?? "(unreadable)", galatTerakhir, percobaan },
     `registeredCount tidak pernah mencapai ${target} setelah ${percobaan} pembacaan. Batch mungkin masih ` +
       "tertunda di indexer — periksa manual sebelum mendaftar ulang (leaf yang SUDAH mendarat akan ditolak " +
       "kontrak bila didaftarkan lagi, bukan diam-diam terdaftar dua kali).",

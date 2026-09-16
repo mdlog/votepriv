@@ -13,9 +13,9 @@ describe("pastikanAlamatKontrak", () => {
   });
 
   it("menolak awalan 0x, panjang salah, dan huruf besar", () => {
-    expect(() => pastikanAlamatKontrak(`0x${"ab".repeat(32)}`)).toThrow(/64 karakter/);
-    expect(() => pastikanAlamatKontrak("ab".repeat(31))).toThrow(/64 karakter/);
-    expect(() => pastikanAlamatKontrak("AB".repeat(32))).toThrow(/64 karakter/);
+    expect(() => pastikanAlamatKontrak(`0x${"ab".repeat(32)}`)).toThrow(/64 (lowercase )?hexadecimal characters/);
+    expect(() => pastikanAlamatKontrak("ab".repeat(31))).toThrow(/64 (lowercase )?hexadecimal characters/);
+    expect(() => pastikanAlamatKontrak("AB".repeat(32))).toThrow(/64 (lowercase )?hexadecimal characters/);
   });
 });
 

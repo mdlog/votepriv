@@ -73,7 +73,7 @@ describe("uraiBerkasLeaf", () => {
 
   // Kasus GAGAL — berkas kosong secara efektif.
   it("menolak berkas yang kosong setelah baris kosong/komentar disaring", () => {
-    expect(() => uraiBerkasLeaf("\n# hanya komentar\n\n")).toThrow(/kosong/);
+    expect(() => uraiBerkasLeaf("\n# hanya komentar\n\n")).toThrow(/is empty/);
   });
 
   // Kasus LOLOS — satu leaf saja tetap sah.
@@ -187,8 +187,8 @@ describe("jalurBerkasLeafDariArgv", () => {
   });
 
   it("menolak dengan pesan jelas ketika tidak ada argumen posisional", () => {
-    expect(() => jalurBerkasLeafDariArgv([])).toThrow(/register-leaves <jalur-berkas-leaf>/);
-    expect(() => jalurBerkasLeafDariArgv(["--seed-derivation=pbkdf2-32"])).toThrow(/register-leaves <jalur-berkas-leaf>/);
+    expect(() => jalurBerkasLeafDariArgv([])).toThrow(/register-leaves <path-to-leaf-file>/);
+    expect(() => jalurBerkasLeafDariArgv(["--seed-derivation=pbkdf2-32"])).toThrow(/register-leaves <path-to-leaf-file>/);
   });
 });
 

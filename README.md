@@ -172,7 +172,8 @@ file** (see [README-VOTER.md](README-VOTER.md)).
 | What | Address |
 |---|---|
 | Registry (v2 — ballots whose registration stays open until the vote deadline) | `c42681741bff50e346b9e80493b622c57883f748cc0a3af60f71545e6f8ff35a` |
-| Live demo ballot (self-service registration, 16 seats) | `cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13` |
+| Live demo ballot — Ballot 003 (self-service registration, 16 seats; the one the inbox serves and the one deployed in the video) | `d6bca75d0620339533863e08c95c7edb44c6517c7e309e760c7a40097c66bfbf` |
+| Earlier demo ballot — Ballot 002 (16 seats; its registered voters can still vote, but the inbox no longer serves new registrations for it) | `cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13` |
 | Finalized three-voter ballot (public tally) | `c270b8d0fe4176a0a623866d6f42597a5625f3730b341fc665ef7af5df563d8d` on registry `2eda6f25dfd9693885f0469a87a8471fb72383a2d608edc7ecf5722dca0e3608` |
 
 The app reads them through the preview indexer, `https://indexer.preview.midnight.network/api/v3/graphql`.
@@ -182,7 +183,7 @@ contract yourself:
 ```
 curl -s https://indexer.preview.midnight.network/api/v3/graphql \
   -H 'content-type: application/json' \
-  -d '{"query":"{ contract(address:\"cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13\") { address state actions(limit: 3) { __typename transaction { hash block { height } } } } }"}'
+  -d '{"query":"{ contract(address:\"d6bca75d0620339533863e08c95c7edb44c6517c7e309e760c7a40097c66bfbf\") { address state actions(limit: 3) { __typename transaction { hash block { height } } } } }"}'
 ```
 
 `state` is the serialized contract state; `pkgs/contract`'s `ledger()` decodes it (the app does exactly

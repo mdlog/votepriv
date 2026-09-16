@@ -101,19 +101,19 @@ function sudahMendaratDeploy<T>(
       return {
         status: "tidakPasti",
         alasan:
-          "bacaDust tidak diberikan, dan alamat kontrak baru tidak diketahui sebelum deployFn berhasil — tidak ada cara memastikan status mendarat untuk deploy",
+          "bacaDust not provided, and the new contract address is unknown until deployFn succeeds — no way to confirm whether the deploy landed",
       };
     }
     let dustSekarang: bigint;
     try {
       dustSekarang = await bacaDust();
     } catch (e) {
-      return { status: "tidakPasti", alasan: `pembacaan saldo DUST gagal: ${(e as Error).message}` };
+      return { status: "tidakPasti", alasan: `DUST balance read failed: ${(e as Error).message}` };
     }
     if (dustSekarang < dustAwal) {
       return {
         status: "tidakPasti",
-        alasan: `saldo DUST turun dari ${dustAwal} ke ${dustSekarang} sejak sebelum percobaan ini — kemungkinan biaya sudah terpakai (transaksi mungkin mendarat dengan alamat yang belum diketahui)`,
+        alasan: `DUST balance dropped from ${dustAwal} to ${dustSekarang} since before this attempt — the fee was probably spent (the transaction may have landed at an address not yet known)`,
       };
     }
     return { status: "belum" };
@@ -155,7 +155,7 @@ export async function deployRegistry(
 ): Promise<HasilDeployRegistry> {
   log.info(
     { batasMenit: BATAS_MS.deploy / 60_000 },
-    "Men-deploy kontrak registry (menyusun transaksi, membuat proof, menunggu finalisasi — hitung menit)",
+    "Deploying the registry contract (building the transaction, proving, waiting for finalisation — expect minutes)",
   );
 
   const dustAwal = opsi.bacaDust ? await opsi.bacaDust() : undefined;
@@ -169,7 +169,7 @@ export async function deployRegistry(
           initialPrivateState: emptyRegistryPrivateState(),
         }),
         BATAS_MS.deploy,
-        `deployContract(registry) tidak selesai dalam ${BATAS_MS.deploy / 60_000} menit. watchForDeployTxData menunggu selamanya secara desain, jadi ini biasanya berarti transaksinya ditolak konsensus atau proof server/indexer tidak menjawab. JANGAN mengirim ulang sebelum memeriksa keadaan chain: transaksinya mungkin sudah mendarat.`,
+        `deployContract(registry) did not finish within ${BATAS_MS.deploy / 60_000} minutes. watchForDeployTxData waits forever by design, so this usually means consensus rejected the transaction or the proof server/indexer is not answering. Do NOT resubmit before checking the chain: the transaction may already have landed.`,
       ),
     sudahMendarat: sudahMendaratDeploy<DeployedContract<RegistryC>>(opsi.bacaDust, dustAwal),
     log,
@@ -186,7 +186,7 @@ export async function deployRegistry(
       status: kontrak.deployTxData.public.status,
       blockHeight: kontrak.deployTxData.public.blockHeight,
     },
-    "Registry ter-deploy",
+    "Registry deployed",
   );
   return { alamat, kontrak };
 }
@@ -217,7 +217,7 @@ export async function temukanRegistry(
       initialPrivateState: emptyRegistryPrivateState(),
     }),
     BATAS_MS.temukan,
-    `findDeployedContract(registry ${alamat}) tidak selesai dalam ${BATAS_MS.temukan / 60_000} menit. Periksa indexer dan pastikan alamat itu memang milik jaringan ini — findDeployedContract menunggu watchForDeployTxData yang tidak pernah timeout sendiri.`,
+    `findDeployedContract(registry ${alamat}) did not finish within ${BATAS_MS.temukan / 60_000} minutes. Check the indexer and make sure the address belongs to this network — findDeployedContract waits on watchForDeployTxData, which never times out by itself.`,
   );
 }
 
@@ -240,9 +240,9 @@ export async function bacaLedgerRegistry(
   const st = await denganBatasWaktu(
     publicDataProvider.queryContractState(pastikanAlamatKontrak(alamat)),
     BATAS_MS.bacaIndexer,
-    `queryContractState(${alamat}) tidak menjawab dalam ${BATAS_MS.bacaIndexer / 1000} detik.`,
+    `queryContractState(${alamat}) did not answer within ${BATAS_MS.bacaIndexer / 1000} seconds.`,
   );
-  if (st === null) throw new Error(`Registry ${alamat} belum terlihat di indexer`);
+  if (st === null) throw new Error(`Registry ${alamat} is not visible on the indexer yet`);
   return Registry.ledger(st.data);
 }
 
@@ -272,21 +272,21 @@ const AMBANG_MILIDETIK = 100_000_000_000n;
  */
 export function validasiMetadata(meta: MetadataBallot, jumlahCredential?: number): void {
   if (meta.options.length < 2 || meta.options.length > 4) {
-    throw new Error(`Jumlah opsi harus 2 sampai 4 (kontrak menolak "Option count must be between 2 and 4"); metadata memberi ${meta.options.length}.`);
+    throw new Error(`There must be 2 to 4 options (the contract rejects with "Option count must be between 2 and 4"); the metadata has ${meta.options.length}.`);
   }
   if (meta.options.some((o) => o.trim() === "")) {
     // optionCount di-seal terpisah dari label. nOptions=4 dengan o2/o3 kosong
     // DITERIMA kontrak, dan castVote lalu mengizinkan opsi tanpa label.
-    throw new Error("Label opsi tidak boleh kosong — optionCount diturunkan dari jumlah label ini.");
+    throw new Error("Option labels must not be empty — optionCount is derived from the number of labels.");
   }
   if (meta.tallyDeadline <= meta.voteDeadline) {
     throw new Error(
-      `tallyDeadline harus setelah batas waktu pemungutan suara (voteDeadline). Diberikan voteDeadline=${meta.voteDeadline}, tallyDeadline=${meta.tallyDeadline}.`,
+      `tallyDeadline must be after the vote deadline (voteDeadline). Got voteDeadline=${meta.voteDeadline}, tallyDeadline=${meta.tallyDeadline}.`,
     );
   }
   if (meta.voteDeadline >= AMBANG_MILIDETIK || meta.tallyDeadline >= AMBANG_MILIDETIK) {
     throw new Error(
-      "voteDeadline/tallyDeadline harus dalam DETIK sejak epoch, bukan milidetik. Pakai detikDariSekarang() dari paket shared.",
+      "voteDeadline/tallyDeadline must be in SECONDS since the epoch, not milliseconds. Use detikDariSekarang() from the shared package.",
     );
   }
   // Baru diperiksa SETELAH satuannya dipastikan detik (guard di atas): deadline
@@ -296,24 +296,24 @@ export function validasiMetadata(meta: MetadataBallot, jumlahCredential?: number
   const sekarang = detikSekarang();
   if (meta.voteDeadline <= sekarang) {
     throw new Error(
-      `voteDeadline sudah lewat, harus di masa depan. Diberikan voteDeadline=${meta.voteDeadline}, sekarang=${sekarang}.`,
+      `voteDeadline has already passed; it must be in the future. Got voteDeadline=${meta.voteDeadline}, now=${sekarang}.`,
     );
   }
   if (!Number.isInteger(meta.eligibleCount)) {
-    throw new Error(`eligibleCount harus bilangan bulat; diberikan ${meta.eligibleCount}.`);
+    throw new Error(`eligibleCount must be an integer; got ${meta.eligibleCount}.`);
   }
-  if (meta.eligibleCount < 1) throw new Error("eligibleCount minimal 1.");
-  if (meta.eligibleCount > 1024) throw new Error("eligibleCount melebihi kapasitas pohon eligibility (1024).");
+  if (meta.eligibleCount < 1) throw new Error("eligibleCount must be at least 1.");
+  if (meta.eligibleCount > 1024) throw new Error("eligibleCount exceeds the eligibility tree capacity (1024).");
   if (!Number.isInteger(meta.quorumPercent)) {
-    throw new Error(`quorumPercent harus bilangan bulat; diberikan ${meta.quorumPercent}.`);
+    throw new Error(`quorumPercent must be an integer; got ${meta.quorumPercent}.`);
   }
   if (meta.quorumPercent < 0) {
-    throw new Error(`quorumPercent tidak boleh negatif; diberikan ${meta.quorumPercent}.`);
+    throw new Error(`quorumPercent must not be negative; got ${meta.quorumPercent}.`);
   }
-  if (meta.quorumPercent > 100) throw new Error(`quorumPercent tidak boleh melebihi 100; diberikan ${meta.quorumPercent}.`);
+  if (meta.quorumPercent > 100) throw new Error(`quorumPercent must not exceed 100; got ${meta.quorumPercent}.`);
   if (jumlahCredential !== undefined && jumlahCredential > meta.eligibleCount) {
     throw new Error(
-      `eligibleCount (${meta.eligibleCount}) lebih kecil dari jumlah credential yang akan didaftarkan (${jumlahCredential}); registerVoters akan ditolak kontrak.`,
+      `eligibleCount (${meta.eligibleCount}) is smaller than the number of credentials to register (${jumlahCredential}); the contract would reject registerVoters.`,
     );
   }
 }
@@ -333,9 +333,9 @@ export interface BatchDaun {
  * padding nol yang tidak pernah masuk pohon.
  */
 export function batchDaun(daun: readonly Uint8Array[]): BatchDaun[] {
-  if (daun.length === 0) throw new Error("Tidak ada daun eligibility untuk didaftarkan.");
+  if (daun.length === 0) throw new Error("No eligibility leaves to register.");
   for (const [i, d] of daun.entries()) {
-    if (d.length !== 32) throw new Error(`Daun eligibility harus 32 byte; entri ke-${i} berukuran ${d.length} byte.`);
+    if (d.length !== 32) throw new Error(`An eligibility leaf must be 32 bytes; entry ${i} is ${d.length} bytes.`);
   }
 
   const hasil: BatchDaun[] = [];
@@ -443,23 +443,23 @@ export async function deployBallot(
 ): Promise<HasilDeployBallot> {
   validasiMetadata(meta, jumlahCredential);
   validasiBahasaMetadata(meta);
-  if (rahasiaAdmin.length !== 32) throw new Error("Kunci rahasia admin harus 32 byte.");
-  if (nonce.length !== 32) throw new Error("ballotNonce harus 32 byte.");
+  if (rahasiaAdmin.length !== 32) throw new Error("The admin secret key must be 32 bytes.");
+  if (nonce.length !== 32) throw new Error("ballotNonce must be 32 bytes.");
 
   const opsi = [meta.options[0] ?? "", meta.options[1] ?? "", meta.options[2] ?? "", meta.options[3] ?? ""];
 
   log.info(
     {
-      judul: meta.title,
-      opsi: meta.options,
+      title: meta.title,
+      options: meta.options,
       optionCount: meta.options.length,
       voteDeadline: meta.voteDeadline.toString(),
       tallyDeadline: meta.tallyDeadline.toString(),
       eligibleCount: meta.eligibleCount,
       quorumPercent: meta.quorumPercent,
-      batasMenit: BATAS_MS.deploy / 60_000,
+      timeoutMinutes: BATAS_MS.deploy / 60_000,
     },
-    "Men-deploy ballot (deadline dalam DETIK sejak epoch)",
+    "Deploying the ballot (deadlines in SECONDS since the epoch)",
   );
 
   const dustAwal = opsiRetri.bacaDust ? await opsiRetri.bacaDust() : undefined;
@@ -489,7 +489,7 @@ export async function deployBallot(
           ],
         }),
         BATAS_MS.deploy,
-        `deployContract(ballot) tidak selesai dalam ${BATAS_MS.deploy / 60_000} menit. JANGAN mengirim ulang sebelum memeriksa indexer: bila transaksinya mendarat, mengulang akan men-deploy ballot KEDUA dan membakar biaya dua kali.`,
+        `deployContract(ballot) did not finish within ${BATAS_MS.deploy / 60_000} minutes. Do NOT resubmit before checking the indexer: if the transaction landed, retrying deploys a SECOND ballot and burns the fee twice.`,
       ),
     sudahMendarat: sudahMendaratDeploy<DeployedContract<BallotC>>(opsiRetri.bacaDust, dustAwal),
     log,
@@ -500,8 +500,8 @@ export async function deployBallot(
 
   const alamat = pastikanAlamatKontrak(kontrak.deployTxData.public.contractAddress);
   log.info(
-    { alamat, txId: kontrak.deployTxData.public.txId, status: kontrak.deployTxData.public.status },
-    "Ballot ter-deploy",
+    { address: alamat, txId: kontrak.deployTxData.public.txId, status: kontrak.deployTxData.public.status },
+    "Ballot deployed",
   );
   return { alamat, kontrak };
 }
@@ -532,7 +532,7 @@ export async function temukanBallot(
       initialPrivateState: privateStateAwal,
     }),
     BATAS_MS.temukan,
-    `findDeployedContract(ballot ${alamat}) tidak selesai dalam ${BATAS_MS.temukan / 60_000} menit. Periksa indexer; watchForDeployTxData di dalamnya tidak pernah timeout sendiri.`,
+    `findDeployedContract(ballot ${alamat}) did not finish within ${BATAS_MS.temukan / 60_000} minutes. Check the indexer; the watchForDeployTxData inside it never times out by itself.`,
   );
 }
 
@@ -544,9 +544,9 @@ export async function bacaLedgerBallot(
   const st = await denganBatasWaktu(
     publicDataProvider.queryContractState(pastikanAlamatKontrak(alamat)),
     BATAS_MS.bacaIndexer,
-    `queryContractState(${alamat}) tidak menjawab dalam ${BATAS_MS.bacaIndexer / 1000} detik.`,
+    `queryContractState(${alamat}) did not answer within ${BATAS_MS.bacaIndexer / 1000} seconds.`,
   );
-  if (st === null) throw new Error(`Ballot ${alamat} belum terlihat di indexer`);
+  if (st === null) throw new Error(`Ballot ${alamat} is not visible on the indexer yet`);
   return Ballot.ledger(st.data);
 }
 
@@ -624,8 +624,8 @@ export async function daftarkanVoter(
   const batch = batchDaun(daun);
   for (const [i, b] of batch.entries()) {
     log.info(
-      { batch: i + 1, dari: batch.length, n: Number(b.n), batasMenit: BATAS_MS.panggilBerat / 60_000 },
-      "Mendaftarkan batch daun eligibility (proof ZK 5-20 detik, lalu finalisasi — hitung menit)",
+      { batch: i + 1, of: batch.length, n: Number(b.n), timeoutMinutes: BATAS_MS.panggilBerat / 60_000 },
+      "Registering a batch of eligibility leaves (ZK proof 5-20 s, then finalisation — expect minutes)",
     );
 
     // Dasar pembanding "sudah mendarat" untuk BATCH INI, dibaca SEKALI sebelum
@@ -643,13 +643,13 @@ export async function daftarkanVoter(
         denganBatasWaktu(
           ballot.callTx.registerVoters(b.leaves, b.n),
           BATAS_MS.panggilBerat,
-          `callTx.registerVoters (batch ${i + 1}/${batch.length}) tidak selesai dalam ${BATAS_MS.panggilBerat / 60_000} menit. JANGAN mengulang sebelum membaca registeredCount dari indexer — batch yang sudah mendarat akan terdaftar dua kali dan memakan kuota eligibleCount.`,
+          `callTx.registerVoters (batch ${i + 1}/${batch.length}) did not finish within ${BATAS_MS.panggilBerat / 60_000} minutes. Do NOT retry before reading registeredCount from the indexer — a batch that already landed would be registered twice and eat into the eligibleCount quota.`,
         ),
       sudahMendarat: async () => {
         if (opsi.publicDataProvider === undefined || opsi.alamatBallot === undefined || registeredSebelum === undefined) {
           return {
             status: "tidakPasti",
-            alasan: "publicDataProvider/alamatBallot tidak diberikan — tidak bisa membaca registeredCount",
+            alasan: "publicDataProvider/alamatBallot not provided — cannot read registeredCount",
           };
         }
         try {
@@ -659,7 +659,7 @@ export async function daftarkanVoter(
           }
           return { status: "belum" };
         } catch (e) {
-          return { status: "tidakPasti", alasan: `pembacaan registeredCount gagal: ${(e as Error).message}` };
+          return { status: "tidakPasti", alasan: `registeredCount read failed: ${(e as Error).message}` };
         }
       },
       log,
@@ -672,10 +672,10 @@ export async function daftarkanVoter(
     log.info(
       {
         batch: i + 1,
-        txId: r?.public.txId ?? "(sudah mendarat sebelum retri — txId percobaan asli tidak diketahui)",
-        status: r?.public.status ?? "(disimpulkan dari registeredCount, bukan dari jawaban node)",
+        txId: r?.public.txId ?? "(landed before the retry — the original attempt's txId is unknown)",
+        status: r?.public.status ?? "(inferred from registeredCount, not from the node's reply)",
       },
-      "Batch terdaftar",
+      "Batch registered",
     );
   }
   return { txIds };
@@ -725,20 +725,20 @@ export async function catatKeRegistry(
   // sama persis melarang `Awaited<ReturnType<typeof registry.callTx.register>>`.
   type HasilRegister = FinalizedCallTxData<RegistryC, "register">;
 
-  log.info({ alamatBallot }, "Mencatat ballot ke registry (proof ZK, lalu finalisasi)");
+  log.info({ ballotAddress: alamatBallot }, "Recording the ballot in the registry (ZK proof, then finalisation)");
 
   const r = await kirimDenganRetri<HasilRegister | undefined>({
     kirim: () =>
       denganBatasWaktu(
         registry.callTx.register(pastikanAlamatKontrak(alamatBallot)),
         BATAS_MS.panggilRingan,
-        `callTx.register (registry) tidak selesai dalam ${BATAS_MS.panggilRingan / 60_000} menit. Mengulang akan menambah entri KEDUA untuk ballot yang sama — periksa registry.count lebih dulu.`,
+        `callTx.register (registry) did not finish within ${BATAS_MS.panggilRingan / 60_000} minutes. Retrying would add a SECOND entry for the same ballot — check registry.count first.`,
       ),
     sudahMendarat: async () => {
       if (opsi.publicDataProvider === undefined || opsi.alamatRegistry === undefined) {
         return {
           status: "tidakPasti",
-          alasan: "publicDataProvider/alamatRegistry tidak diberikan — tidak bisa membaca daftar ballots",
+          alasan: "publicDataProvider/alamatRegistry not provided — cannot read the ballot list",
         };
       }
       try {
@@ -748,7 +748,7 @@ export async function catatKeRegistry(
         }
         return { status: "belum" };
       } catch (e) {
-        return { status: "tidakPasti", alasan: `pembacaan registry gagal: ${(e as Error).message}` };
+        return { status: "tidakPasti", alasan: `registry read failed: ${(e as Error).message}` };
       }
     },
     log,
@@ -759,9 +759,9 @@ export async function catatKeRegistry(
 
   log.info(
     {
-      txId: r?.public.txId ?? "(sudah mendarat sebelum retri — txId percobaan asli tidak diketahui)",
-      status: r?.public.status ?? "(disimpulkan dari keanggotaan di registry.ballots, bukan dari jawaban node)",
+      txId: r?.public.txId ?? "(landed before the retry — the original attempt's txId is unknown)",
+      status: r?.public.status ?? "(inferred from membership in registry.ballots, not from the node's reply)",
     },
-    "Ballot tercatat di registry",
+    "Ballot recorded in the registry",
   );
 }

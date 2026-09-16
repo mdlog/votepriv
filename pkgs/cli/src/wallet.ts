@@ -159,9 +159,9 @@ export const simpanCacheWallet = async (wallet: WalletFacade, cacheDir: string, 
     fs.writeFileSync(path.join(cacheDir, "shielded.json"), shielded, "utf8");
     fs.writeFileSync(path.join(cacheDir, "unshielded.json"), unshielded, "utf8");
     fs.writeFileSync(path.join(cacheDir, "dust.json"), dust, "utf8");
-    log.info("Status wallet disimpan ke cache lokal untuk mempercepat sesi berikutnya");
+    log.info("Wallet state saved to the local cache to speed up the next session");
   } catch (e) {
-    log.warn({ err: (e as Error).message }, "Gagal menyimpan cache wallet (tidak fatal, dilanjutkan)");
+    log.warn({ err: (e as Error).message }, "Failed to save the wallet cache (not fatal, continuing)");
   }
 };
 
@@ -184,7 +184,7 @@ const turunkanKunciHD = (seed: Uint8Array) => {
   // keluar dari fungsi ini, dan bahkan itu pun tidak pernah dicatat.
   const hd = HDWallet.fromSeed(seed);
   if (hd.type !== "seedOk") {
-    throw new Error("Gagal menginisialisasi HDWallet dari seed.");
+    throw new Error("Failed to initialise the HD wallet from the seed.");
   }
 
   const hasil = hd.hdWallet
@@ -193,7 +193,7 @@ const turunkanKunciHD = (seed: Uint8Array) => {
     .deriveKeysAt(0);
 
   if (hasil.type !== "keysDerived") {
-    throw new Error("Gagal menurunkan kunci HD dari seed.");
+    throw new Error("Failed to derive HD keys from the seed.");
   }
 
   hd.hdWallet.clear();
@@ -244,12 +244,12 @@ export async function bangunWallet(config: Config, seed: Uint8Array, log: Logger
 
   log.info(
     {
-      dariCache,
-      alamatUnshielded: unshieldedKeystore.getBech32Address().toString(),
+      fromCache: dariCache,
+      address: unshieldedKeystore.getBech32Address().toString(),
     },
     dariCache
-      ? "Memulihkan wallet dari cache lokal (melanjutkan sinkronisasi)"
-      : "Membangun wallet baru — sinkronisasi PERTAMA dari genesis, bisa memakan waktu lama",
+      ? "Restoring the wallet from the local cache (resuming sync)"
+      : "Building a new wallet — FIRST sync from genesis, this can take a long time",
   );
 
   const wallet = await WalletFacade.init({
@@ -307,7 +307,7 @@ export async function ringkasSaldo(
 ): Promise<{ night: bigint; dust: bigint; alamatUnshielded: string }> {
   const mulai = Date.now();
   log.info(
-    `Menunggu sinkronisasi wallet dengan jaringan ${getNetworkId()} (sinkronisasi pertama memindai dari genesis dan bisa memakan waktu lama; jangan diinterupsi)`,
+    `Waiting for the wallet to sync with ${getNetworkId()} (the first sync scans from genesis and can take a long time; do not interrupt)`,
   );
 
   const heartbeat = ctx.wallet.state().pipe(Rx.throttleTime(15_000)).subscribe((s) => {
@@ -318,7 +318,7 @@ export async function ringkasSaldo(
         highestIndex: p.highestIndex.toString(),
         isSynced: s.isSynced,
       },
-      "Progres sinkronisasi wallet (zswap)",
+      "Wallet sync progress (zswap)",
     );
   });
 
@@ -330,7 +330,7 @@ export async function ringkasSaldo(
   }
 
   const detikSinkron = ((Date.now() - mulai) / 1000).toFixed(1);
-  log.info({ detikSinkron }, "Wallet tersinkronisasi dengan jaringan");
+  log.info({ syncSeconds: detikSinkron }, "Wallet synced with the network");
 
   await simpanCacheWallet(ctx.wallet, ctx.cacheDir, log);
 
@@ -340,13 +340,13 @@ export async function ringkasSaldo(
 
   const networkId = getNetworkId();
   if (night === 0n) {
-    log.warn(`Saldo NIGHT nol. Isi wallet dengan tNight lewat faucet: ${faucetUrlFor(networkId)}`);
+    log.warn(`NIGHT balance is zero. Fund the wallet with tNight from the faucet: ${faucetUrlFor(networkId)}`);
   }
   if (dust === 0n) {
     log.warn(
-      "Saldo DUST nol. DUST diperlukan untuk membayar biaya transaksi dan digenerasi dari NIGHT UTXO yang terdaftar.",
+      "DUST balance is zero. DUST pays transaction fees and is generated from registered NIGHT UTXOs.",
     );
-    log.warn(`Isi wallet dengan tNight lewat faucet: ${faucetUrlFor(networkId)}`);
+    log.warn(`Fund the wallet with tNight from the faucet: ${faucetUrlFor(networkId)}`);
   }
 
   return { night, dust, alamatUnshielded };

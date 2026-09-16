@@ -47,13 +47,13 @@ log.info(
 
 const caraTurunan = caraTurunanDariArgv();
 const seed = await bacaSeed(caraTurunan);
-log.info(`Seed diterima (${seed.length} byte, metode turunan: ${caraTurunan}).`);
+log.info(`Seed accepted (${seed.length} bytes, derivation: ${caraTurunan}).`);
 
 const ctx = await bangunWallet(config, seed, log);
 const saldo = await ringkasSaldo(ctx, log);
 log.info(
-  { alamat: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
-  "Wallet tersinkronisasi (diagnostik blockfrost)",
+  { address: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
+  "Wallet synced (blockfrost diagnostic)",
 );
 
 // Fix seam Task 6/7: sebelumnya berkas ini exit(0) langsung tanpa menutup

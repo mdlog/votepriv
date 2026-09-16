@@ -40,15 +40,15 @@ export async function hentikanWallet(ctx: KonteksWallet, log: Logger): Promise<v
     await denganBatasWaktu(
       simpanCacheWallet(ctx.wallet, ctx.cacheDir, log),
       BATAS_MS.tutup,
-      "Penyimpanan cache wallet melewati batas waktu",
+      "Saving the wallet cache timed out",
     );
   } catch (e) {
-    log.warn({ err: (e as Error).message }, "Gagal menyimpan cache wallet saat menutup (tidak fatal)");
+    log.warn({ err: (e as Error).message }, "Failed to save the wallet cache on shutdown (not fatal)");
   }
   try {
-    await denganBatasWaktu(ctx.wallet.stop(), BATAS_MS.tutup, "wallet.stop() melewati batas waktu");
+    await denganBatasWaktu(ctx.wallet.stop(), BATAS_MS.tutup, "wallet.stop() timed out");
   } catch (e) {
-    log.warn({ err: (e as Error).message }, "Gagal menghentikan wallet dengan tertib (tidak fatal)");
+    log.warn({ err: (e as Error).message }, "Failed to stop the wallet cleanly (not fatal)");
   }
 }
 
@@ -65,12 +65,12 @@ export async function hentikanWallet(ctx: KonteksWallet, log: Logger): Promise<v
  */
 export async function tutupSesi(sesi: Sesi, kode = 0): Promise<never> {
   await hentikanWallet(sesi.ctx, sesi.log);
-  sesi.log.info({ kode }, "Sesi ditutup");
+  sesi.log.info({ code: kode }, "Session closed");
   process.exit(kode);
 }
 
 /**
- * Jeda terbaik-upaya SETELAH log "Konfigurasi jaringan" dan SEBELUM prompt
+ * Jeda terbaik-upaya SETELAH log "Network configuration" dan SEBELUM prompt
  * seed ditulis — memperbaiki cacat yang sudah dilaporkan pengguna: log itu
  * bisa muncul di stdout TEPAT SETELAH teks prompt, membuat prompt yang
  * masih menunggu input terlihat seperti sudah lewat.
@@ -112,27 +112,27 @@ export async function siapkanSesi(): Promise<Sesi> {
 
   log.info(
     { networkId: config.networkId, indexer: config.indexer, node: config.node, proofServer: config.proofServer },
-    "Konfigurasi jaringan",
+    "Network configuration",
   );
   await new Promise((selesai) => setTimeout(selesai, JEDA_TRANSPORT_PRETTY_MS));
 
   const caraTurunan = caraTurunanDariArgv();
   const seed = await bacaSeed(caraTurunan);
-  log.info(`Seed diterima (${seed.length} byte, metode turunan: ${caraTurunan}).`);
+  log.info(`Seed accepted (${seed.length} bytes, derivation: ${caraTurunan}).`);
 
   const ctx = await bangunWallet(config, seed, log);
   const saldo = await ringkasSaldo(ctx, log);
   log.info(
-    { alamat: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
-    "Wallet tersinkronisasi",
+    { address: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
+    "Wallet synced",
   );
 
   // DUST membayar biaya setiap transaksi. Tanpa DUST tidak ada satu pun
   // langkah berikutnya yang bisa jalan, jadi berhenti di sini dengan pesan
   // yang benar, bukan di tengah pembuatan proof dengan pesan yang tidak.
   if (saldo.dust === 0n) {
-    log.error("Saldo DUST nol. DUST diperlukan untuk membayar biaya transaksi dan digenerasi dari NIGHT UTXO terdaftar.");
-    log.error(`Isi wallet dengan tNight lewat faucet: ${faucetUrlFor(config.networkId)}`);
+    log.error("DUST balance is zero. DUST pays transaction fees and is generated from registered NIGHT UTXOs.");
+    log.error(`Fund the wallet with tNight from the faucet: ${faucetUrlFor(config.networkId)}`);
     await hentikanWallet(ctx, log);
     process.exit(1);
   }

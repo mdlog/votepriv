@@ -101,7 +101,7 @@ export class Inbox {
 
   constructor(opsi: OpsiInbox) {
     const alamat = normalisasiHex64(opsi.alamatBallot);
-    if (alamat === null) throw new Error(`alamatBallot tidak sah: ${String(opsi.alamatBallot)}`);
+    if (alamat === null) throw new Error(`invalid ballot address: ${String(opsi.alamatBallot)}`);
     this.opsi = { batasPerIpPerJam: 20, maksAntrean: 64, sekarangMs: () => Date.now(), ...opsi, alamatBallot: alamat };
   }
 
@@ -177,7 +177,7 @@ export class Inbox {
 
     const entri: EntriInbox = { leaf, status: "queued", diterimaPada: this.opsi.sekarangMs() };
     this.entri.set(leaf, entri);
-    this.opsi.log?.info({ leaf, ip }, "Leaf diterima — masuk antrean pendaftaran");
+    this.opsi.log?.info({ leaf, ip }, "Leaf received — queued for registration");
     void this.proses();
     return { kode: 202, badan: keBadan(entri) };
   }
@@ -203,14 +203,14 @@ export class Inbox {
             e.status = "registered";
             e.txId = txId;
           }
-          this.opsi.log?.info({ jumlah: batch.length, txId }, "Batch terdaftar di rantai");
+          this.opsi.log?.info({ count: batch.length, txId }, "Batch registered on-chain");
         } catch (err) {
           const pesan = err instanceof Error ? err.message : String(err);
           for (const e of batch) {
             e.status = "failed";
             e.error = pesan;
           }
-          this.opsi.log?.error({ jumlah: batch.length, pesan }, "Batch GAGAL didaftarkan");
+          this.opsi.log?.error({ count: batch.length, error: pesan }, "Batch registration FAILED");
         }
       }
     } finally {

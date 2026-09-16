@@ -161,7 +161,7 @@ async function pastikanArtefakZk<K extends string>(
     await Promise.all(sirkuit.map((id) => zk.get(id)));
   } catch (e) {
     throw new Error(
-      `Artefak ZK tidak terbaca di ${dir} (butuh keys/<circuit>.prover, keys/<circuit>.verifier, zkir/<circuit>.bzkir untuk ${sirkuit.join(", ")}). Penyebab: ${(e as Error).message}`,
+      `ZK artefacts unreadable in ${dir} (needs keys/<circuit>.prover, keys/<circuit>.verifier, zkir/<circuit>.bzkir for ${sirkuit.join(", ")}). Cause: ${(e as Error).message}`,
     );
   }
 }

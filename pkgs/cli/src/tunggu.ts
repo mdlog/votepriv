@@ -130,10 +130,10 @@ export async function ulangiSampai<T>(
       nilai = await baca();
       galatTerakhir = undefined;
       if (syarat(nilai)) return { nilai, cocok: true, percobaan: i, galatTerakhir: undefined };
-      log.info({ percobaan: i, dari: maks, label }, "Indexer belum menyusul; membaca ulang");
+      log.info({ attempt: i, of: maks, label }, "Indexer has not caught up yet; reading again");
     } catch (e) {
       galatTerakhir = (e as Error).message ?? String(e);
-      log.info({ percobaan: i, dari: maks, label, galat: galatTerakhir }, "Pembacaan indexer gagal; mencoba lagi");
+      log.info({ attempt: i, of: maks, label, error: galatTerakhir }, "Indexer read failed; retrying");
     }
     if (i < maks) await new Promise((r) => setTimeout(r, jedaMs));
   }
@@ -155,7 +155,7 @@ export const ringkasTallies = (
   const hasil = new Array<bigint>(nOpsi).fill(0n);
   for (const [opsi, jumlah] of entri) {
     const i = Number(opsi);
-    if (i < 0 || i >= nOpsi) throw new Error(`Tally untuk opsi ${i} di luar rentang 0..${nOpsi - 1}`);
+    if (i < 0 || i >= nOpsi) throw new Error(`Tally for option ${i} is outside the range 0..${nOpsi - 1}`);
     hasil[i] = jumlah;
   }
   return hasil;
@@ -181,11 +181,11 @@ export async function tungguSampaiDetik(
     const sisa = Number(sasaran - detikSekarang());
     log.info(
       { sisaDetik: sisa, label },
-      `Menunggu ${label} benar-benar lewat. Waktu blok jaringan nyata tidak bisa dimajukan — penantian ini tidak bisa dipersingkat.`,
+      `Waiting for ${label} to actually pass. Real network block time cannot be advanced — this wait cannot be shortened.`,
     );
     await new Promise((r) => setTimeout(r, Math.min(30_000, Math.max(1_000, sisa * 1000))));
   }
-  log.info({ label }, `${label} sudah lewat menurut jam lokal (+${bufferDetik} detik buffer)`);
+  log.info({ label }, `${label} has passed according to the local clock (+${bufferDetik} s buffer)`);
 }
 
 /**
@@ -233,7 +233,7 @@ export async function cobaSampaiWaktuBlokCocok<T>(
       terakhir = e;
       const pesan = (e as Error).message ?? String(e);
       if (!pola.test(pesan)) throw e;
-      log.warn({ percobaan: i, dari: maks, pesan }, "Waktu blok belum melewati deadline; menunggu lalu mencoba lagi");
+      log.warn({ attempt: i, of: maks, message: pesan }, "Block time has not passed the deadline yet; waiting, then retrying");
       if (i < maks) await new Promise((r) => setTimeout(r, jedaMs));
     }
   }
@@ -395,7 +395,7 @@ export async function kirimDenganRetri<T>(opsi: OpsiKirimDenganRetri<T>): Promis
   const bolehDiulang = opsi.bolehDiulang ?? putusKoneksiAmanDiulang;
   const maks = opsi.maksPercobaan ?? 3;
   const jeda = opsi.jedaMs ?? 5_000;
-  pastikan(maks >= 1, `maksPercobaan harus >= 1 (label: ${opsi.label})`);
+  pastikan(maks >= 1, `maksPercobaan must be >= 1 (label: ${opsi.label})`);
 
   for (let percobaan = 1; ; percobaan++) {
     try {
@@ -406,45 +406,45 @@ export async function kirimDenganRetri<T>(opsi: OpsiKirimDenganRetri<T>): Promis
       if (!bolehDiulang(e)) {
         opsi.log.error(
           { percobaan, label: opsi.label, pesan },
-          "Galat BUKAN putus koneksi (kemungkinan ditolak rantai) — TIDAK diulang",
+          "Error is NOT a disconnect (probably rejected by the chain) — NOT retrying",
         );
         throw e;
       }
       if (percobaan >= maks) {
         opsi.log.error(
           { percobaan, dari: maks, label: opsi.label, pesan },
-          "Putus koneksi berulang; jatah percobaan habis",
+          "Repeated disconnects; out of attempts",
         );
         throw e;
       }
 
       opsi.log.warn(
         { percobaan, dari: maks, label: opsi.label, pesan },
-        "Putus koneksi saat mengirim; memeriksa rantai sebelum mengulang (TIDAK menebak dari bentuk galat)",
+        "Disconnected while submitting; checking the chain before retrying (NOT guessing from the error shape)",
       );
       const status = await opsi.sudahMendarat();
 
       if (status.status === "mendarat") {
         opsi.log.info(
           { percobaan, label: opsi.label },
-          "Percobaan sebelumnya SUDAH mendarat di chain — memakai hasil itu, TIDAK mengirim ulang",
+          "The previous attempt DID land on-chain — using that result, NOT resubmitting",
         );
         return status.nilai;
       }
       if (status.status === "tidakPasti") {
         opsi.log.error(
           { percobaan, label: opsi.label, alasan: status.alasan },
-          "Tidak bisa dipastikan sudah mendarat atau belum — BERHENTI, tidak aman mengulang secara buta",
+          "Cannot tell whether it landed — STOPPING, retrying blindly is unsafe",
         );
         throw new Error(
-          `${opsi.label}: putus koneksi, dan status mendarat tidak bisa dipastikan (${status.alasan}). ` +
-            `JANGAN menjalankan ulang otomatis — periksa keadaan chain secara manual dulu.`,
+          `${opsi.label}: disconnected, and whether it landed cannot be determined (${status.alasan}). ` +
+            `Do NOT rerun automatically — inspect the chain state manually first.`,
         );
       }
 
       opsi.log.info(
         { percobaan, dari: maks, label: opsi.label, jedaMs: jeda },
-        "Dikonfirmasi BELUM mendarat; menunggu lalu mengirim ulang",
+        "Confirmed NOT landed; waiting, then resubmitting",
       );
       await new Promise((r) => setTimeout(r, jeda));
     }

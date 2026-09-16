@@ -86,7 +86,7 @@ describe("ulangiSampai", () => {
   it("memperlakukan galat pembacaan sebagai 'belum siap' dan menyimpan pesannya", async () => {
     const hasil = await ulangiSampai<bigint>(
       async () => {
-        throw new Error("Registry belum terlihat di indexer");
+        throw new Error("Registry is not visible on the indexer yet");
       },
       (n) => n === 3n,
       logPalsu,
@@ -96,7 +96,7 @@ describe("ulangiSampai", () => {
     );
     expect(hasil.cocok).toBe(false);
     expect(hasil.nilai).toBeUndefined();
-    expect(hasil.galatTerakhir).toMatch(/belum terlihat di indexer/);
+    expect(hasil.galatTerakhir).toMatch(/is not visible on the indexer yet/);
   });
 
   it("mereset galatTerakhir setelah pembacaan gagal lalu berhasil menyusul (walau syarat belum terpenuhi)", async () => {
@@ -111,7 +111,7 @@ describe("ulangiSampai", () => {
     const hasil = await ulangiSampai<bigint>(
       async () => {
         ke += 1;
-        if (ke === 1) throw new Error("Registry belum terlihat di indexer");
+        if (ke === 1) throw new Error("Registry is not visible on the indexer yet");
         return 0n; // berhasil dibaca, tapi tidak pernah memenuhi syarat n === 3n
       },
       (n) => n === 3n,
@@ -137,7 +137,7 @@ describe("ringkasTallies", () => {
   });
 
   it("menolak opsi di luar rentang", () => {
-    expect(() => ringkasTallies([[7n, 1n]], 3)).toThrow(/di luar rentang/);
+    expect(() => ringkasTallies([[7n, 1n]], 3)).toThrow(/outside the range/);
   });
 });
 
@@ -299,7 +299,7 @@ describe("kirimDenganRetri", () => {
         label: "uji",
         jedaMs: 1,
       }),
-    ).rejects.toThrow(/tidak bisa dipastikan/);
+    ).rejects.toThrow(/cannot be determined/);
     expect(panggilanKirim).toBe(1);
   });
 
@@ -353,7 +353,7 @@ describe("kirimDenganRetri", () => {
         label: "uji",
         maksPercobaan: 0,
       }),
-    ).rejects.toThrow(/maksPercobaan harus >= 1/);
+    ).rejects.toThrow(/maksPercobaan must be >= 1/);
   });
 });
 

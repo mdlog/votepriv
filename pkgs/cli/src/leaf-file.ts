@@ -85,7 +85,7 @@ export function uraiBerkasLeaf(isi: string): LeafEntry[] {
   }
 
   if (hasil.length === 0) {
-    throw new Error("Berkas leaf kosong — tidak ada leaf yang tersisa setelah baris kosong dan komentar (#) disaring.");
+    throw new Error("The leaf file is empty — no leaves remain after blank lines and comments (#) are filtered out.");
   }
 
   return hasil;
@@ -130,7 +130,7 @@ export function jalurBerkasLeafDariArgv(argv: readonly string[] = process.argv.s
   const jalur = argv.find((a) => !a.startsWith("--"));
   if (jalur === undefined) {
     throw new Error(
-      "Jalur berkas leaf tidak diberikan. Pakai: pnpm cli register-leaves <jalur-berkas-leaf>",
+      "No leaf file path given. Usage: pnpm cli register-leaves <path-to-leaf-file>",
     );
   }
   return jalur;
@@ -305,7 +305,7 @@ export function periksaLeafSudahTerdaftar(
  */
 export function pecahLeafMenjadiBatch<T>(daun: readonly T[], ukuran = 8): T[][] {
   if (!Number.isInteger(ukuran) || ukuran < 1) {
-    throw new Error(`Ukuran batch harus bilangan bulat >= 1; diberikan ${ukuran}.`);
+    throw new Error(`Batch size must be an integer >= 1; got ${ukuran}.`);
   }
   const hasil: T[][] = [];
   for (let i = 0; i < daun.length; i += ukuran) {
@@ -359,7 +359,7 @@ export async function daftarkanSemuaBatch(
   for (const [i, kelompok] of batch.entries()) {
     log.info(
       { batch: i + 1, dari: batch.length, n: kelompok.length },
-      "Mendaftarkan satu batch leaf eligibility (lewat daftarkanVoter)",
+      "Registering one batch of eligibility leaves (via daftarkanVoter)",
     );
     await daftarkanVoterFn(ballot, kelompok, log, {
       publicDataProvider: opsi.publicDataProvider,

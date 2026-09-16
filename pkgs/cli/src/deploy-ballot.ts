@@ -66,7 +66,7 @@ const { config, log, ctx, kp } = sesi;
 
 const alamatRegistry = bacaArtefak(config.networkId)?.registry;
 if (alamatRegistry === undefined) {
-  log.error("Belum ada alamat registry di artefak. Jalankan `pnpm cli deploy-registry` lebih dulu (Task 4).");
+  log.error("No registry address in the artefact yet. Run `pnpm cli deploy-registry` first.");
   await hentikanWallet(ctx, log);
   // process.exit (bukan tutupSesi) supaya tsc tahu baris di bawah tidak
   // tercapai dan `alamatRegistry` menyempit jadi string setelah blok ini.
@@ -83,7 +83,7 @@ const ballotSudahAda = bacaArtefak(config.networkId)?.ballot;
 if (ballotSudahAda !== undefined && !modeDeployUlangAktif()) {
   log.warn(
     { alamat: ballotSudahAda },
-    "Ballot sudah tercatat di artefak. Setel VOTEPRIV_REDEPLOY=1 bila memang ingin men-deploy ballot BARU.",
+    "A ballot is already recorded in the artefact. Set VOTEPRIV_REDEPLOY=1 to deploy a NEW ballot.",
   );
   await tutupSesi(sesi, 0);
 }
@@ -159,10 +159,10 @@ const artefak = tulisArtefak(config.networkId, {
   ...bentukFieldCredentials(credentials), // TIDAK ADA field `credentials` sama sekali bila tanpaPendaftaran
 });
 log.info(
-  { berkas: `pkgs/cli/artefak/${config.networkId}.json`, ballot: artefak.ballot, tanpaPendaftaran },
+  { file: `pkgs/cli/artefak/${config.networkId}.json`, ballot: artefak.ballot, selfRegistration: tanpaPendaftaran },
   tanpaPendaftaran
-    ? "Alamat ballot tersimpan (TANPA credential — mode VOTEPRIV_TANPA_PENDAFTARAN=1)"
-    : "Alamat ballot dan credential tersimpan (berkas ini di-gitignore — credential adalah bahan uji)",
+    ? "Ballot address saved (NO credentials — self-registration mode, VOTEPRIV_SELF_REGISTRATION=1)"
+    : "Ballot address and credentials saved (this file is gitignored — the credentials are test material)",
 );
 
 // `ballot` datang langsung dari deployContract — private state awal (kunci
@@ -187,14 +187,14 @@ await catatKeRegistry(registry, alamatBallot, log, { publicDataProvider: kp.publ
 // bawah. Ballot (dan credential, bila ada) SUDAH aman tersimpan (tulisArtefak
 // di atas), jadi kegagalan baca ini TIDAK BOLEH menggagalkan proses:
 // degradasi baris log, bukan throw yang membunuh sisa skrip.
-let registryCount = "(tidak terbaca)";
+let registryCount = "(unreadable)";
 try {
   const lr = await bacaLedgerRegistry(kp.publicDataProvider, alamatRegistry);
   registryCount = lr.count.toString();
 } catch (e) {
   log.warn(
     { err: (e as Error).message },
-    "Gagal membaca registry.count untuk log (tidak fatal — artefak ballot sudah tersimpan)",
+    "Could not read registry.count for the log (not fatal — the ballot artefact is already saved)",
   );
 }
 
@@ -203,20 +203,20 @@ if (tanpaPendaftaran) {
   // di atas) — menunggu registeredCount mencapai eligibleCount di sini akan
   // menunggu SELAMANYA. Baca ledger sekali, terbaik-upaya, murni untuk log:
   // kegagalan baca TIDAK BOLEH menggagalkan proses (alamat sudah tersimpan).
-  let ringkasanLedger = "(tidak terbaca)";
+  let ringkasanLedger = "(unreadable)";
   try {
     const lb = await bacaLedgerBallot(kp.publicDataProvider, alamatBallot);
     ringkasanLedger = `registeredCount=${lb.registeredCount}, eligibleCount=${lb.eligibleCount}, voteCount=${lb.voteCount}, phase=${lb.phase}`;
   } catch (e) {
     log.warn(
       { err: (e as Error).message },
-      "Gagal membaca ledger ballot untuk log (tidak fatal — artefak ballot sudah tersimpan)",
+      "Could not read the ballot ledger for the log (not fatal — the ballot artefact is already saved)",
     );
   }
   log.info(
-    { alamat: alamatBallot, ledger: ringkasanLedger, registryCount },
-    "Ballot ter-deploy TANPA pendaftaran leaf apa pun. Daftarkan pemilih lewat `pnpm cli register-leaves` " +
-      "setelah pemilih mengirim leaf-nya.",
+    { address: alamatBallot, ledger: ringkasanLedger, registryCount },
+    "Ballot deployed with NO leaves registered. Voters register through the inbox (`pnpm cli register-inbox`), " +
+      "or you register their leaves with `pnpm cli register-leaves`.",
   );
 } else {
   // Indexer tertinggal node beberapa detik. Membaca registeredCount tepat setelah
@@ -231,8 +231,8 @@ if (tanpaPendaftaran) {
 
   if (!cocok || lb === undefined) {
     log.error(
-      { registeredCount: lb?.registeredCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
-      `registeredCount tidak pernah mencapai ${eligibleCount} setelah ${percobaan} pembacaan. Alamat ballot dan credential SUDAH tersimpan di artefak (ditulis segera setelah deploy), jadi keadaan ini tetap bisa diperiksa.`,
+      { registeredCount: lb?.registeredCount.toString() ?? "(unreadable)", lastError: galatTerakhir, attempts: percobaan },
+      `registeredCount never reached ${eligibleCount} after ${percobaan} reads. The ballot address and credentials ARE already saved in the artefact (written right after the deploy), so this state can still be inspected.`,
     );
     await hentikanWallet(ctx, log);
     process.exit(1);
@@ -246,7 +246,7 @@ if (tanpaPendaftaran) {
       phase: lb.phase,
       registryCount,
     },
-    "Ballot siap menerima suara",
+    "Ballot ready to receive votes",
   );
 }
 

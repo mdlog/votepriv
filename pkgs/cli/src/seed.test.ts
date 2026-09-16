@@ -19,11 +19,11 @@ describe("validasiSeedHex", () => {
   });
 
   it("menolak panjang yang salah", () => {
-    expect(() => validasiSeedHex("a".repeat(63))).toThrow(/64 karakter/);
+    expect(() => validasiSeedHex("a".repeat(63))).toThrow(/64 (lowercase )?hexadecimal characters/);
   });
 
   it("menolak karakter non-hex", () => {
-    expect(() => validasiSeedHex("z".repeat(64))).toThrow(/heksadesimal/);
+    expect(() => validasiSeedHex("z".repeat(64))).toThrow(/hexadecimal/);
   });
 
   it("pesan galat tidak pernah memuat seed-nya (cabang panjang salah)", () => {
@@ -61,7 +61,7 @@ describe("validasiSeed — deteksi bentuk (hex vs frasa pemulihan)", () => {
   });
 
   it("satu token dengan panjang salah tetap melempar galat hex (bukan galat frasa)", () => {
-    expect(() => validasiSeed("a".repeat(63))).toThrow(/64 karakter/);
+    expect(() => validasiSeed("a".repeat(63))).toThrow(/64 (lowercase )?hexadecimal characters/);
   });
 
   it("frasa 24 kata TIDAK PERNAH mengenai validator hex — jawaban yang benar tidak lagi ditolak", () => {
@@ -88,7 +88,7 @@ describe("validasiSeed — deteksi bentuk (hex vs frasa pemulihan)", () => {
     } catch (e) {
       expect((e as Error).message).toMatch(/24 kata/);
       expect((e as Error).message).not.toContain("abandon");
-      expect((e as Error).message).not.toMatch(/heksadesimal/);
+      expect((e as Error).message).not.toMatch(/hexadecimal/);
     }
   });
 });

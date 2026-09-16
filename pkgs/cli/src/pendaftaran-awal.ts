@@ -45,7 +45,7 @@ export function eligibleCountDariEnv(env: NodeJS.ProcessEnv = process.env, bawaa
   const n = Number(mentah);
   if (!Number.isInteger(n)) {
     throw new Error(
-      `VOTEPRIV_ELIGIBLE_COUNT harus bilangan bulat; diberikan "${mentah}". Batas kontrak: 1..1024 (diperiksa validasiMetadata saat deploy).`,
+      `VOTEPRIV_ELIGIBLE_COUNT must be an integer; got "${mentah}". Contract limit: 1..1024 (checked by validasiMetadata at deploy time).`,
     );
   }
   return n;
@@ -123,8 +123,8 @@ export async function daftarkanVoterJikaPerlu(
 ): Promise<void> {
   if (tanpaPendaftaran) {
     log.info(
-      "VOTEPRIV_TANPA_PENDAFTARAN=1 — melewati pendaftaran leaf saat deploy. " +
-        "Pemilih membuat credential sendiri dan mengirim leaf-nya lewat `pnpm cli register-leaves`.",
+      "VOTEPRIV_SELF_REGISTRATION=1 — skipping leaf registration at deploy time. " +
+        "Voters create their own credential and send only its leaf; the organiser registers leaves with `pnpm cli register-inbox` or `pnpm cli register-leaves`.",
     );
     return;
   }
@@ -143,7 +143,7 @@ export function kebijakanEligibility(tanpaPendaftaran: boolean, inboxUrl: string
   const url = inboxUrl?.trim();
   if (!url) return "Voters register their own credential leaf; the organiser only ever holds the hash.";
   if (!/^https:\/\/[^\s"'<>]+$/.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s"'<>]*)?$/.test(url)) {
-    throw new Error(`VOTEPRIV_INBOX_URL harus URL https (atau http://localhost untuk pengembangan): ${url}`);
+    throw new Error(`VOTEPRIV_INBOX_URL must be an https URL (or http://localhost for development): ${url}`);
   }
   return `Open registration until the vote deadline: the app sends only your public leaf to ${url} and the organiser registers it on-chain; the organiser only ever holds the hash.`;
 }

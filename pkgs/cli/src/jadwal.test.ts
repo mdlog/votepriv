@@ -40,33 +40,33 @@ describe("hitungJadwal — override valid", () => {
 describe("hitungJadwal — penolakan TALLY > VOTE (MUTASI WAJIB b)", () => {
   it("menolak TALLY sama dengan VOTE", () => {
     expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: "100", VOTEPRIV_MENIT_TALLY: "100" })).toThrow(
-      /VOTEPRIV_TALLY_MINUTES.*harus lebih besar dari VOTEPRIV_VOTE_MINUTES/,
+      /VOTEPRIV_TALLY_MINUTES.*must be greater than VOTEPRIV_VOTE_MINUTES/,
     );
   });
 
   it("menolak TALLY lebih kecil dari VOTE", () => {
     expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: "200", VOTEPRIV_MENIT_TALLY: "100" })).toThrow(
-      /harus lebih besar/,
+      /must be greater than/,
     );
   });
 
   it("menolak ketika hanya VOTE disetel tapi melebihi bawaan TALLY (180)", () => {
     // VOTE=10080 tanpa TALLY eksplisit berarti TALLY jatuh ke bawaan 180 —
     // 180 <= 10080 tetap harus ditolak, bukan diam-diam dipakai.
-    expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: "10080" })).toThrow(/harus lebih besar/);
+    expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: "10080" })).toThrow(/must be greater than/);
   });
 });
 
 describe("hitungJadwal — penolakan nilai non-integer/non-positif", () => {
   it.each(["10080.5", "abc", "0", "-5"])("menolak VOTEPRIV_MENIT_VOTE=\"%s\"", (nilai) => {
     expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: nilai })).toThrow(
-      /VOTEPRIV_MENIT_VOTE harus bilangan bulat positif/,
+      /VOTEPRIV_MENIT_VOTE must be a positive integer/,
     );
   });
 
   it.each(["12960.5", "xyz", "0", "-1"])("menolak VOTEPRIV_MENIT_TALLY=\"%s\"", (nilai) => {
     expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: "50", VOTEPRIV_MENIT_TALLY: nilai })).toThrow(
-      /VOTEPRIV_MENIT_TALLY harus bilangan bulat positif/,
+      /VOTEPRIV_MENIT_TALLY must be a positive integer/,
     );
   });
 

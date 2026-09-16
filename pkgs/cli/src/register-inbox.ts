@@ -32,7 +32,7 @@ import { rakitProvidersBallot } from "./providers.ts";
 const port = Number(process.env.VOTEPRIV_INBOX_PORT ?? "5390");
 const host = process.env.VOTEPRIV_INBOX_HOST ?? "127.0.0.1";
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  console.error(`VOTEPRIV_INBOX_PORT tidak sah: ${process.env.VOTEPRIV_INBOX_PORT}`);
+  console.error(`Invalid VOTEPRIV_INBOX_PORT: ${process.env.VOTEPRIV_INBOX_PORT}`);
   process.exit(1);
 }
 
@@ -41,7 +41,7 @@ const { config, log, ctx, kp } = sesi;
 
 const alamatBallotMentah = process.env.VOTEPRIV_BALLOT ?? bacaArtefak(config.networkId)?.ballot;
 if (alamatBallotMentah === undefined) {
-  log.error("Tidak ada alamat ballot. Jalankan `pnpm cli deploy-ballot` lebih dulu, atau setel VOTEPRIV_BALLOT=<alamat>.");
+  log.error("No ballot address. Run `pnpm cli deploy-ballot` first, or set VOTEPRIV_BALLOT=<address>.");
   await hentikanWallet(ctx, log);
   process.exit(1);
 }
@@ -90,15 +90,15 @@ const inbox = new Inbox({
 const { server } = await dengarkanInbox(inbox, port, host);
 const awal = await bacaLedger();
 log.info(
-  { alamatBallot, url: `http://${host}:${port}/register`, registeredCount: awal.registeredCount.toString(), eligibleCount: awal.eligibleCount.toString() },
-  "Registration inbox siap — menunggu leaf dari pemilih (Ctrl+C untuk berhenti)",
+  { ballotAddress: alamatBallot, url: `http://${host}:${port}/register`, registeredCount: awal.registeredCount.toString(), eligibleCount: awal.eligibleCount.toString() },
+  "Registration inbox ready — waiting for leaves from voters (Ctrl+C to stop)",
 );
 
 let sedangTutup = false;
 const tutup = async (sinyal: string): Promise<void> => {
   if (sedangTutup) return;
   sedangTutup = true;
-  log.info({ sinyal, ...inbox.ringkasan() }, "Menutup inbox");
+  log.info({ signal: sinyal, ...inbox.ringkasan() }, "Closing the inbox");
   await new Promise<void>((r) => server.close(() => r()));
   await tutupSesi(sesi, 0);
 };

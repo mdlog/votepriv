@@ -15,7 +15,7 @@ export const DIR_ARTEFAK = path.resolve(currentDir, "..", "artefak");
 export function pastikanAlamatKontrak(s: string): string {
   if (!/^[0-9a-f]{64}$/.test(s)) {
     throw new Error(
-      `Alamat kontrak harus 64 karakter heksadesimal huruf kecil tanpa awalan "0x"; yang diberikan panjang ${s.length}.`,
+      `A contract address must be 64 lowercase hexadecimal characters without the "0x" prefix; got length ${s.length}.`,
     );
   }
   return s;

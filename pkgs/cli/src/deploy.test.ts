@@ -34,7 +34,7 @@ describe("deployRegistry", () => {
       const janji = deployRegistry({} as unknown as ProvidersRegistry, logPalsu, takPernahSelesai);
       // Perlu di-attach SEBELUM memajukan jam palsu, supaya rejection tidak
       // pernah menjadi "unhandled" di antara advance dan await.
-      const ekspektasi = expect(janji).rejects.toThrow(/tidak selesai dalam/);
+      const ekspektasi = expect(janji).rejects.toThrow(/did not finish within/);
       await vi.advanceTimersByTimeAsync(BATAS_MS.deploy);
       await ekspektasi;
     } finally {
@@ -85,7 +85,7 @@ describe("deployRegistry", () => {
 
     await expect(
       deployRegistry({} as unknown as ProvidersRegistry, logPalsu, deployFnPalsu, { bacaDust, jedaMs: 1 }),
-    ).rejects.toThrow(/tidak bisa dipastikan/);
+    ).rejects.toThrow(/cannot be determined/);
     expect(panggilan).toBe(1);
   });
 
@@ -98,7 +98,7 @@ describe("deployRegistry", () => {
 
     await expect(
       deployRegistry({} as unknown as ProvidersRegistry, logPalsu, deployFnPalsu, { jedaMs: 1 }),
-    ).rejects.toThrow(/tidak bisa dipastikan/);
+    ).rejects.toThrow(/cannot be determined/);
     expect(panggilan).toBe(1);
   });
 
@@ -157,17 +157,17 @@ describe("validasiMetadata", () => {
   });
 
   it("menolak jumlah opsi di luar 2..4", () => {
-    expect(() => validasiMetadata({ ...metaSah(), options: ["Cuma satu"] })).toThrow(/2 sampai 4/);
-    expect(() => validasiMetadata({ ...metaSah(), options: ["a", "b", "c", "d", "e"] })).toThrow(/2 sampai 4/);
+    expect(() => validasiMetadata({ ...metaSah(), options: ["Cuma satu"] })).toThrow(/2 to 4 options/);
+    expect(() => validasiMetadata({ ...metaSah(), options: ["a", "b", "c", "d", "e"] })).toThrow(/2 to 4 options/);
   });
 
   it("menolak tallyDeadline yang tidak lebih besar dari voteDeadline", () => {
-    expect(() => validasiMetadata({ ...metaSah(), tallyDeadline: 1_800_000_000n })).toThrow(/setelah batas waktu pemungutan suara/);
-    expect(() => validasiMetadata({ ...metaSah(), tallyDeadline: 1_799_999_999n })).toThrow(/setelah batas waktu pemungutan suara/);
+    expect(() => validasiMetadata({ ...metaSah(), tallyDeadline: 1_800_000_000n })).toThrow(/must be after the vote deadline/);
+    expect(() => validasiMetadata({ ...metaSah(), tallyDeadline: 1_799_999_999n })).toThrow(/must be after the vote deadline/);
   });
 
   it("menolak eligibleCount nol atau di atas 1024", () => {
-    expect(() => validasiMetadata({ ...metaSah(), eligibleCount: 0 })).toThrow(/minimal 1/);
+    expect(() => validasiMetadata({ ...metaSah(), eligibleCount: 0 })).toThrow(/at least 1/);
     expect(() => validasiMetadata({ ...metaSah(), eligibleCount: 1025 })).toThrow(/1024/);
   });
 
@@ -180,7 +180,7 @@ describe("validasiMetadata", () => {
     // menghasilkan ballot yang deadline-nya tidak pernah tiba.
     expect(() =>
       validasiMetadata({ ...metaSah(), voteDeadline: 1_757_000_000_000n, tallyDeadline: 1_757_000_060_000n }),
-    ).toThrow(/DETIK/);
+    ).toThrow(/SECONDS/);
   });
 
   it("menolak eligibleCount yang lebih kecil dari jumlah credential yang akan didaftarkan", () => {
@@ -192,7 +192,7 @@ describe("validasiMetadata", () => {
   // dengan o2/o3 kosong lolos ke kontrak dan castVote mengizinkan opsi tanpa
   // label. Guard ini TIDAK ditegakkan kontrak — murni pagar CLI.
   it("menolak label opsi yang kosong atau hanya spasi", () => {
-    expect(() => validasiMetadata({ ...metaSah(), options: ["Opsi A", "  ", "Opsi C"] })).toThrow(/tidak boleh kosong/);
+    expect(() => validasiMetadata({ ...metaSah(), options: ["Opsi A", "  ", "Opsi C"] })).toThrow(/must not be empty/);
   });
 
   // Tanpa guard ini, quorumPercent/eligibleCount pecahan lolos validasi lalu
@@ -200,22 +200,22 @@ describe("validasiMetadata", () => {
   // pesan yang menyebut field-nya — persis kelas kegagalan yang fungsi ini
   // dibuat untuk mencegah, hanya pindah satu langkah lebih dalam.
   it("menolak quorumPercent yang bukan bilangan bulat", () => {
-    expect(() => validasiMetadata({ ...metaSah(), quorumPercent: 60.5 })).toThrow(/bilangan bulat/);
+    expect(() => validasiMetadata({ ...metaSah(), quorumPercent: 60.5 })).toThrow(/must be an? (positive )?integer/);
   });
 
   it("menolak quorumPercent negatif", () => {
-    expect(() => validasiMetadata({ ...metaSah(), quorumPercent: -1 })).toThrow(/negatif/);
+    expect(() => validasiMetadata({ ...metaSah(), quorumPercent: -1 })).toThrow(/must not be negative/);
   });
 
   it("menolak eligibleCount yang bukan bilangan bulat", () => {
-    expect(() => validasiMetadata({ ...metaSah(), eligibleCount: 2.5 })).toThrow(/bilangan bulat/);
+    expect(() => validasiMetadata({ ...metaSah(), eligibleCount: 2.5 })).toThrow(/must be an? (positive )?integer/);
   });
 
   // 1_000_000_000n (September 2001) aman selalu di masa lalu terlepas kapan
   // uji ini dijalankan, dan di bawah AMBANG_MILIDETIK sehingga guard
   // milidetik tidak ikut memicu duluan.
   it("menolak voteDeadline yang sudah lewat", () => {
-    expect(() => validasiMetadata({ ...metaSah(), voteDeadline: 1_000_000_000n })).toThrow(/sudah lewat/);
+    expect(() => validasiMetadata({ ...metaSah(), voteDeadline: 1_000_000_000n })).toThrow(/has already passed/);
   });
 });
 
@@ -236,8 +236,8 @@ describe("batchDaun", () => {
   });
 
   it("menolak daun yang bukan 32 byte dan daftar kosong", () => {
-    expect(() => batchDaun([new Uint8Array(31)])).toThrow(/32 byte/);
-    expect(() => batchDaun([])).toThrow(/Tidak ada daun/);
+    expect(() => batchDaun([new Uint8Array(31)])).toThrow(/32 bytes/);
+    expect(() => batchDaun([])).toThrow(/No eligibility leaves/);
   });
 });
 
@@ -268,13 +268,13 @@ describe("deployBallot", () => {
   it("menolak rahasiaAdmin yang bukan 32 byte sebelum menyentuh providers", async () => {
     await expect(
       deployBallot({} as unknown as ProvidersBallot, metaSah(), new Uint8Array(31), new Uint8Array(32), logPalsu),
-    ).rejects.toThrow(/Kunci rahasia admin harus 32 byte/);
+    ).rejects.toThrow(/admin secret key must be 32 bytes/);
   });
 
   it("menolak ballotNonce yang bukan 32 byte sebelum menyentuh providers", async () => {
     await expect(
       deployBallot({} as unknown as ProvidersBallot, metaSah(), new Uint8Array(32), new Uint8Array(31), logPalsu),
-    ).rejects.toThrow(/ballotNonce harus 32 byte/);
+    ).rejects.toThrow(/ballotNonce must be 32 bytes/);
   });
 
   // Sama seperti uji regresi deployRegistry di atas, dan untuk kerawanan yang
@@ -295,7 +295,7 @@ describe("deployBallot", () => {
         undefined,
         takPernahSelesai,
       );
-      const ekspektasi = expect(janji).rejects.toThrow(/tidak selesai dalam/);
+      const ekspektasi = expect(janji).rejects.toThrow(/did not finish within/);
       await vi.advanceTimersByTimeAsync(BATAS_MS.deploy);
       await ekspektasi;
     } finally {
@@ -363,7 +363,7 @@ describe("deployBallot", () => {
         deployFnPalsu,
         { bacaDust, jedaMs: 1 },
       ),
-    ).rejects.toThrow(/tidak bisa dipastikan/);
+    ).rejects.toThrow(/cannot be determined/);
     expect(panggilan).toBe(1);
   });
 
@@ -385,7 +385,7 @@ describe("deployBallot", () => {
         deployFnPalsu,
         { jedaMs: 1 },
       ),
-    ).rejects.toThrow(/tidak bisa dipastikan/);
+    ).rejects.toThrow(/cannot be determined/);
     expect(panggilan).toBe(1);
   });
 });
@@ -426,7 +426,7 @@ describe("daftarkanVoter", () => {
         callTx: { registerVoters: () => new Promise<never>(() => {}) },
       } as unknown as FoundContract<BallotC>;
       const janji = daftarkanVoter(ballotPalsu, [daun(1)], logPalsu);
-      const ekspektasi = expect(janji).rejects.toThrow(/tidak selesai dalam/);
+      const ekspektasi = expect(janji).rejects.toThrow(/did not finish within/);
       await vi.advanceTimersByTimeAsync(BATAS_MS.panggilBerat);
       await ekspektasi;
     } finally {
@@ -450,7 +450,7 @@ describe("daftarkanVoter", () => {
     } as unknown as FoundContract<BallotC>;
 
     await expect(daftarkanVoter(ballotPalsu, [daun(1)], logPalsu, { jedaMs: 1 })).rejects.toThrow(
-      /tidak bisa dipastikan/,
+      /cannot be determined/,
     );
     expect(panggilan).toBe(1);
   });
@@ -505,7 +505,7 @@ describe("catatKeRegistry", () => {
         callTx: { register: () => new Promise<never>(() => {}) },
       } as unknown as FoundContract<RegistryC>;
       const janji = catatKeRegistry(registryPalsu, "a".repeat(64), logPalsu);
-      const ekspektasi = expect(janji).rejects.toThrow(/tidak selesai dalam/);
+      const ekspektasi = expect(janji).rejects.toThrow(/did not finish within/);
       await vi.advanceTimersByTimeAsync(BATAS_MS.panggilRingan);
       await ekspektasi;
     } finally {
@@ -525,7 +525,7 @@ describe("catatKeRegistry", () => {
     } as unknown as FoundContract<RegistryC>;
 
     await expect(catatKeRegistry(registryPalsu, "a".repeat(64), logPalsu, { jedaMs: 1 })).rejects.toThrow(
-      /tidak bisa dipastikan/,
+      /cannot be determined/,
     );
     expect(panggilan).toBe(1);
   });

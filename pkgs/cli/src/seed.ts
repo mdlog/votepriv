@@ -42,10 +42,10 @@ function deteksiBentukSeed(masukan: string): BentukSeed {
 export function validasiSeedHex(masukan: string): string {
   const seed = masukan.trim().toLowerCase();
   if (seed.length !== 64) {
-    throw new Error(`Seed harus 64 karakter heksadesimal; yang diberikan ${seed.length} karakter.`);
+    throw new Error(`The seed must be 64 hexadecimal characters; got ${seed.length}.`);
   }
   if (!/^[0-9a-f]{64}$/.test(seed)) {
-    throw new Error("Seed harus berupa heksadesimal (0-9, a-f) saja.");
+    throw new Error("The seed must be hexadecimal (0-9, a-f) only.");
   }
   return seed;
 }
@@ -71,9 +71,9 @@ export function validasiSeed(masukan: string, cara: CaraTurunan = CARA_TURUNAN_D
   // sengaja tidak menampilkan apa pun.
   if (masukan.trim() === "") {
     throw new Error(
-      "Tidak ada masukan yang diterima — Enter ditekan sebelum ada yang diketik. " +
-        "Prompt ini memang tidak menampilkan ketikan sama sekali; itu disengaja, bukan tanda macet. " +
-        "Jalankan lagi, lalu ketik atau tempel seed hex 64 karakter maupun frasa pemulihan 24 kata sebelum menekan Enter.",
+      "No input received — Enter was pressed before anything was typed. " +
+        "This prompt deliberately shows nothing while you type; that is intentional, not a hang. " +
+        "Run it again, then type or paste the 64-character hex seed or the 24-word recovery phrase before pressing Enter.",
     );
   }
   if (deteksiBentukSeed(masukan) === "mnemonic") {
@@ -109,7 +109,7 @@ async function tanyaTanpaGema(rl: Interface, teksPrompt: string): Promise<string
   // mengetik lambat SEMUANYA tertangkap benar; satu-satunya yang menghasilkan
   // nol karakter adalah Enter tanpa masukan. Jadi yang kurang bukan penangkapan
   // input, melainkan kabar kepada manusia bahwa ia sedang bekerja.
-  process.stdout.write("  (ketikan sengaja tidak ditampilkan sama sekali — ketik atau tempel, lalu Enter)\n");
+  process.stdout.write("  (your typing is deliberately not echoed — type or paste, then press Enter)\n");
   process.stdout.write(teksPrompt);
 
   const target = rl as unknown as { output: NodeJS.WritableStream };
@@ -133,9 +133,9 @@ async function tanyaTanpaGema(rl: Interface, teksPrompt: string): Promise<string
  */
 function ringkasBentukMasukan(masukan: string): string {
   const token = masukan.trim().split(/\s+/).filter(Boolean);
-  if (token.length === 0) return "kosong";
-  if (token.length === 1) return `satu token, ${token[0].length} karakter`;
-  return `${token.length} kata`;
+  if (token.length === 0) return "empty";
+  if (token.length === 1) return `one token, ${token[0].length} characters`;
+  return `${token.length} words`;
 }
 
 /**
@@ -180,8 +180,8 @@ async function bacaInputRahasia(promptInteraktif: string, promptNonInteraktif: s
  */
 export async function bacaSeed(cara: CaraTurunan = CARA_TURUNAN_DEFAULT): Promise<Uint8Array> {
   const masukan = await bacaInputRahasia(
-    "Seed wallet (64 hex atau frasa pemulihan 24 kata, tidak akan ditampilkan): ",
-    "Seed wallet (64 hex atau frasa pemulihan 24 kata, dibaca dari input non-interaktif): ",
+    "Wallet seed (64 hex or 24-word recovery phrase; input is hidden): ",
+    "Wallet seed (64 hex or 24-word recovery phrase, read from non-interactive input): ",
   );
   return validasiSeed(masukan, cara);
 }
@@ -196,8 +196,8 @@ export async function bacaSeed(cara: CaraTurunan = CARA_TURUNAN_DEFAULT): Promis
  */
 export async function bacaFrasaPemulihan(): Promise<string> {
   const masukan = await bacaInputRahasia(
-    "Frasa pemulihan wallet (24 kata, tidak akan ditampilkan): ",
-    "Frasa pemulihan wallet (24 kata, dibaca dari input non-interaktif): ",
+    "Wallet recovery phrase (24 words; input is hidden): ",
+    "Wallet recovery phrase (24 words, read from non-interactive input): ",
   );
   return normalisasiMnemonic(masukan);
 }

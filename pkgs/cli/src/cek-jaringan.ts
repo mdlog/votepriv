@@ -36,25 +36,25 @@ export async function jalankanCekJaringan(config: Config): Promise<void> {
 
   log.info(
     { networkId: config.networkId, indexer: config.indexer, node: config.node, proofServer: config.proofServer },
-    "Konfigurasi jaringan",
+    "Network configuration",
   );
 
   const caraTurunan = caraTurunanDariArgv();
   const seed = await bacaSeed(caraTurunan);
-  log.info(`Seed diterima (${seed.length} byte, metode turunan: ${caraTurunan}).`);
+  log.info(`Seed accepted (${seed.length} bytes, derivation: ${caraTurunan}).`);
 
   const ctx = await bangunWallet(config, seed, log);
   const saldo = await ringkasSaldo(ctx, log);
   log.info(
-    { alamat: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
-    "Wallet tersinkronisasi",
+    { address: saldo.alamatUnshielded, night: saldo.night.toString(), dust: saldo.dust.toString() },
+    "Wallet synced",
   );
 
   if (saldo.dust === 0n) {
     log.error(
-      "Saldo DUST nol. DUST diperlukan untuk membayar biaya transaksi dan digenerasi dari NIGHT UTXO yang terdaftar.",
+      "DUST balance is zero. DUST pays transaction fees and is generated from registered NIGHT UTXOs.",
     );
-    log.error(`Isi wallet dengan tNight lewat faucet: ${faucetUrlFor(config.networkId)}`);
+    log.error(`Fund the wallet with tNight from the faucet: ${faucetUrlFor(config.networkId)}`);
     await hentikanWallet(ctx, log);
     process.exit(1);
   }
@@ -67,6 +67,6 @@ export async function jalankanCekJaringan(config: Config): Promise<void> {
   // handle lain yang masih terbuka (mis. transport pino) — lebih aman
   // menyatakan exit code sukses secara eksplisit daripada berharap begitu.
   await hentikanWallet(ctx, log);
-  log.info({ kode: 0 }, "Sesi ditutup");
+  log.info({ code: 0 }, "Session closed");
   process.exit(0);
 }

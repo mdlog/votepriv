@@ -28,13 +28,13 @@ describe("siapkanSesi: jeda transport pino-pretty berada di antara log konfigura
     expect(mulaiFungsi).toBeGreaterThan(-1);
   });
 
-  it('log "Konfigurasi jaringan" muncul SEBELUM jeda, dan jeda muncul SEBELUM bacaSeed/caraTurunanDariArgv', () => {
-    const idxLog = badanFungsi.indexOf("Konfigurasi jaringan");
+  it('log "Network configuration" muncul SEBELUM jeda, dan jeda muncul SEBELUM bacaSeed/caraTurunanDariArgv', () => {
+    const idxLog = badanFungsi.indexOf("Network configuration");
     const idxJeda = badanFungsi.indexOf("JEDA_TRANSPORT_PRETTY_MS");
     const idxCaraTurunan = badanFungsi.indexOf("caraTurunanDariArgv(");
     const idxBacaSeed = badanFungsi.indexOf("bacaSeed(");
 
-    expect(idxLog, 'log "Konfigurasi jaringan" harus ada di siapkanSesi').toBeGreaterThan(-1);
+    expect(idxLog, 'log "Network configuration" harus ada di siapkanSesi').toBeGreaterThan(-1);
     expect(idxJeda, "JEDA_TRANSPORT_PRETTY_MS harus dipakai di siapkanSesi").toBeGreaterThan(-1);
     expect(idxCaraTurunan, "caraTurunanDariArgv( harus dipanggil di siapkanSesi").toBeGreaterThan(-1);
     expect(idxBacaSeed, "bacaSeed( harus dipanggil di siapkanSesi").toBeGreaterThan(-1);
@@ -46,7 +46,7 @@ describe("siapkanSesi: jeda transport pino-pretty berada di antara log konfigura
 
   it("jeda benar-benar berupa await (bukan fire-and-forget) atas sebuah Promise/setTimeout", () => {
     const cuplikan = badanFungsi.slice(
-      badanFungsi.indexOf("Konfigurasi jaringan"),
+      badanFungsi.indexOf("Network configuration"),
       badanFungsi.indexOf("caraTurunanDariArgv("),
     );
     expect(cuplikan).toMatch(/await\s+new Promise\(.*setTimeout.*JEDA_TRANSPORT_PRETTY_MS/s);

@@ -43,8 +43,8 @@ describe("eligibleCountDariEnv", () => {
   });
 
   it("menolak nilai yang bukan bilangan bulat", () => {
-    expect(() => eligibleCountDariEnv({ VOTEPRIV_ELIGIBLE_COUNT: "abc" })).toThrow(/bilangan bulat/);
-    expect(() => eligibleCountDariEnv({ VOTEPRIV_ELIGIBLE_COUNT: "3.5" })).toThrow(/bilangan bulat/);
+    expect(() => eligibleCountDariEnv({ VOTEPRIV_ELIGIBLE_COUNT: "abc" })).toThrow(/must be an? (positive )?integer/);
+    expect(() => eligibleCountDariEnv({ VOTEPRIV_ELIGIBLE_COUNT: "3.5" })).toThrow(/must be an? (positive )?integer/);
   });
 });
 
@@ -159,8 +159,8 @@ describe("kebijakanEligibility", () => {
 
   it("http://localhost diterima untuk pengembangan; http host lain dan teks non-URL ditolak", () => {
     expect(kebijakanEligibility(true, "http://localhost:5390/register")).toContain("http://localhost:5390/register");
-    expect(() => kebijakanEligibility(true, "http://inbox.example/register")).toThrow(/harus URL https/);
-    expect(() => kebijakanEligibility(true, "kirim ke saya")).toThrow(/harus URL https/);
+    expect(() => kebijakanEligibility(true, "http://inbox.example/register")).toThrow(/must be an https URL/);
+    expect(() => kebijakanEligibility(true, "kirim ke saya")).toThrow(/must be an https URL/);
   });
 });
 

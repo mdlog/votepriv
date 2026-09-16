@@ -524,7 +524,7 @@ try {
     );
     if (!cocok || lb === undefined) {
       log.error(
-        { voteCount: lb?.voteCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
+        { voteCount: lb?.voteCount.toString() ?? "(unreadable)", galatTerakhir, percobaan },
         `voteCount tidak pernah mencapai ${JUMLAH_PEMILIH} setelah ${percobaan} pembacaan. Ini BUKAN pemeriksaan privasi yang gagal — indexer tidak pernah menampilkan ketiga suara. Periksa txId ketiga castVote di log.`,
       );
       await hentikanWallet(ctx, log);
@@ -637,7 +637,7 @@ try {
     );
     if (!cocok || lb === undefined) {
       log.error(
-        { talliedCount: lb?.talliedCount.toString() ?? "(tidak terbaca)", galatTerakhir, percobaan },
+        { talliedCount: lb?.talliedCount.toString() ?? "(unreadable)", galatTerakhir, percobaan },
         `talliedCount tidak pernah mencapai ${JUMLAH_PEMILIH}. Periksa txId ketiga tallyVote di log terhadap indexer.`,
       );
       await hentikanWallet(ctx, log);

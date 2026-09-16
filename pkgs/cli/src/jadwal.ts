@@ -65,7 +65,7 @@ function menitPositifDariEnv(namaEnv: string, mentah: string | undefined): numbe
   if (mentah === undefined || mentah.trim() === "") return undefined;
   const n = Number(mentah);
   if (!Number.isInteger(n) || n <= 0) {
-    throw new Error(`${namaEnv} harus bilangan bulat positif (menit); diberikan "${mentah}".`);
+    throw new Error(`${namaEnv} must be a positive integer (minutes); got "${mentah}".`);
   }
   return n;
 }
@@ -96,8 +96,8 @@ export function hitungJadwal(
   // yang pasti akan ditolak gagal sebelum membayar transaksi apa pun.
   if (menitTally <= menitVote) {
     throw new Error(
-      `VOTEPRIV_TALLY_MINUTES (${menitTally} menit) harus lebih besar dari VOTEPRIV_VOTE_MINUTES (${menitVote} menit) — ` +
-        "kontrak menuntut tallyDeadline > voteDeadline.",
+      `VOTEPRIV_TALLY_MINUTES (${menitTally} min) must be greater than VOTEPRIV_VOTE_MINUTES (${menitVote} min) — ` +
+        "the contract requires tallyDeadline > voteDeadline.",
     );
   }
 
@@ -105,8 +105,8 @@ export function hitungJadwal(
     // Tidak ada logger pino di sini (modul ini dimuat SEBELUM siapkanSesi
     // membangunnya) — console.log satu baris, pola sama dengan doctor.ts.
     console.log(
-      `Jadwal ballot memakai override env: MENIT_VOTE=${menitVote} MENIT_TALLY=${menitTally} ` +
-        `(bawaan ${bawaanVote}/${bawaanTally}).`,
+      `Ballot schedule overridden from env: VOTEPRIV_VOTE_MINUTES=${menitVote} VOTEPRIV_TALLY_MINUTES=${menitTally} ` +
+        `(defaults ${bawaanVote}/${bawaanTally}).`,
     );
   }
 

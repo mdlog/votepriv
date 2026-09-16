@@ -15,9 +15,20 @@ import type { Logger } from "pino";
 import { daftarkanVoter, type OpsiRetriDaftarkanVoter } from "./deploy.ts";
 import type { BallotC } from "./kontrak.ts";
 
-/** `VOTEPRIV_TANPA_PENDAFTARAN=1` — satu-satunya nilai yang mengaktifkan mode ini (persis "1", bukan "true"/"yes"/dst, konsisten dengan VOTEPRIV_DEPLOY_ULANG). */
+/**
+ * `VOTEPRIV_SELF_REGISTRATION=1` (nama publik, Inggris) atau alias lamanya
+ * `VOTEPRIV_TANPA_PENDAFTARAN=1` — satu-satunya nilai yang mengaktifkan mode
+ * ini (persis "1", bukan "true"/"yes"/dst, konsisten dengan VOTEPRIV_REDEPLOY).
+ * Nama Indonesia dipertahankan sebagai alias supaya skrip lama tetap jalan;
+ * dokumentasi hanya menyebut nama Inggris.
+ */
 export function modeTanpaPendaftaranAktif(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.VOTEPRIV_TANPA_PENDAFTARAN === "1";
+  return env.VOTEPRIV_SELF_REGISTRATION === "1" || env.VOTEPRIV_TANPA_PENDAFTARAN === "1";
+}
+
+/** `VOTEPRIV_REDEPLOY=1` (nama publik) atau alias lamanya `VOTEPRIV_DEPLOY_ULANG=1`. */
+export function modeDeployUlangAktif(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.VOTEPRIV_REDEPLOY === "1" || env.VOTEPRIV_DEPLOY_ULANG === "1";
 }
 
 /**

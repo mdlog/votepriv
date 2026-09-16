@@ -6,6 +6,7 @@ import {
   bentukFieldCredentials,
   daftarkanVoterJikaPerlu,
   eligibleCountDariEnv,
+  modeDeployUlangAktif,
   modeTanpaPendaftaranAktif,
   siapkanPemilihAwal,
   kebijakanEligibility,
@@ -160,5 +161,21 @@ describe("kebijakanEligibility", () => {
     expect(kebijakanEligibility(true, "http://localhost:5390/register")).toContain("http://localhost:5390/register");
     expect(() => kebijakanEligibility(true, "http://inbox.example/register")).toThrow(/harus URL https/);
     expect(() => kebijakanEligibility(true, "kirim ke saya")).toThrow(/harus URL https/);
+  });
+});
+
+describe("nama env publik (Inggris) dan alias lamanya", () => {
+  it("VOTEPRIV_SELF_REGISTRATION=1 dan VOTEPRIV_TANPA_PENDAFTARAN=1 sama-sama mengaktifkan mode tanpa pendaftaran; nilai lain tidak", () => {
+    expect(modeTanpaPendaftaranAktif({ VOTEPRIV_SELF_REGISTRATION: "1" })).toBe(true);
+    expect(modeTanpaPendaftaranAktif({ VOTEPRIV_TANPA_PENDAFTARAN: "1" })).toBe(true);
+    expect(modeTanpaPendaftaranAktif({ VOTEPRIV_SELF_REGISTRATION: "true" })).toBe(false);
+    expect(modeTanpaPendaftaranAktif({})).toBe(false);
+  });
+
+  it("VOTEPRIV_REDEPLOY=1 dan VOTEPRIV_DEPLOY_ULANG=1 sama-sama mengizinkan deploy ulang; nilai lain tidak", () => {
+    expect(modeDeployUlangAktif({ VOTEPRIV_REDEPLOY: "1" })).toBe(true);
+    expect(modeDeployUlangAktif({ VOTEPRIV_DEPLOY_ULANG: "1" })).toBe(true);
+    expect(modeDeployUlangAktif({ VOTEPRIV_REDEPLOY: "yes" })).toBe(false);
+    expect(modeDeployUlangAktif({})).toBe(false);
   });
 });

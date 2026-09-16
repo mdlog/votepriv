@@ -53,7 +53,7 @@ or environment variable).
 
 ```
 pnpm cli deploy-registry                              # once per network
-VOTEPRIV_TANPA_PENDAFTARAN=1 pnpm cli deploy-ballot   # ballot with empty seats
+VOTEPRIV_SELF_REGISTRATION=1 pnpm cli deploy-ballot   # ballot with empty seats
 pnpm cli register-leaves /abs/path/to/leaves.txt      # one leaf per line, from voters
 ```
 
@@ -69,7 +69,7 @@ and registers it on-chain immediately (one `registerVoters` transaction per
 batch of whatever is queued, up to 8 — it never waits for a full batch).
 
 ```
-VOTEPRIV_TANPA_PENDAFTARAN=1 VOTEPRIV_INBOX_URL=https://<your-host>/register pnpm cli deploy-ballot
+VOTEPRIV_SELF_REGISTRATION=1 VOTEPRIV_INBOX_URL=https://<your-host>/register pnpm cli deploy-ballot
 VOTEPRIV_INBOX_URL=http://127.0.0.1:5390 pnpm start        # the app proxies /register → inbox
 pnpm cli register-inbox                                     # keep running while registration is open
 ```
@@ -93,14 +93,14 @@ starts, on a long schedule, then hand each one to its judge over a private
 channel.
 
 ```
-VOTEPRIV_ELIGIBLE_COUNT=<judges> VOTEPRIV_MENIT_VOTE=10080 VOTEPRIV_MENIT_TALLY=12960 pnpm cli deploy-ballot
-pnpm cli ekspor-cadangan
+VOTEPRIV_ELIGIBLE_COUNT=<judges> VOTEPRIV_VOTE_MINUTES=10080 VOTEPRIV_TALLY_MINUTES=12960 pnpm cli deploy-ballot
+pnpm cli export-backups
 ```
 
 The first command is the old `deploy-ballot` path (no
-`VOTEPRIV_TANPA_PENDAFTARAN`), so it creates and registers one credential per
+`VOTEPRIV_SELF_REGISTRATION`), so it creates and registers one credential per
 seat itself, with a 7-day voting window plus 2 more days before tallying
-closes (`VOTEPRIV_MENIT_VOTE`/`VOTEPRIV_MENIT_TALLY` override the 120/180
+closes (`VOTEPRIV_VOTE_MINUTES`/`VOTEPRIV_TALLY_MINUTES` override the 120/180
 minute defaults — both must be positive integers, and tally must exceed
 vote). The second reads that artefact and writes one backup file per
 credential to `pkgs/cli/cadangan/<ballot address>/` (gitignored, mode
@@ -219,7 +219,7 @@ client/            React app (Vite). lib/chain/ is the on-chain read and write p
 server/            Production server: static files, /proof-server proxy, optional /register proxy.
 pkgs/contract/     Compact contracts (ballot, registry) and generated artefacts.
 pkgs/shared/       Credential helpers and metadata validation shared by app and CLI.
-pkgs/cli/          Organiser CLI: deploy, register leaves, registration inbox, export judge backups, e2e, doctor.
+pkgs/cli/          Organiser CLI: deploy-registry, deploy-ballot, register-leaves, register-inbox, export-backups, e2e, doctor.
 docs/              Design spec. ARCHITECTURE.md is the original frontend design; the section above is current.
 ```
 
@@ -236,8 +236,9 @@ docs/              Design spec. ARCHITECTURE.md is the original frontend design;
 - **Ballot metadata already sealed on old testnet ballots is immutable**, including
   text from before the UI language was fixed.
 
-Conventions: prose and code comments are in Indonesian; user-facing text is
-English. Commit messages carry no AI attribution trailers (enforced by
+Conventions: code comments and internal prose are in Indonesian; everything a
+user sees — UI, docs, CLI names and environment variables, commit messages — is
+English (older Indonesian-named variables remain accepted as aliases). Commit messages carry no AI attribution trailers (enforced by
 `.githooks/commit-msg` and CI).
 
 ## License

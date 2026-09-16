@@ -42,6 +42,7 @@ import {
   bentukFieldCredentials,
   daftarkanVoterJikaPerlu,
   kebijakanEligibility,
+  modeDeployUlangAktif,
   eligibleCountDariEnv,
   modeTanpaPendaftaranAktif,
   siapkanPemilihAwal,
@@ -79,10 +80,10 @@ if (alamatRegistry === undefined) {
 // jadi yatim, dengan alasan yang sama persis kenapa Fix 1 memisahkan
 // namespace e2e dari deploy-ballot (lihat ArtefakDeploy.e2e).
 const ballotSudahAda = bacaArtefak(config.networkId)?.ballot;
-if (ballotSudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
+if (ballotSudahAda !== undefined && !modeDeployUlangAktif()) {
   log.warn(
     { alamat: ballotSudahAda },
-    "Ballot sudah tercatat di artefak. Setel VOTEPRIV_DEPLOY_ULANG=1 bila memang ingin men-deploy ballot BARU.",
+    "Ballot sudah tercatat di artefak. Setel VOTEPRIV_REDEPLOY=1 bila memang ingin men-deploy ballot BARU.",
   );
   await tutupSesi(sesi, 0);
 }

@@ -10,6 +10,7 @@
 import { bacaArtefak, jalurArtefak, tulisArtefak } from "./artefak.ts";
 import { hentikanWallet, siapkanSesi, tutupSesi } from "./bootstrap.ts";
 import { bacaLedgerRegistry, deployRegistry } from "./deploy.ts";
+import { modeDeployUlangAktif } from "./pendaftaran-awal.ts";
 import { rakitProvidersRegistry } from "./providers.ts";
 import { ulangiSampai } from "./tunggu.ts";
 import { bacaDustSaatIni } from "./wallet.ts";
@@ -18,10 +19,10 @@ const sesi = await siapkanSesi();
 const { config, ctx, log, kp } = sesi;
 
 const sudahAda = bacaArtefak(config.networkId)?.registry;
-if (sudahAda !== undefined && process.env.VOTEPRIV_DEPLOY_ULANG !== "1") {
+if (sudahAda !== undefined && !modeDeployUlangAktif()) {
   log.warn(
     { alamat: sudahAda },
-    "Registry sudah tercatat di artefak. Setel VOTEPRIV_DEPLOY_ULANG=1 bila memang ingin men-deploy registry BARU.",
+    "Registry sudah tercatat di artefak. Setel VOTEPRIV_REDEPLOY=1 bila memang ingin men-deploy registry BARU.",
   );
   await tutupSesi(sesi, 0);
 }

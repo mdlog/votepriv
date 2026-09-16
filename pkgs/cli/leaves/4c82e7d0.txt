@@ -1,0 +1,4 @@
+# Leaf pemilih untuk ballot 4c82e7d00cadd94e1b62ed064823b1e6ea6c8d492b4c647337ccc9b4c4f473a8
+# Leaf = cred_leaf(credential), PUBLIK. Credential-nya tetap di perangkat pemilih.
+# Satu leaf per baris. Ditambahkan 2026-09-13.
+10909a2cddde1df069e0d298287b76c236c42d976ae741451345a3eaf6099048

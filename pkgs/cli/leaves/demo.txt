@@ -1,0 +1,2 @@
+# Public eligibility leaf received from the voter (machine 2) — safe to share.
+b39ccac31f7ba6580d4095eeb5ffe8886da7628cfe0b5034f03896b99229e2af

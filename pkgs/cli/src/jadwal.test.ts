@@ -40,7 +40,7 @@ describe("hitungJadwal — override valid", () => {
 describe("hitungJadwal — penolakan TALLY > VOTE (MUTASI WAJIB b)", () => {
   it("menolak TALLY sama dengan VOTE", () => {
     expect(() => hitungJadwal({ VOTEPRIV_MENIT_VOTE: "100", VOTEPRIV_MENIT_TALLY: "100" })).toThrow(
-      /VOTEPRIV_MENIT_TALLY.*harus lebih besar dari VOTEPRIV_MENIT_VOTE/,
+      /VOTEPRIV_TALLY_MINUTES.*harus lebih besar dari VOTEPRIV_VOTE_MINUTES/,
     );
   });
 
@@ -95,5 +95,16 @@ describe("hitungJadwal — log satu baris HANYA saat override berbeda dari bawaa
 
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+describe("nama env publik VOTEPRIV_VOTE_MINUTES/VOTEPRIV_TALLY_MINUTES", () => {
+  it("nama Inggris dibaca, dan didahulukan atas alias lama bila keduanya ada", () => {
+    expect(hitungJadwal({ VOTEPRIV_VOTE_MINUTES: "30", VOTEPRIV_TALLY_MINUTES: "45" })).toEqual({ menitVote: 30, menitTally: 45 });
+    expect(hitungJadwal({ VOTEPRIV_VOTE_MINUTES: "30", VOTEPRIV_MENIT_VOTE: "99", VOTEPRIV_TALLY_MINUTES: "45", VOTEPRIV_MENIT_TALLY: "999" })).toEqual({ menitVote: 30, menitTally: 45 });
+  });
+
+  it("alias lama tetap berfungsi tanpa nama Inggris", () => {
+    expect(hitungJadwal({ VOTEPRIV_MENIT_VOTE: "30", VOTEPRIV_MENIT_TALLY: "45" })).toEqual({ menitVote: 30, menitTally: 45 });
   });
 });

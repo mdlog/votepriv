@@ -80,15 +80,23 @@ export function hitungJadwal(
   bawaanVote = MENIT_VOTE_BAWAAN,
   bawaanTally = MENIT_TALLY_BAWAAN,
 ): { menitVote: number; menitTally: number } {
-  const menitVote = menitPositifDariEnv("VOTEPRIV_MENIT_VOTE", env.VOTEPRIV_MENIT_VOTE) ?? bawaanVote;
-  const menitTally = menitPositifDariEnv("VOTEPRIV_MENIT_TALLY", env.VOTEPRIV_MENIT_TALLY) ?? bawaanTally;
+  // Nama publik (Inggris) didahulukan; nama Indonesia lama tetap diterima
+  // sebagai alias supaya skrip yang sudah ada tidak putus.
+  const menitVote =
+    menitPositifDariEnv("VOTEPRIV_VOTE_MINUTES", env.VOTEPRIV_VOTE_MINUTES) ??
+    menitPositifDariEnv("VOTEPRIV_MENIT_VOTE", env.VOTEPRIV_MENIT_VOTE) ??
+    bawaanVote;
+  const menitTally =
+    menitPositifDariEnv("VOTEPRIV_TALLY_MINUTES", env.VOTEPRIV_TALLY_MINUTES) ??
+    menitPositifDariEnv("VOTEPRIV_MENIT_TALLY", env.VOTEPRIV_MENIT_TALLY) ??
+    bawaanTally;
 
   // Kontrak menuntut tallyDeadline > voteDeadline (constructor ballot.compact) —
   // ditegakkan DI SINI juga, bukan hanya diserahkan ke kontrak, supaya deploy
   // yang pasti akan ditolak gagal sebelum membayar transaksi apa pun.
   if (menitTally <= menitVote) {
     throw new Error(
-      `VOTEPRIV_MENIT_TALLY (${menitTally} menit) harus lebih besar dari VOTEPRIV_MENIT_VOTE (${menitVote} menit) — ` +
+      `VOTEPRIV_TALLY_MINUTES (${menitTally} menit) harus lebih besar dari VOTEPRIV_VOTE_MINUTES (${menitVote} menit) — ` +
         "kontrak menuntut tallyDeadline > voteDeadline.",
     );
   }

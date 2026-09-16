@@ -111,16 +111,20 @@ describe("FIX 1: e2e.ts dan deploy-ballot.ts tidak boleh menulis field ballot ar
     );
   });
 
-  it("deploy-ballot.ts menolak redeploy ballot tanpa VOTEPRIV_DEPLOY_ULANG=1, DENGAN kedua kondisi terhubung DAN cabang itu benar-benar keluar", () => {
+  it("deploy-ballot.ts menolak redeploy ballot tanpa VOTEPRIV_REDEPLOY=1 (modeDeployUlangAktif), DENGAN kedua kondisi terhubung DAN cabang itu benar-benar keluar", () => {
     // (b) Guard lama hanya memeriksa DUA regex ada di suatu tempat di
     // berkas, tanpa memeriksa keduanya berada di satu `if` yang sama maupun
     // bahwa cabangnya benar-benar keluar. Menghapus `await tutupSesi(sesi,
     // 0)` dari dalam guard tadinya tetap lolos uji lama.
+    // Env dibaca lewat modeDeployUlangAktif() (pendaftaran-awal.ts), yang
+    // menerima VOTEPRIV_REDEPLOY=1 maupun alias lama VOTEPRIV_DEPLOY_ULANG=1 —
+    // diuji langsung di pendaftaran-awal.test.ts. Di sini yang dipaku adalah
+    // PENGKABELANNYA: kedua kondisi di satu `if`, dan cabangnya keluar.
     const polaKondisiGuard =
-      /if\s*\(\s*ballotSudahAda\s*!==\s*undefined\s*&&\s*process\.env\.VOTEPRIV_DEPLOY_ULANG\s*!==\s*["']1["']\s*\)/;
+      /if\s*\(\s*ballotSudahAda\s*!==\s*undefined\s*&&\s*!modeDeployUlangAktif\(\)\s*\)/;
     expect(
       deployBallotSrc,
-      "kedua kondisi (ballot sudah tercatat, env bukan '1') harus terhubung dengan && di SATU `if` yang sama",
+      "kedua kondisi (ballot sudah tercatat, !modeDeployUlangAktif()) harus terhubung dengan && di SATU `if` yang sama",
     ).toMatch(polaKondisiGuard);
 
     const cocok = deployBallotSrc.match(polaKondisiGuard);

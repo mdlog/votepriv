@@ -20,7 +20,9 @@ that matters yet.
   opens it later using a *different* nullifier derived from the salt, so opening
   cannot be linked to casting.
 - **The organiser never holds a voter's secret.** Voters generate their credential
-  in the browser and hand over only the leaf. The organiser registers leaves.
+  in the browser and hand over only the leaf — by pasting it to the organiser, or
+  automatically through the organiser's registration inbox, whose address the
+  ballot declares on-chain. Registering needs no wallet; only voting does.
 - **Proof server on the voter's machine.** ZK proofs are built from the credential
   and the choice. Whoever runs the proof server sees both. The voter package runs
   it locally, and the UI only claims "your choice stays private" when that is
@@ -36,9 +38,12 @@ file — `docker-compose.voter.yml` — from the
 docker compose -f docker-compose.voter.yml up
 ```
 
-Open <http://localhost:5300>. Full instructions, including how to verify the image
-you are running against the CI provenance attestation, are in
-[README-VOTER.md](README-VOTER.md).
+Open <http://localhost:5300>. *Register to vote* needs no wallet; Lace (on the
+`preview` network, with some tDUST) is needed only to cast the vote. If the proof
+server cannot download its parameters (containers without internet access), add
+the `docker-compose.zk-params.yml` overlay from the release assets. Full
+instructions, including how to verify the image you are running against the CI
+provenance attestation, are in [README-VOTER.md](README-VOTER.md).
 
 ## For organisers
 
@@ -105,6 +110,59 @@ public link: whoever holds a file could vote with it until its judge does.
 Judges import their file from **Register to vote → Restore from backup
 file** (see [README-VOTER.md](README-VOTER.md)).
 
+## Architecture and Midnight integration
+
+```
+ voter's machine (Docker package or pnpm dev)                organiser's machine
+ ┌──────────────────────────────────────────────┐            ┌──────────────────────────────┐
+ │ browser: React app                            │            │ pnpm cli register-inbox      │
+ │   read path  ── GraphQL ──► preview indexer   │  leaf only │   wallet + admin key         │
+ │   write path ── midnight-js 4 ── Lace (4.0.1) │ ─────────► │   registerVoters tx          │
+ │   private state: IndexedDB (credential,       │  https     │ pnpm cli deploy-*, e2e, …    │
+ │     opening, Merkle paths — never leaves)     │            └──────────────┬───────────────┘
+ │ proof server 8.1.0 (same network namespace,   │                           │
+ │   port 6300 never published)                  │                           ▼
+ └───────────────────────┬──────────────────────┘                 Midnight preview
+                         └──── proven tx ──► Lace balances + submits ──► node / indexer
+```
+
+- **Contracts** (`pkgs/contract`, Compact 0.23 / compactc 0.31.1): `ballot.compact` — sealed
+  metadata, `HistoricMerkleTree<10>` of credential leaves, `Set` of nullifiers, `MerkleTree<10>`
+  of vote commitments, tally map; circuits `registerVoters`, `castVote`, `tallyVote`,
+  `finalize`, plus `export pure` hash circuits (`cred_leaf`, `vote_nullifier`,
+  `vote_commitment`, `tally_nullifier`) so the client never re-implements hashing.
+  `registry.compact` — a permissionless list of ballot addresses. Deadlines are compared
+  with `kernel.blockTimeLessThan/GreaterThan` in seconds.
+- **Dual ledger.** Public state is what the circuits write and anyone can decode from the
+  indexer (`client/src/lib/chain/dekode.ts` calls the generated `ledger()`). Private state
+  is the witness side (`pkgs/contract/src/ballot-witnesses.ts`): the voter's credential,
+  the `(option, salt)` opening stored by `store_opening`, and the Merkle paths the client
+  builds from public state. The app keeps it in IndexedDB per ballot address; the CLI in a
+  LevelDB store. A proof is the only thing that crosses from private to public.
+- **Write path** (`client/src/lib/chain/tulis.ts`): `findDeployedContract` verifies the
+  on-chain verifier keys against the compiled contract, `callTx.castVote()` runs witness →
+  `proveTx` on the local proof server → `balanceTx` + `submitTx` through the Lace DApp
+  connector (`adaptor-lace.ts`). The write path is a lazily loaded chunk so the read-only
+  app stays small; a test guards that.
+- **Read path**: raw GraphQL to the indexer with an explicit failure taxonomy, so "indexer
+  unreachable" is never rendered as "no ballots".
+- **Registration inbox** (`pkgs/cli/src/inbox.ts`): HTTP service that turns a leaf into a
+  `registerVoters` transaction at once; the app confirms registration by finding the leaf in
+  the eligibility tree it decodes from the indexer, not by trusting the inbox.
+
+### How judges can test it
+
+1. **Read only, no install:** <https://votepriv.mdloglabs.org> — Overview, Live ballots and
+   Results are decoded live from the preview indexer.
+2. **Register and vote (no organiser needed):** run the voter package (above), open the live
+   demo ballot, click *Register to vote* — the app sends your leaf to the inbox and reports
+   *Registered on-chain* once it verifies the tree — then *Connect wallet* (Lace on
+   `preview`, funded with tDUST) → *Vote privately*. The vote count rises; the tally stays
+   sealed until the vote deadline.
+3. **Contracts and tests:** `pnpm --filter contract compact` recompiles both contracts;
+   `pnpm --filter contract test` runs the simulator suite; the counts below are the full
+   suite.
+
 ## Contracts on Midnight preview
 
 | What | Address |
@@ -134,7 +192,8 @@ Requires Node 22.23 and pnpm 10.4 (`corepack enable`), plus a local proof server
 docker compose -f pkgs/cli/proof-server.yml up -d   # midnightntwrk/proof-server:8.1.0
 pnpm install
 pnpm dev                                            # app on :3000 (proxies /proof-server)
-pnpm test && pnpm --filter cli test                 # 614 + 274 tests
+pnpm test && pnpm --filter cli test                 # 639 + 296 tests
+pnpm --filter contract test && pnpm --filter shared test   # 66 + 19 tests
 pnpm check && pnpm check:uji                        # typecheck app, then test files
 ```
 
@@ -153,11 +212,11 @@ described in `client/src/lib/proof-server.ts`.
 
 ```
 client/            React app (Vite). lib/chain/ is the on-chain read and write path.
-server/            Production server: static files + /proof-server proxy.
+server/            Production server: static files, /proof-server proxy, optional /register proxy.
 pkgs/contract/     Compact contracts (ballot, registry) and generated artefacts.
 pkgs/shared/       Credential helpers and metadata validation shared by app and CLI.
-pkgs/cli/          Organiser CLI: deploy, register leaves, export judge backups, e2e, doctor.
-docs/              Design spec. ARCHITECTURE.md predates the on-chain integration.
+pkgs/cli/          Organiser CLI: deploy, register leaves, registration inbox, export judge backups, e2e, doctor.
+docs/              Design spec. ARCHITECTURE.md is the original frontend design; the section above is current.
 ```
 
 ## Honest limits

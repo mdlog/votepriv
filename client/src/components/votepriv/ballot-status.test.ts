@@ -295,21 +295,30 @@ describe("keadaanHasil — JEBAKAN 4", () => {
 });
 
 describe("menerimaPendaftaran", () => {
-  it("benar ketika votes 0 dan registered belum mencapai eligible", () => {
-    expect(menerimaPendaftaran({ votes: 0, registered: 2, eligible: 3 })).toBe(true);
+  it("benar ketika jendela vote terbuka (live) dan registered belum mencapai eligible", () => {
+    expect(menerimaPendaftaran({ status: "live", registered: 2, eligible: 3 })).toBe(true);
+    expect(menerimaPendaftaran({ status: "closing-soon", registered: 2, eligible: 3 })).toBe(true);
   });
 
-  it("salah begitu votes bukan 0 — pendaftaran menutup PERMANEN, bukan sementara", () => {
-    expect(menerimaPendaftaran({ votes: 1, registered: 0, eligible: 3 })).toBe(false);
-    expect(menerimaPendaftaran({ votes: 250, registered: 0, eligible: 3 })).toBe(false);
+  it("TIDAK lagi bergantung pada jumlah suara — pendaftaran tetap terbuka setelah suara pertama", () => {
+    // Aturan lama (votes === 0) dihapus dari kontrak: registerVoters kini hanya
+    // ditutup oleh voteDeadline. Objek tanpa field `votes` sama sekali harus
+    // tetap dinilai benar — memastikan fungsi ini tidak diam-diam membacanya.
+    expect(menerimaPendaftaran({ status: "live", registered: 0, eligible: 3 })).toBe(true);
+  });
+
+  it("salah begitu jendela vote tertutup — status apa pun selain live/closing-soon", () => {
+    for (const status of ["tally-open", "awaiting-finalize", "finalized"] as const) {
+      expect(menerimaPendaftaran({ status, registered: 0, eligible: 3 })).toBe(false);
+    }
   });
 
   it("salah ketika registered sudah mencapai (bukan hanya melebihi) eligible", () => {
-    expect(menerimaPendaftaran({ votes: 0, registered: 3, eligible: 3 })).toBe(false);
-    expect(menerimaPendaftaran({ votes: 0, registered: 4, eligible: 3 })).toBe(false);
+    expect(menerimaPendaftaran({ status: "live", registered: 3, eligible: 3 })).toBe(false);
+    expect(menerimaPendaftaran({ status: "live", registered: 4, eligible: 3 })).toBe(false);
   });
 
   it("benar pada tepi registered === eligible - 1 (satu slot tersisa)", () => {
-    expect(menerimaPendaftaran({ votes: 0, registered: 2, eligible: 3 })).toBe(true);
+    expect(menerimaPendaftaran({ status: "live", registered: 2, eligible: 3 })).toBe(true);
   });
 });

@@ -406,7 +406,7 @@ try {
     },
   });
 
-  // ── 3. Pendaftaran pemilih (harus SEBELUM suara pertama) ────────────────────
+  // ── 3. Pendaftaran pemilih (sebelum voteDeadline) ────────────────────────────
   //
   // `ballotAdmin` datang dari deployContract dan private state awalnya (kunci
   // admin) sudah tertulis. Tidak ada temukanBallot di sini.

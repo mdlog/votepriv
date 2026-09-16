@@ -340,3 +340,124 @@ describe("ekspor-cadangan CLI (pkgs/cli) x uraiCadanganKredensial — round trip
     expect(dibaca.alamatBallot).toBe(alamatBallotAsli);
   });
 });
+
+/**
+ * Pendaftaran lewat INBOX penyelenggara. `kirimLeafKeInbox`/`statusInbox`/
+ * `leafTerdaftarDiRantai` di-mock SEBAGAI MODUL (bukan fetch), supaya uji
+ * memaku KONTRAK yang dipakai modal: apa yang dikirim, kapan dianggap
+ * terdaftar (HANYA setelah rantai membenarkan), dan apa yang ditampilkan.
+ * Kontrak HTTP-nya sendiri diuji terhadap server sungguhan di
+ * inbox-pendaftaran.test.ts dan pkgs/cli/src/inbox.test.ts.
+ */
+const { kirimLeafKeInboxMock, statusInboxMock, leafTerdaftarDiRantaiMock } = vi.hoisted(() => ({
+  kirimLeafKeInboxMock: vi.fn(),
+  statusInboxMock: vi.fn(),
+  leafTerdaftarDiRantaiMock: vi.fn(),
+}));
+vi.mock("@/lib/chain/inbox-pendaftaran", async (impor) => {
+  const asli = await impor<typeof import("@/lib/chain/inbox-pendaftaran")>();
+  return {
+    ...asli,
+    kirimLeafKeInbox: kirimLeafKeInboxMock,
+    statusInbox: statusInboxMock,
+    leafTerdaftarDiRantai: leafTerdaftarDiRantaiMock,
+  };
+});
+
+describe("RegisterModal — pendaftaran otomatis lewat inbox penyelenggara", () => {
+  const LEAF = "2".repeat(64);
+  const HASIL = { credentialHex: "1".repeat(64), leafHex: LEAF, kredensialBaru: true };
+  const URL_INBOX = "https://votepriv.example.org/register";
+  const BALLOT_INBOX = ballotUji({
+    id: "e".repeat(64),
+    nomor: 7,
+    title: "Q4 Community Treasury",
+    community: "Midnight Builders",
+    eligibilityPolicy: `Open registration until the vote deadline: the app sends only your public leaf to ${URL_INBOX} and the organiser registers it on-chain; the organiser only ever holds the hash.`,
+  });
+
+  it("kebijakan TANPA URL inbox: tidak ada yang dikirim, alur manual (salin leaf) seperti semula", async () => {
+    daftarkanDiriSendiriMock.mockResolvedValue(HASIL);
+    render(<RegisterModal ballot={BALLOT} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText(LEAF)).toBeTruthy());
+    expect(kirimLeafKeInboxMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/registration inbox/)).toBeNull();
+    expect(screen.getByText("Your public leaf — safe to send to the organizer")).toBeTruthy();
+  });
+
+  it("kebijakan DENGAN URL inbox: leaf (dan HANYA ballot+leaf) dikirim ke URL itu segera setelah credential siap", async () => {
+    daftarkanDiriSendiriMock.mockResolvedValue(HASIL);
+    kirimLeafKeInboxMock.mockResolvedValue({ leaf: LEAF, status: "queued" });
+    statusInboxMock.mockResolvedValue({ leaf: LEAF, status: "submitting" });
+    leafTerdaftarDiRantaiMock.mockResolvedValue(false);
+    render(<RegisterModal ballot={BALLOT_INBOX} onClose={() => {}} />);
+    await waitFor(() => expect(kirimLeafKeInboxMock).toHaveBeenCalledTimes(1));
+    const arg = kirimLeafKeInboxMock.mock.calls[0][0];
+    expect(arg.url).toBe(URL_INBOX);
+    expect(arg.ballot).toBe(BALLOT_INBOX.id);
+    expect(arg.leaf).toBe(LEAF);
+    expect(Object.keys(arg).sort()).toEqual(["ballot", "leaf", "signal", "url"]); // tidak ada credential
+    await waitFor(() => expect(screen.getByText(/Your leaf is queued at the organiser's inbox/)).toBeTruthy());
+    expect(screen.getByText("Your public leaf — what was sent to the organiser")).toBeTruthy();
+  });
+
+  it("klaim inbox 'registered' TIDAK cukup — 'Registered on-chain' hanya setelah rantai membenarkan leaf-nya", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      daftarkanDiriSendiriMock.mockResolvedValue(HASIL);
+      kirimLeafKeInboxMock.mockResolvedValue({ leaf: LEAF, status: "submitting" });
+      statusInboxMock.mockResolvedValue({ leaf: LEAF, status: "registered", txId: "00ab27a688c3ec74deadbeef" });
+      leafTerdaftarDiRantaiMock.mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true);
+      render(<RegisterModal ballot={BALLOT_INBOX} onClose={() => {}} />);
+      await waitFor(() => expect(kirimLeafKeInboxMock).toHaveBeenCalledTimes(1));
+
+      // Putaran pantau ke-1: rantai belum, inbox bilang registered → masih menunggu.
+      await vi.advanceTimersByTimeAsync(4_100);
+      await waitFor(() => expect(screen.getByText(/The organiser reports your leaf as registered — waiting for the chain/)).toBeTruthy());
+      expect(screen.queryByText(/Registered on-chain/)).toBeNull();
+
+      // Putaran ke-2: masih belum. Putaran ke-3: rantai membenarkan → terdaftar, dengan txId dari inbox.
+      await vi.advanceTimersByTimeAsync(4_100);
+      await vi.advanceTimersByTimeAsync(4_100);
+      await waitFor(() => expect(screen.getByText(/Registered on-chain/)).toBeTruthy());
+      expect(screen.getByText(/00ab27a688c3/)).toBeTruthy();
+      expect(leafTerdaftarDiRantaiMock.mock.calls[0][0]).toMatchObject({ ballot: BALLOT_INBOX.id, leafHex: LEAF });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("inbox menolak (mis. kuota penuh) -> panel gagal dengan pesannya, alur manual tetap tersedia", async () => {
+    daftarkanDiriSendiriMock.mockResolvedValue(HASIL);
+    kirimLeafKeInboxMock.mockRejectedValue(new Error("All 16 seats on this ballot are taken."));
+    render(<RegisterModal ballot={BALLOT_INBOX} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/could not register your leaf/)).toBeTruthy());
+    expect(screen.getByText(/All 16 seats on this ballot are taken\./)).toBeTruthy();
+    expect(screen.getByLabelText("Copy leaf")).toBeTruthy();
+    expect(statusInboxMock).not.toHaveBeenCalled();
+  });
+
+  it("transaksi penyelenggara gagal (status failed dari inbox) -> pesan kontrak diterjemahkan ramah pemilih", async () => {
+    daftarkanDiriSendiriMock.mockResolvedValue(HASIL);
+    kirimLeafKeInboxMock.mockResolvedValue({
+      leaf: LEAF,
+      status: "failed",
+      error: 'failed assert: "Registration would exceed the ballot\'s eligibleCount"',
+    });
+    render(<RegisterModal ballot={BALLOT_INBOX} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText(/could not register your leaf/)).toBeTruthy());
+    expect(screen.getByText(/This would exceed the number of eligible voters set for this ballot\./)).toBeTruthy();
+  });
+
+  it("URL http ke host bukan-localhost di kebijakan DIABAIKAN — dianggap tanpa inbox", async () => {
+    daftarkanDiriSendiriMock.mockResolvedValue(HASIL);
+    render(
+      <RegisterModal
+        ballot={ballotUji({ ...BALLOT_INBOX, eligibilityPolicy: "Send your leaf to http://inbox.example.org/register please." })}
+        onClose={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText(LEAF)).toBeTruthy());
+    expect(kirimLeafKeInboxMock).not.toHaveBeenCalled();
+  });
+});

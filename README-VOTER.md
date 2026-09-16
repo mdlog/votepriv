@@ -75,6 +75,24 @@ The archive contains only public data (Midnight's SRS and the zswap/dust
 proving and verifying keys) copied from a proof server that had downloaded and
 verified them. Nothing in it is specific to you or to any ballot.
 
+## What "Register to vote" does
+
+Registering creates a random 32-byte credential **in your browser** and keeps it
+there (plus the backup file you download). Only its public hash — the *leaf* —
+ever leaves your machine.
+
+- If the ballot's eligibility policy names a registration inbox (an `https://…`
+  address shown on the ballot card), the app sends the leaf there automatically
+  and the organiser's inbox registers it on-chain right away. The dialog then
+  says *Registered on-chain* — and it says so only after it has verified, on the
+  indexer, that your leaf is in the ballot's eligibility tree. No wallet is
+  needed for this step.
+- Otherwise, copy the leaf and send it to the organiser yourself.
+
+Registration is open until the ballot's vote deadline. The inbox sees the leaf
+and, like any web request, your IP address; it never sees your credential and
+learns nothing about how you vote.
+
 ## If your organiser sent you a credential file
 
 Some ballots — judging rounds, for example, where the organiser cannot count

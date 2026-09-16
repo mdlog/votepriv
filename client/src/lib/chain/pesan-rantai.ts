@@ -66,7 +66,7 @@ const PETA_PESAN_ASSERT_KONTRAK: ReadonlyArray<readonly [kontrak: string, ramah:
   // ── registerVoters (admin) ─────────────────────────────────────────────────
   ["Only the admin can register voters", "Only this ballot's admin can register voters."],
   ["Ballot is no longer in the voting phase", "This ballot is no longer in its voting phase."],
-  ["Registration is closed once the first vote is cast", "Registration closed as soon as the first vote was cast."],
+  ["Registration is closed: the vote deadline has passed", "Registration for this ballot closed when its voting deadline passed."],
   ["Batch size must be between 1 and 8", "You can register between 1 and 8 voters at a time."],
   [
     "Registration would exceed the ballot's eligibleCount",

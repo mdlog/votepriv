@@ -1,10 +1,41 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Check, Copy, Download, KeyRound, ShieldCheck, TriangleAlert, Upload, X } from "lucide-react";
+import { Check, Copy, Download, KeyRound, Send, ShieldCheck, TriangleAlert, Upload, X } from "lucide-react";
+import { jaringanAktif } from "@/lib/chain/endpoint";
+import {
+  alamatInboxDariKebijakan,
+  kirimLeafKeInbox,
+  leafTerdaftarDiRantai,
+  statusInbox,
+  type JawabanInbox,
+} from "@/lib/chain/inbox-pendaftaran";
 import { labelNomor } from "@/lib/chain/ke-ballot";
 import { muatJalurTulis } from "@/lib/chain/jalur-tulis";
 import { terjemahkanGalatRantai } from "@/lib/chain/pesan-rantai";
 import type { Ballot } from "./types";
+
+/**
+ * Keadaan pendaftaran lewat inbox penyelenggara (lihat
+ * client/src/lib/chain/inbox-pendaftaran.ts):
+ *   - "tanpa-inbox": kebijakan ballot tidak menyebut URL inbox — alur manual
+ *     (salin leaf, kirim sendiri ke penyelenggara).
+ *   - "mengirim": POST leaf sedang berjalan.
+ *   - "menunggu": inbox sudah menerima (queued/submitting/registered menurut
+ *     inbox), app memantau inbox DAN rantai; hanya rantai yang bisa
+ *     memindahkannya ke "terdaftar".
+ *   - "terdaftar": leaf terbukti ada di pohon eligibility on-chain.
+ *   - "gagal": inbox menolak / tidak terjangkau / transaksi gagal — pesan
+ *     ditampilkan, alur manual tetap tersedia sebagai cadangan.
+ */
+type KeadaanInbox =
+  | { tahap: "tanpa-inbox" }
+  | { tahap: "mengirim"; url: string }
+  | { tahap: "menunggu"; url: string; inbox: JawabanInbox }
+  | { tahap: "terdaftar"; url: string; txId: string | null }
+  | { tahap: "gagal"; url: string; pesan: string };
+
+/** Jeda antar pemantauan status inbox + rantai. Diekspor untuk uji. */
+export const JEDA_PANTAU_MS = 4_000;
 
 /**
  * Salinan STRUKTURAL dari `HasilRegistrasiMandiri`/`CadanganKredensial` milik
@@ -124,6 +155,75 @@ export function RegisterModal({ ballot, onClose }: { ballot: Ballot; onClose: ()
     };
   }, [ballot.id, percobaan]);
 
+  // Pendaftaran lewat inbox: dipicu SETELAH credential+leaf siap. Idempoten di
+  // sisi inbox (leaf yang sama → status yang ada), jadi membuka modal ini lagi
+  // di kemudian hari hanya membaca status, tidak mendaftar dua kali.
+  const [inbox, setInbox] = useState<KeadaanInbox>({ tahap: "tanpa-inbox" });
+  useEffect(() => {
+    if (stage !== "siap" || !hasil) return;
+    const url = alamatInboxDariKebijakan(ballot.eligibilityPolicy);
+    if (url === null) {
+      setInbox({ tahap: "tanpa-inbox" });
+      return;
+    }
+    const pengendali = new AbortController();
+    const signal = pengendali.signal;
+    let jaringanIndexer: string | null = null;
+    try {
+      jaringanIndexer = jaringanAktif().indexer;
+    } catch {
+      jaringanIndexer = null;
+    }
+    const indexer = jaringanIndexer;
+    const leaf = hasil.leafHex;
+    let pengatur: ReturnType<typeof setTimeout> | null = null;
+
+    const pantau = async () => {
+      if (signal.aborted) return;
+      try {
+        // Bukti dulu (rantai), klaim kemudian (inbox).
+        if (indexer !== null && (await leafTerdaftarDiRantai({ indexer, ballot: ballot.id, leafHex: leaf, signal }))) {
+          setInbox((k) => ({ tahap: "terdaftar", url, txId: k.tahap === "menunggu" ? (k.inbox.txId ?? null) : null }));
+          return;
+        }
+        const st = await statusInbox({ url, ballot: ballot.id, leaf, signal });
+        if (st.status === "failed") {
+          setInbox({ tahap: "gagal", url, pesan: terjemahkanGalatRantai(st.error ?? "The organiser's registration transaction failed.") });
+          return;
+        }
+        setInbox({ tahap: "menunggu", url, inbox: st });
+      } catch (e) {
+        if (signal.aborted) return;
+        // Gangguan sementara (indexer/inbox tidak terjangkau sesaat) tidak
+        // menggagalkan pendaftaran yang mungkin sedang berjalan — coba lagi.
+        console.warn("[votepriv:inbox] pemantauan gagal, mencoba lagi", e);
+      }
+      pengatur = setTimeout(() => void pantau(), JEDA_PANTAU_MS);
+    };
+
+    (async () => {
+      setInbox({ tahap: "mengirim", url });
+      try {
+        const jawab = await kirimLeafKeInbox({ url, ballot: ballot.id, leaf, signal });
+        if (signal.aborted) return;
+        if (jawab.status === "failed") {
+          setInbox({ tahap: "gagal", url, pesan: terjemahkanGalatRantai(jawab.error ?? "The organiser's registration transaction failed.") });
+          return;
+        }
+        setInbox({ tahap: "menunggu", url, inbox: jawab });
+        pengatur = setTimeout(() => void pantau(), JEDA_PANTAU_MS);
+      } catch (e) {
+        if (signal.aborted) return;
+        setInbox({ tahap: "gagal", url, pesan: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+
+    return () => {
+      pengendali.abort();
+      if (pengatur !== null) clearTimeout(pengatur);
+    };
+  }, [stage, hasil, ballot.id, ballot.eligibilityPolicy]);
+
   const salinLeaf = async () => {
     if (!hasil) return;
     try {
@@ -230,6 +330,75 @@ export function RegisterModal({ ballot, onClose }: { ballot: Ballot; onClose: ()
               "leaf" is ever shared — with the organizer, so they can add it to this ballot's
               eligibility list.
             </p>
+            {inbox.tahap !== "tanpa-inbox" && (
+              <div className={`inbox-panel inbox-${inbox.tahap}`} role="status" aria-live="polite">
+                {inbox.tahap === "mengirim" && (
+                  <>
+                    <Send size={17} />
+                    <span>
+                      Sending your public leaf to the organiser's registration inbox at{" "}
+                      <code>{hostDariUrl(inbox.url)}</code>…
+                    </span>
+                  </>
+                )}
+                {inbox.tahap === "menunggu" && (
+                  <>
+                    <Send size={17} />
+                    <span>
+                      <strong>
+                        {inbox.inbox.status === "registered"
+                          ? "The organiser reports your leaf as registered — waiting for the chain to confirm it."
+                          : inbox.inbox.status === "submitting"
+                            ? "The organiser is registering your leaf on-chain right now."
+                            : "Your leaf is queued at the organiser's inbox."}
+                      </strong>{" "}
+                      This page checks the ballot's eligibility tree on the indexer every few seconds and
+                      will say "registered" only once your leaf is there.
+                      {inbox.inbox.txId && (
+                        <>
+                          {" "}
+                          Transaction: <code>{inbox.inbox.txId.slice(0, 12)}…</code>
+                        </>
+                      )}
+                    </span>
+                  </>
+                )}
+                {inbox.tahap === "terdaftar" && (
+                  <>
+                    <Check size={17} />
+                    <span>
+                      <strong>Registered on-chain.</strong> Your leaf is in this ballot's eligibility tree
+                      {inbox.txId && (
+                        <>
+                          {" "}
+                          (transaction <code>{inbox.txId.slice(0, 12)}…</code>)
+                        </>
+                      )}
+                      . You can vote now — download the backup below first.
+                    </span>
+                  </>
+                )}
+                {inbox.tahap === "gagal" && (
+                  <>
+                    <TriangleAlert size={17} />
+                    <span>
+                      <strong>The registration inbox could not register your leaf:</strong> {inbox.pesan}{" "}
+                      You can still copy the leaf below and send it to the organiser yourself.
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+            {inbox.tahap !== "tanpa-inbox" && (
+              <div className="privacy-callout">
+                <ShieldCheck size={17} />
+                <span>
+                  What the organiser's inbox receives is the public leaf and, like any web request,
+                  your IP address. It never receives your credential, and nothing about how you
+                  will vote.
+                </span>
+              </div>
+            )}
             {!hasil.kredensialBaru && (
               <div className="privacy-callout">
                 <ShieldCheck size={17} />
@@ -241,7 +410,11 @@ export function RegisterModal({ ballot, onClose }: { ballot: Ballot; onClose: ()
               </div>
             )}
             <label className="credential-field">
-              <span>Your public leaf — safe to send to the organizer</span>
+              <span>
+                {inbox.tahap === "tanpa-inbox"
+                  ? "Your public leaf — safe to send to the organizer"
+                  : "Your public leaf — what was sent to the organiser"}
+              </span>
               <div className="leaf-row">
                 <code>{hasil.leafHex}</code>
                 <button type="button" className="icon-button" onClick={salinLeaf} aria-label="Copy leaf">
@@ -307,4 +480,12 @@ export function RegisterModal({ ballot, onClose }: { ballot: Ballot; onClose: ()
       </div>
     </div>
   );
+}
+
+function hostDariUrl(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 }

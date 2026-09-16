@@ -59,10 +59,10 @@ export function BallotCard({
           {ballot.quorum}% intended quorum
         </span>
         <div className="ballot-footer-actions">
-          {/* Independen dari menerimaSuara: registerVoters menutup pada
-              voteCount pertama, castVote pada voteDeadline — dua syarat
-              berbeda, jadi kedua tombol BISA tampil berdampingan (ballot baru,
-              belum ada suara, jendela voting sudah terbuka). */}
+          {/* registerVoters dan castVote ditutup oleh voteDeadline YANG SAMA,
+              jadi kedua tombol tampil berdampingan selama jendela vote
+              terbuka dan kuota belum penuh — pendaftaran TIDAK lagi ditutup
+              oleh suara pertama. */}
           {onRegister && menerimaPendaftaran(ballot) && (
             <button className="text-button" onClick={() => onRegister(ballot)}>
               <KeyRound size={14} /> Register to vote

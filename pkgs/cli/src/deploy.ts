@@ -566,8 +566,9 @@ export async function bacaLedgerBallot(
  * yang diseimbangkan sebelum yang pertama terlihat di chain dapat memilih UTXO
  * yang sama.
  *
- * registerVoters MENUTUP SENDIRI: ia menuntut voteCount == 0. Seluruh pemilih
- * harus terdaftar SEBELUM suara pertama masuk.
+ * registerVoters ditutup oleh voteDeadline (deadline yang sama dengan
+ * castVote), BUKAN lagi oleh suara pertama — pemilih baru bisa didaftarkan
+ * selama jendela vote masih terbuka.
  */
 export interface OpsiRetriDaftarkanVoter {
   /**
@@ -604,7 +605,11 @@ export async function daftarkanVoter(
   daun: readonly Uint8Array[],
   log: Logger,
   opsi: OpsiRetriDaftarkanVoter = {},
-): Promise<void> {
+): Promise<{ txIds: (string | null)[] }> {
+  // txId per batch, `null` bila batch itu mendarat lewat pemeriksaan
+  // "sudah mendarat" (percobaan asli putus sebelum node menjawab) — dipakai
+  // inbox pendaftaran untuk melaporkan txId ke pemilih.
+  const txIds: (string | null)[] = [];
   // BUKAN `Awaited<ReturnType<typeof ballot.callTx.registerVoters>>`: circuit
   // call di CircuitCallTxInterface (midnight-js-contracts) OVERLOADED — satu
   // signature tanpa TransactionContext (yang KITA pakai, mengembalikan
@@ -663,6 +668,7 @@ export async function daftarkanVoter(
       jedaMs: opsi.jedaMs,
     });
 
+    txIds.push(r?.public.txId ?? null);
     log.info(
       {
         batch: i + 1,
@@ -672,6 +678,7 @@ export async function daftarkanVoter(
       "Batch terdaftar",
     );
   }
+  return { txIds };
 }
 
 /**

@@ -125,10 +125,18 @@ describe("BallotCard", () => {
       expect(queryByText(/Register to vote/)).toBeNull();
     });
 
-    it("TIDAK dirender ketika ballot tidak lagi menerima pendaftaran (votes bukan 0)", () => {
+    it("TETAP dirender setelah ada suara masuk (votes bukan 0) — pendaftaran tidak lagi ditutup oleh suara pertama", () => {
       const onRegister = vi.fn();
       const { queryByText } = render(
         <BallotCard ballot={{ ...BALLOT_BISA_DAFTAR, votes: 1 }} onVote={() => {}} onRegister={onRegister} />,
+      );
+      expect(queryByText(/Register to vote/)).not.toBeNull();
+    });
+
+    it("TIDAK dirender ketika jendela vote sudah tertutup (status tally) — deadline yang sama menutup keduanya", () => {
+      const onRegister = vi.fn();
+      const { queryByText } = render(
+        <BallotCard ballot={{ ...BALLOT_BISA_DAFTAR, status: "tally-open" }} onVote={() => {}} onRegister={onRegister} />,
       );
       expect(queryByText(/Register to vote/)).toBeNull();
     });

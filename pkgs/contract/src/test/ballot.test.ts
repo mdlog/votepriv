@@ -367,18 +367,44 @@ describe("ballot.compact — castVote", () => {
     expect(a.getLedger().voteCount).toBe(b.getLedger().voteCount);
   });
 
-  it("pendaftaran ditutup setelah suara pertama", () => {
+  it("pendaftaran TETAP TERBUKA setelah suara pertama — pemilih baru masih bisa didaftarkan dan memilih", () => {
+    // Sebelumnya kontrak menutup pendaftaran begitu suara pertama masuk. Aturan
+    // itu membuat pendaftaran mandiri (inbox) tidak berguna: pemilih pertama
+    // yang memilih mengunci semua pemilih berikutnya. Sekarang pendaftaran
+    // hanya ditutup oleh voteDeadline (lihat uji di describe "deadline").
+    // Aman karena tally tersegel sampai voteDeadline — admin tidak bisa
+    // bereaksi pada hasil — dan registeredCount publik.
     const sim = siap();
     sim.castVote(CRED_A, 0, SALT_1);
-    expect(() => sim.registerVoters([bytes32(0x44)])).toThrow(
-      /Registration is closed once the first vote is cast/,
-    );
+    const CRED_D = bytes32(0x44);
+    expect(() => sim.registerVoters([CRED_D])).not.toThrow();
+    expect(sim.getLedger().registeredCount).toBe(3n);
+    // Pemilih yang mendaftar SETELAH suara pertama benar-benar bisa memilih
+    // (path Merkle-nya disusun dari pohon yang sudah bertambah).
+    expect(() => sim.castVote(CRED_D, 1, bytes32(0xd4))).not.toThrow();
+    expect(sim.getLedger().voteCount).toBe(2n);
   });
 });
 
 describe("ballot.compact — deadline", () => {
   const CRED_A = bytes32(0x11);
   const SALT_1 = bytes32(0xa1);
+
+  it("pendaftaran ditolak setelah voteDeadline — satu-satunya penutup pendaftaran", () => {
+    const sim = new BallotSimulator({ eligibleCount: 8 });
+    sim.registerVoters([CRED_A]);
+    sim.majuKeFaseTally(); // waktu blok = voteDeadline + 1
+    expect(() => sim.registerVoters([bytes32(0x44)])).toThrow(
+      /Registration is closed: the vote deadline has passed/,
+    );
+    expect(sim.getLedger().registeredCount).toBe(1n);
+  });
+
+  it("pendaftaran tepat SEBELUM voteDeadline masih diterima (batas eksklusif)", () => {
+    const sim = new BallotSimulator({ eligibleCount: 8 });
+    sim.setBlockTime(sim.getLedger().voteDeadline - 1n);
+    expect(() => sim.registerVoters([CRED_A])).not.toThrow();
+  });
   // Detik sejak epoch Unix, BUKAN milidetik — lihat catatan pada konstanta
   // `HARI` di ballot-simulator.ts (Task 5). Besaran ~1.8e9 di sini murni
   // fiksi uji (kira-kira tahun 2027); yang penting hanyalah konsisten dengan

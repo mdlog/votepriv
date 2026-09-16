@@ -193,12 +193,22 @@ constructor(
   phase             = BallotPhase.voting;
 }
 
-// Admin only. Closes itself as soon as the first vote lands, so the voter list
-// cannot change in the middle of voting.
+// Admin only. Open until voteDeadline — NOT closed by the first vote.
+//
+// An earlier version closed registration as soon as the first vote landed, so
+// the voter list could not change mid-election. That rule made self-service
+// registration (a voter sends only their leaf, the organiser's inbox registers
+// it at once) useless: the first voter to cast a vote locked out everyone who
+// had not registered yet. Registration is now bounded by the same deadline as
+// voting itself. This is safe for the tally: choices stay sealed commitments
+// until voteDeadline, so nobody — the admin included — can react to a partial
+// result by admitting voters; and registeredCount is public, so growth of the
+// voter list is auditable by anyone. HistoricMerkleTree keeps the paths of
+// voters who registered earlier valid across later insertions.
 export circuit registerVoters(leaves: Vector<8, Bytes<32>>, n: Uint<8>): [] {
   assert(disclose(admin_pk(admin_secret_key()) == adminKey), "Only the admin can register voters");
   assert(phase == BallotPhase.voting, "Ballot is no longer in the voting phase");
-  assert(voteCount.read() == 0, "Registration is closed once the first vote is cast");
+  assert(kernel.blockTimeLessThan(voteDeadline), "Registration is closed: the vote deadline has passed");
   assert(n >= 1 && n <= 8, "Batch size must be between 1 and 8");
 
   // registeredCount is public, so anyone can check the number of credentials

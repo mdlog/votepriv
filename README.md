@@ -84,6 +84,18 @@ and, like any web request, the sender's IP address — never the credential,
 never a vote. Ballots whose policy names no inbox keep the manual flow (copy
 the leaf, send it to the organiser).
 
+The inbox must stay up for as long as registration is open, so run it as a
+service rather than in a terminal. `pkgs/cli/votepriv-inbox.service` is the
+unit this deployment uses: it restarts on failure, starts again after a
+reboot (`loginctl enable-linger`), and feeds the wallet seed from a file on
+stdin — never as an argument or an environment variable.
+
+```
+cp pkgs/cli/votepriv-inbox.service ~/.config/systemd/user/   # edit the paths first
+systemctl --user daemon-reload && systemctl --user enable --now votepriv-inbox
+journalctl --user -u votepriv-inbox -f                       # leaf received → batch registered
+```
+
 ### Running a judged ballot (handing out credentials ahead of time)
 
 Judges vote whenever they get to it, often days after the ballot goes live —
@@ -159,7 +171,7 @@ file** (see [README-VOTER.md](README-VOTER.md)).
 1. **Read only, no install:** <https://votepriv.mdloglabs.org> — Overview, Live ballots and
    Results are decoded live from the preview indexer.
 2. **Register and vote (no organiser needed):** run the voter package (above), open the live
-   demo ballot, click *Register to vote* — the app sends your leaf to the inbox and reports
+   demo ballot (Ballot 004, open until 2026-10-07), click *Register to vote* — the app sends your leaf to the inbox and reports
    *Registered on-chain* once it verifies the tree — then *Connect wallet* (Lace on
    `preview`, funded with tDUST) → *Vote privately*. The vote count rises; the tally stays
    sealed until the vote deadline.
@@ -172,8 +184,8 @@ file** (see [README-VOTER.md](README-VOTER.md)).
 | What | Address |
 |---|---|
 | Registry (v2 — ballots whose registration stays open until the vote deadline) | `c42681741bff50e346b9e80493b622c57883f748cc0a3af60f71545e6f8ff35a` |
-| Live demo ballot — Ballot 003 (self-service registration, 16 seats; the one the inbox serves and the one deployed in the video) | `d6bca75d0620339533863e08c95c7edb44c6517c7e309e760c7a40097c66bfbf` |
-| Earlier demo ballot — Ballot 002 (16 seats; its registered voters can still vote, but the inbox no longer serves new registrations for it) | `cf5e2e1e71a31cf5a3e06479844ecff88d75cb3f7190565209098f1b55e02e13` |
+| Live demo ballot — Ballot 004 (self-service registration, 16 seats; the one the inbox serves; voting open until 2026-10-07 03:53 UTC, tally until 2026-10-14) | `986e97f67aebf2ec6de043c28c1599f3d6c32ca3b035087f61074b55c80303f1` |
+| Ballot 003, the one deployed on camera in the demo video (16 seats; its voting window closed 2026-09-23) | `d6bca75d0620339533863e08c95c7edb44c6517c7e309e760c7a40097c66bfbf` |
 | Finalized three-voter ballot (public tally) | `c270b8d0fe4176a0a623866d6f42597a5625f3730b341fc665ef7af5df563d8d` on registry `2eda6f25dfd9693885f0469a87a8471fb72383a2d608edc7ecf5722dca0e3608` |
 
 The app reads them through the preview indexer, `https://indexer.preview.midnight.network/api/v3/graphql`.
@@ -183,7 +195,7 @@ contract yourself:
 ```
 curl -s https://indexer.preview.midnight.network/api/v3/graphql \
   -H 'content-type: application/json' \
-  -d '{"query":"{ contract(address:\"d6bca75d0620339533863e08c95c7edb44c6517c7e309e760c7a40097c66bfbf\") { address state actions(limit: 3) { __typename transaction { hash block { height } } } } }"}'
+  -d '{"query":"{ contract(address:\"986e97f67aebf2ec6de043c28c1599f3d6c32ca3b035087f61074b55c80303f1\") { address state actions(limit: 3) { __typename transaction { hash block { height } } } } }"}'
 ```
 
 `state` is the serialized contract state; `pkgs/contract`'s `ledger()` decodes it (the app does exactly

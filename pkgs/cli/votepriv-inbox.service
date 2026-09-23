@@ -1,0 +1,35 @@
+# Registration inbox as a user service, so it survives a crash, a logout and a
+# reboot — a terminal window does not, and the inbox has to stay up for as long
+# as registration is open.
+#
+#   cp pkgs/cli/votepriv-inbox.service ~/.config/systemd/user/
+#   # adjust WorkingDirectory and the node path below to this machine
+#   loginctl enable-linger "$USER"        # keep it running after logout/reboot
+#   systemctl --user daemon-reload && systemctl --user enable --now votepriv-inbox
+#
+# The ballot it serves comes from pkgs/cli/artefak/<network>.json, or from
+# VOTEPRIV_BALLOT if you set it here.
+[Unit]
+Description=VotePriv registration inbox (organiser side)
+Documentation=https://github.com/mdlog/votepriv
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/votepriv/pkgs/cli
+# The wallet seed is never an argument and never an environment variable: the
+# CLI reads it from stdin, and systemd feeds it straight from a file that only
+# this user can read (chmod 600).
+StandardInput=file:%h/.votepriv-seed
+ExecStart=node --max-old-space-size=4096 --no-warnings --experimental-strip-types src/register-inbox.ts
+Environment=VOTEPRIV_INBOX_PORT=5390
+Environment=VOTEPRIV_INBOX_HOST=127.0.0.1
+# node must be on PATH; a version manager's node needs its bin directory here.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
